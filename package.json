@@ -10,6 +10,7 @@
     "categories": [
         "Other"
     ],
+    "repository": "https://github.com/prozacchiwawa/vscode-chialisp-lsp",
     "activationEvents": [
         "onLanguage:chialisp"
     ],

@@ -1,35 +1,33 @@
 # chialisp-lsp-client README
 
-This is the README for your extension "chialisp-lsp-client". After writing up a brief description, we recommend including the following sections.
+A rust based chialisp language server client delivered with a rust client compiled
+to webassembly.  The rust client uses much of the same code as chia's chialisp
+compiler, but tries to be more lenient and faster to use incrementally.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- Highlighting functions, arguments
+- Go to definition (if in the same file)
+- Completion
+- Include files (when the filesystem is accessible)
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+For best results, put a chialisp.json file in your workspace root that lists the
+directories you'll be including other files from.
 
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+{
+    "include_paths": ["/home/person/dev/chia-blockchain/chia/wallet/puzzles"]
+}
 
 ## Known Issues
 
 Calling out known issues can help limit users opening duplicate issues against your extension.
+
+This is experimental and may need tuning and bug fixing at this point, but should
+be of assistance.
 
 ## Release Notes
 
@@ -37,35 +35,6 @@ Users appreciate release notes as you update your extension.
 
 ### 1.0.0
 
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+Initial alpha release.
 
 ---
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
