@@ -29,16 +29,28 @@ export class WorkaroundFeature implements StaticFeature {
 async function activateServer(context: vscode.ExtensionContext) {
     const workspaceClientInstanceId = 'chialisp';
     const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
-    const serverExecutable = 'chia-lsp';
+    var ourExtensionPath = vscode.extensions.getExtension("prozacchiwawa.chialisp-lsp-client")?.extensionPath;
+
+    if (!ourExtensionPath) {
+        // XXX Report error
+        return;
+    }
+
+    var serverExecutable = 'node';
+    var serverArgs: string[] = [ourExtensionPath + "/runner/src/runner.js"];
+    var debugArgs = serverArgs;
+
+    if (process.env.CHIALISP_LSP) {
+        serverExecutable = process.env.CHIALISP_LSP;
+        serverArgs = [];
+        debugArgs = [];
+    }
 
     // Register associations
     const exeOptions: ExecutableOptions = {
-        cwd: undefined,
+        cwd: ourExtensionPath,
         env: { ... process.env }
     };
-
-    const serverArgs: string[] = [];
-    const debugArgs = ['-d'];
 
     const serverOptions: ServerOptions = {
         run: {command: serverExecutable, transport: TransportKind.stdio, args: serverArgs, options: exeOptions},

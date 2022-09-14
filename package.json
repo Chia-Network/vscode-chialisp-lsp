@@ -2,6 +2,7 @@
     "name": "chialisp-lsp-client",
     "displayName": "chialisp-lsp-client",
     "description": "LSP client for chialisp",
+    "publisher": "prozacchiwawa",
     "version": "0.0.1",
     "engines": {
         "vscode": "^1.70.0"
