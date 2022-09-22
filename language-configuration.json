@@ -1,0 +1,12 @@
+{
+    "brackets":[
+		    ["(",")"]
+    ],
+		"autoClosingPairs":[
+			  {"open":"(", "close":")", "notIn": ["string","comment"]}
+		],
+    "comments": {
+        "lineComments": ";"
+    }
+		"autoCloseBefore": ";:.,=)` \n\t",
+}

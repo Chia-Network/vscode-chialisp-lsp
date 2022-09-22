@@ -27,13 +27,15 @@
                     ".clvm",
                     ".clib",
                     ".clinc"
-                ]
+                ],
+                "configuration": "./language-configuration.json"
             }
-        ],
-        "configuration": {
-            "type": "object",
-            "title": "Chialisp",
-            "properties": {}
+        ]
+    },
+    "configuration": {
+        "type": "object",
+        "title": "Chialisp",
+        "properties": {
         },
         "commands": []
     },
