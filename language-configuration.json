@@ -7,6 +7,6 @@
 		],
     "comments": {
         "lineComments": ";"
-    }
-		"autoCloseBefore": ";:.,=)` \n\t",
+    },
+    "autoCloseBefore": ";:.,=)` \n\t"
 }
