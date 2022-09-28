@@ -25,8 +25,8 @@ jobs:
         run: npm run pretest
       - name: Run headless test
         run: |
-          apt update
-          apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          sudo apt update
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
           xvfb-run -a npm run test
       - name: Cleanup xvfb pidx
         uses: bcomnes/cleanup-xvfb@v1
