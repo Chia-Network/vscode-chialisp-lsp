@@ -1,7 +1,7 @@
 {
     "name": "chialisp-lsp-client",
     "displayName": "Chialisp LSP Client",
-    "icon": "images/chialisp.png",
+    "icon": "./images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
     "version": "0.0.1",
@@ -26,10 +26,15 @@
                 "extensions": [
                     ".cl",
                     ".clvm",
+                    ".clsp",
                     ".clib",
                     ".clinc"
                 ],
-                "configuration": "./language-configuration.json"
+                "configuration": "./language-configuration.json",
+                "icon": {
+                  "light": "./images/chialisp-light.png",
+                  "dark": "./images/chialisp-dark.png"
+                }
             }
         ]
     },
@@ -50,6 +55,7 @@
         "url": "https://github.com/Chia-Network/vscode-chialisp-lsp/issues"
     },
     "homepage": "https://chialisp.com",
+    "license": "Apache 2.0",
     "main": "./out/extension.js",
     "scripts": {
         "vscode:prepublish": "npm run compile",
