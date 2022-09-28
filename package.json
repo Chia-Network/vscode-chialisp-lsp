@@ -1,7 +1,7 @@
 {
     "name": "chialisp-lsp-client",
     "displayName": "Chialisp LSP Client",
-    "icon": "./images/chialisp.png",
+    "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
     "version": "0.0.1",
@@ -32,8 +32,8 @@
                 ],
                 "configuration": "./language-configuration.json",
                 "icon": {
-                  "light": "./images/chialisp-light.png",
-                  "dark": "./images/chialisp-dark.png"
+                  "light": "images/chialisp-light.png",
+                  "dark": "images/chialisp-dark.png"
                 }
             }
         ]
