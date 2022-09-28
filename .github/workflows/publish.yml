@@ -19,8 +19,6 @@ jobs:
           node-version: 16
       - name: Install
         run: npm ci
-      - name: Set node_modules path
-        run: export PATH="$PATH:./node_modules/.bin"
       - name: Compile & lint
         run: npm run pretest
       - name: Run headless test
@@ -32,17 +30,17 @@ jobs:
         uses: bcomnes/cleanup-xvfb@v1
       - name: Build pre-release extension
         if: env.PRE_RELEASE == 'true'
-        run: vsce package --pre-release --no-yarn
+        run: ./node_modules/.bin/vsce package --pre-release --no-yarn
       - name: Build release extension
         if: env.FULL_RELEASE == 'true'
-        run: vsce package --no-yarn
+        run: ./node_modules/.bin/vsce package --no-yarn
       - name: Publish Pre-release to Visual Studio Marketplace
         if: env.PRE_RELEASE == 'true'
         env:
           VCSE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-        run: vsce publish --pre-release --no-yarn
+        run: ./node_modules/.bin/vsce publish --pre-release --no-yarn
       - name: Publish Release to Visual Studio Marketplace
         if: env.FULL_RELEASE == 'true'
         env:
           VCSE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-        run: vsce publish --no-yarn
+        run: ./node_modules/.bin/vsce publish --no-yarn
