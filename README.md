@@ -13,6 +13,12 @@ compiler, but tries to be more lenient and faster to use incrementally.
 
 ## Requirements
 
+- A 64-bit version of any OS supported by both Chia and Visual Studio Code (Windows, MacOS, and Debian-based Linux distributions are all supported)
+
+- Microsoft Visual Studio Code
+  - This is the only editor that is currently supported
+  - If you would like to add support for your favorite editor or IDE, PRs are welcome!
+
 ## Extension Settings
 
 For best results, put a chialisp.json file in your workspace root that lists the
@@ -24,17 +30,13 @@ directories you'll be including other files from.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-This is experimental and may need tuning and bug fixing at this point, but should
-be of assistance.
+Currently, the language server is in beta. There are no specific known bugs at this point, but we expect continued updates as bugs are encountered, leading up to a full release.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1 (2022/09/28)
 
-### 1.0.0
-
-Initial alpha release.
+- Public beta release
+- Includes syntax highlighting, go to definition, and auto-completion
 
 ---
