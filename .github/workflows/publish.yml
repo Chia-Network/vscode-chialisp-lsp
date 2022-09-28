@@ -14,7 +14,7 @@ jobs:
         if: github.event_name == 'release' && github.event.action == 'published'
         run: .github/actions/setJobEnv.sh
       - name: Setup Node
-        uses: actions/setup-node@v3.5.0
+        uses: actions/setup-node@v3
         with:
           node-version: 16
       - name: Install
