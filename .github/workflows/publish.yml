@@ -1,0 +1,48 @@
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+name: Deploy Extension
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.0.2
+      - name: Set Job Env
+        if: github.event_name == 'release' && github.event.action == 'published'
+        run: .github/actions/setJobEnv.sh
+      - name: Setup Node
+        uses: actions/setup-node@v3.5.0
+        with:
+          node-version: 16
+      - name: Install
+        run: npm ci
+      - name: Set node_modules path
+        run: export PATH="$PATH:./node_modules/.bin"
+      - name: Compile & lint
+        run: npm run pretest
+      - name: Run headless test
+        run: |
+          apt update
+          apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          xvfb-run -a npm run test
+      - name: Cleanup xvfb pidx
+        uses: bcomnes/cleanup-xvfb@v1
+      - name: Build pre-release extension
+        if: env.PRE_RELEASE == 'true'
+        run: vsce package --pre-release --no-yarn
+      - name: Build release extension
+        if: env.FULL_RELEASE == 'true'
+        run: vsce package --no-yarn
+      - name: Publish Pre-release to Visual Studio Marketplace
+        if: env.PRE_RELEASE == 'true'
+        env:
+          VCSE_PAT: ${{ secrets.MARKETPLACE_PAT }}
+        run: vsce publish --pre-release --no-yarn
+      - name: Publish Release to Visual Studio Marketplace
+        if: env.FULL_RELEASE == 'true'
+        env:
+          VCSE_PAT: ${{ secrets.MARKETPLACE_PAT }}
+        run: vsce publish --no-yarn
