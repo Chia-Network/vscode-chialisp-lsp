@@ -1,10 +1,10 @@
 {
-    "name": "chialisp-lsp-client",
-    "displayName": "Chialisp LSP Client",
+    "name": "chialisp",
+    "displayName": "Chialisp",
     "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "0.0.2",
+    "version": "0.0.1",
     "engines": {
         "vscode": "^1.70.0"
     },
