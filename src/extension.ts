@@ -21,6 +21,7 @@ export class WorkaroundFeature implements StaticFeature {
         capabilities.workspace.workspaceEdit = { documentChanges: true };
     }
     initialize(): void {
+	console.log('initialize');
     }
     dispose(): void {
     }
@@ -29,7 +30,7 @@ export class WorkaroundFeature implements StaticFeature {
 async function activateServer(context: vscode.ExtensionContext) {
     const workspaceClientInstanceId = 'chialisp';
     const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
-    var ourExtensionPath = vscode.extensions.getExtension("prozacchiwawa.chialisp-lsp-client")?.extensionPath;
+    var ourExtensionPath = vscode.extensions.getExtension("ChiaNetwork.chialisp-lsp-client")?.extensionPath;
 
     if (!ourExtensionPath) {
         // XXX Report error
@@ -37,7 +38,7 @@ async function activateServer(context: vscode.ExtensionContext) {
     }
 
     var serverExecutable = 'node';
-    var serverArgs: string[] = [ourExtensionPath + "/runner/src/runner.js"];
+    var serverArgs: string[] = [ourExtensionPath + "/runner/build/runner.js"];
     var debugArgs = serverArgs;
 
     if (process.env.CHIALISP_LSP) {
@@ -81,6 +82,7 @@ async function activateServer(context: vscode.ExtensionContext) {
         }
     };
 
+    console.log('starting language server');
     const langClient = new LanguageClient('chialisp', workspaceClientInstanceId, serverOptions, clientOptions);
     langClient.registerFeature(new WorkaroundFeature());
     langClient.registerProposedFeatures();
