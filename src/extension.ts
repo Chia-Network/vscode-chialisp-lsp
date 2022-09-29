@@ -21,7 +21,6 @@ export class WorkaroundFeature implements StaticFeature {
         capabilities.workspace.workspaceEdit = { documentChanges: true };
     }
     initialize(): void {
-	console.log('initialize');
     }
     dispose(): void {
     }
@@ -82,7 +81,6 @@ async function activateServer(context: vscode.ExtensionContext) {
         }
     };
 
-    console.log('starting language server');
     const langClient = new LanguageClient('chialisp', workspaceClientInstanceId, serverOptions, clientOptions);
     langClient.registerFeature(new WorkaroundFeature());
     langClient.registerProposedFeatures();
