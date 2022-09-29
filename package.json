@@ -4,7 +4,7 @@
     "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "engines": {
         "vscode": "^1.70.0"
     },
@@ -32,8 +32,8 @@
                 ],
                 "configuration": "./language-configuration.json",
                 "icon": {
-                  "light": "images/chialisp-light.png",
-                  "dark": "images/chialisp-dark.png"
+                  "dark": "images/chialisp_dark.svg",
+                  "light": "images/chialisp_light.svg"
                 }
             }
         ]
