@@ -1,3 +1,4 @@
+
 on:
   workflow_dispatch:
   release:
@@ -27,7 +28,14 @@ jobs:
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
           xvfb-run -a npm run test
       - name: Cleanup xvfb pidx
-        uses: bcomnes/cleanup-xvfb@v1
+        run: |
+          xvfb_pids="$(pgrep tmp/xvfb-run | grep -v grep | awk '{print $2}')"
+          if [ "$xvfb_pids" != "" ]; then
+              echo "Killing the following xvfb processes: $xvfb_pids"
+              sudo kill "$xvfb_pids"
+          else
+              echo "No xvfb processes to kill"
+          fi
       - name: Build pre-release extension
         id: package_name_pre
         if: env.PRE_RELEASE == 'true'
