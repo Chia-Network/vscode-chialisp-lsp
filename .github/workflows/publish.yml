@@ -1,0 +1,62 @@
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+name: Deploy Extension
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set Job Env
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: Chia-Network/actions/setjobenv@main
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+      - name: Install
+        run: npm ci
+      - name: Compile & lint
+        run: npm run pretest
+      - name: Run headless test
+        run: |
+          sudo apt update
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          xvfb-run -a npm run test
+      - name: Cleanup xvfb pidx
+        run: |
+          xvfb_pids="$(pgrep tmp/xvfb-run | grep -v grep | awk '{print $2}')"
+          if [ "$xvfb_pids" != "" ]; then
+              echo "Killing the following xvfb processes: $xvfb_pids"
+              sudo kill "$xvfb_pids"
+          else
+              echo "No xvfb processes to kill"
+          fi
+      - name: Build pre-release extension
+        id: package_name_pre
+        if: env.PRE_RELEASE == 'true'
+        run: |
+          ./node_modules/.bin/vsce package --pre-release --no-yarn
+          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
+      - name: Build release extension
+        id: package_name
+        if: env.FULL_RELEASE == 'true'
+        run: |
+          ./node_modules/.bin/vsce package --no-yarn
+          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
+      - name: Publish Pre-release to Visual Studio Marketplace
+        if: env.PRE_RELEASE == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
+          VSIX_FILE: ${{ steps.package_name_pre.outputs.VSIX_FILE }}
+        run: ./node_modules/.bin/vsce publish --pre-release --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+      - name: Publish Release to Visual Studio Marketplace
+        if: env.FULL_RELEASE == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
+          VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
+        run: ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"

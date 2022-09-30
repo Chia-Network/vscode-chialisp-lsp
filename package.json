@@ -1,16 +1,17 @@
 {
-    "name": "chialisp-lsp-client",
-    "displayName": "chialisp-lsp-client",
-    "description": "LSP client for chialisp",
-    "publisher": "prozacchiwawa",
+    "name": "chialisp",
+    "displayName": "Chialisp",
+    "icon": "images/chialisp.png",
+    "description": "A Rust LSP client for Chialisp",
+    "publisher": "ChiaNetwork",
     "version": "0.0.1",
     "engines": {
         "vscode": "^1.70.0"
     },
     "categories": [
-        "Other"
+        "Programming Languages"
     ],
-    "repository": "https://github.com/prozacchiwawa/vscode-chialisp-lsp",
+    "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
         "onLanguage:chialisp"
     ],
@@ -25,23 +26,39 @@
                 "extensions": [
                     ".cl",
                     ".clvm",
+                    ".clsp",
                     ".clib",
                     ".clinc"
                 ],
-                "configuration": "./language-configuration.json"
+                "configuration": "./language-configuration.json",
+                "icon": {
+                  "dark": "images/chialisp_dark.svg",
+                  "light": "images/chialisp_light.svg"
+                }
             }
         ]
     },
     "configuration": {
         "type": "object",
         "title": "Chialisp",
-        "properties": {
-        },
+        "properties": {},
         "commands": []
     },
+    "keywords": [
+        "chia",
+        "lisp",
+        "chialisp",
+        "vscode",
+        "extension"
+    ],
+    "bugs": {
+        "url": "https://github.com/Chia-Network/vscode-chialisp-lsp/issues"
+    },
+    "homepage": "https://chialisp.com",
+    "license": "Apache 2.0",
     "main": "./out/extension.js",
     "scripts": {
-        "vscode:prepublish": "npm run compile",
+        "vscode:prepublish": "make && npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
@@ -62,6 +79,7 @@
         "eslint": "^8.20.0",
         "glob": "^8.0.3",
         "mocha": "^10.0.0",
-        "typescript": "^4.7.4"
+        "typescript": "^4.7.4",
+        "vsce": "^2.11.0"
     }
 }
