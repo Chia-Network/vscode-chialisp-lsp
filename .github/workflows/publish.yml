@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Set Job Env
         if: github.event_name == 'release' && github.event.action == 'published'
-        run: .github/actions/setJobEnv.sh
+        uses: Chia-Network/actions/setjobenv@main
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
