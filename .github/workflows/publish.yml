@@ -18,6 +18,16 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 16
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            target: wasm32-unknown-unknown
+            override: true
+            components: rustfmt
+      - name: Install wasm-pack
+        run: |
+          cargo install wasm-pack
       - name: Install
         run: npm ci
       - name: Compile & lint
