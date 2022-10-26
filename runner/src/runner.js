@@ -11,6 +11,11 @@ const FIRST_EOL = 2;
 const MAYBE_SECOND_EOL = 3;
 const MESSAGE_READ = 4;
 
+let emptyWriteLog = (line) => { };
+var log = {
+	write: emptyWriteLog
+};
+
 clvm_tools_rs.then((clvm_tools_rs) => {
     let awaiting_init_msg = true;
 
@@ -18,11 +23,11 @@ clvm_tools_rs.then((clvm_tools_rs) => {
         try {
             return fs.readFileSync(name, 'utf8');
         } catch(e) {
-            process.stderr.write('read file failed: ' + e + '\n');
+            log.write('read file failed: ' + e + '\n');
             return null;
         }
     }, function(e) {
-        process.stderr.write('stderr> ' + e + '\n');
+        log.write('stderr> ' + e + '\n');
     });
 
     let stdin_reader = {};
@@ -35,7 +40,7 @@ clvm_tools_rs.then((clvm_tools_rs) => {
         try {
             messages = clvm_tools_rs.lsp_service_handle_msg(lsp_id, m);
         } catch (e) {
-            process.stderr.write('exn: ' + e + '\n');
+            log.write('exn: ' + e + '\n');
         }
 
         for (var i = 0; i < messages.length; i++) {
@@ -47,6 +52,22 @@ clvm_tools_rs.then((clvm_tools_rs) => {
             }
         }
     };
+
+    function processCommand(cmd) {
+        if (cmd.method === 'workspace/didChangeConfiguration') {
+            if (cmd.params.settings && cmd.params.settings && cmd.params.settings.chialisp) {
+                let stderrPath = cmd.params.settings.chialisp.stderrLogPath;
+                if (stderrPath !== '') {
+                    log.write = (line) => {
+                        fs.appendFileSync(stderrPath, line + '\n');
+                    };
+                } else {
+                    log.write = emptyWriteLog;
+                }
+            }
+        }
+        log.write(JSON.stringify(cmd));
+    }
 
     process.stdin.on('data', function(chunk) {
         for (var i = 0; i < chunk.length; ) {
@@ -93,10 +114,11 @@ clvm_tools_rs.then((clvm_tools_rs) => {
                     stdin_reader.mode = START_HEADER;
                     try {
                         if (stdin_reader.deliver_msg) {
+                            processCommand(JSON.parse(message));
                             stdin_reader.deliver_msg(message);
                         }
                     } catch (e) {
-                        process.stderr.write('exception ' + e + '\n');
+                        log.write('exception ' + e);
                     }
                 } else {
                     stdin_reader.message_payload += chunk.substr(i);

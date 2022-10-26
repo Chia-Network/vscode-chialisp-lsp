@@ -36,13 +36,19 @@
                   "light": "images/chialisp_light.svg"
                 }
             }
-        ]
-    },
-    "configuration": {
-        "type": "object",
-        "title": "Chialisp",
-        "properties": {},
-        "commands": []
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "Chialisp",
+            "properties": {
+                "chialisp.stderrLogPath": {
+                    "type":"string",
+                    "default":"",
+                    "description":"filename for stderr log for lsp"
+                }
+            },
+            "commands": []
+        }
     },
     "keywords": [
         "chia",
