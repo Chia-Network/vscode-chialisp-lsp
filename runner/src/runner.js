@@ -58,8 +58,15 @@ clvm_tools_rs.then((clvm_tools_rs) => {
             if (cmd.params.settings && cmd.params.settings && cmd.params.settings.chialisp) {
                 let stderrPath = cmd.params.settings.chialisp.stderrLogPath;
                 if (stderrPath !== '') {
+		    if (!stderrPath.startsWith('/')) {
+			stderrPath = '/tmp/' + stderrPath;
+		    }
                     log.write = (line) => {
-                        fs.appendFileSync(stderrPath, line + '\n');
+			try {
+                        	fs.appendFileSync(stderrPath, line + '\n');
+			} catch (e) {
+				; // Can't do much.
+			}
                     };
                 } else {
                     log.write = emptyWriteLog;
