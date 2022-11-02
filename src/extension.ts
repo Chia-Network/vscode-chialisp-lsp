@@ -38,7 +38,7 @@ async function activateServer(context: vscode.ExtensionContext) {
     }
 
     var serverExecutable = 'node';
-    var serverArgs: string[] = [ourExtensionPath + "/runner/build/runner.js"];
+    var serverArgs: string[] = [ourExtensionPath + "/runner/src/runner.js"];
     var debugArgs = serverArgs;
 
     if (process.env.CHIALISP_LSP) {

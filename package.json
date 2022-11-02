@@ -32,23 +32,24 @@
                 ],
                 "configuration": "./language-configuration.json",
                 "icon": {
-                  "dark": "images/chialisp_dark.svg",
-                  "light": "images/chialisp_light.svg"
+                    "dark": "images/chialisp_dark.svg",
+                    "light": "images/chialisp_light.svg"
                 }
             }
         ],
-        "configuration": {
-            "type": "object",
-            "title": "Chialisp",
-            "properties": {
-                "chialisp.stderrLogPath": {
-                    "type":"string",
-                    "default":"",
-                    "description":"filename for stderr log for lsp"
+        "configuration": [
+            {
+                "type": "object",
+                "title": "Chialisp",
+                "properties": {
+                    "chialisp.stderrLogPath": {
+                        "type":"string",
+                        "default":"",
+                        "description":"filename for stderr log for lsp"
+                    }
                 }
-            },
-            "commands": []
-        }
+            }
+        ]
     },
     "keywords": [
         "chia",
