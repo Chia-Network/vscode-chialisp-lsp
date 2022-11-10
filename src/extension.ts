@@ -14,6 +14,7 @@ import {
     TransportKind,
 } from 'vscode-languageclient/node';
 
+const ourExtension = "ChiaNetwork.chialisp";
 var usingLangClient: LanguageClient|undefined = undefined;
 
 export class WorkaroundFeature implements StaticFeature {
@@ -29,7 +30,7 @@ export class WorkaroundFeature implements StaticFeature {
 async function activateServer(context: vscode.ExtensionContext) {
     const workspaceClientInstanceId = 'chialisp';
     const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
-    var ourExtensionPath = vscode.extensions.getExtension("ChiaNetwork.chialisp")?.extensionPath;
+    var ourExtensionPath = vscode.extensions.getExtension(ourExtension)?.extensionPath;
 
     if (!ourExtensionPath) {
         // XXX Report error
@@ -37,7 +38,7 @@ async function activateServer(context: vscode.ExtensionContext) {
     }
 
     var serverExecutable = 'node';
-    var serverArgs: string[] = [ourExtensionPath + "/runner/build/runner.js"];
+    var serverArgs: string[] = [ourExtensionPath + "/runner/src/runner.js"];
     var debugArgs = serverArgs;
 
     if (process.env.CHIALISP_LSP) {
