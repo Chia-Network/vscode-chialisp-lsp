@@ -3,9 +3,7 @@ name: Test
 on:
   push:
     branches:
-      - main
-      - dev
-      - base
+      - "**"
 
     tags:
       - "**"
