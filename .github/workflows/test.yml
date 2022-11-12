@@ -1,10 +1,25 @@
+name: Test
 
 on:
-  workflow_dispatch:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
+      - dev
+      - base
 
-name: Deploy Extension
+    tags:
+      - "**"
+
+  pull_requests:
+    branches:
+      - "**"
+
+jobs:
+  run_tests:
+    name: "Run automated browser based tests of our extension"
+    strategy:
+      fail-fast: false
+name: Test Extension
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -58,16 +73,4 @@ jobs:
               sudo kill "$xvfb_pids"
           else
               echo "No xvfb processes to kill"
-          fi
-      - name: Publish Pre-release to Visual Studio Marketplace
-        if: env.PRE_RELEASE == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-          VSIX_FILE: ${{ steps.package_name_pre.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --pre-release --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
-      - name: Publish Release to Visual Studio Marketplace
-        if: env.FULL_RELEASE == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-          VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+          fi 
