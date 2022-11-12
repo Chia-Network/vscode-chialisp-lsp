@@ -40,17 +40,9 @@ jobs:
         run: npm run pretest
       - name: Build pre-release extension
         id: package_name_pre
-        if: env.PRE_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
-      - name: Build release extension
-        id: package_name
-        if: env.FULL_RELEASE == 'true'
-        run: |
-          ./node_modules/.bin/vsce package --no-yarn
-          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
-
       - name: Run headless test
         run: |
           sudo apt update
