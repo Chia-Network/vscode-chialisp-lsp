@@ -78,12 +78,15 @@ describe("Basic element tests", function() {
         console.log('Running test...');
 
         // Preview the test page
+        console.log(`navigate to ${baseUrl}`);
         await driver.get(baseUrl);
 
         // Wait for button
+        console.log('wait for an element indicating that the workspace is up');
         await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
 
         // Dismiss trust dialog if it comes up.
+        console.log('check for the trust dialog');
         let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
         if (trustDialog.length !== 0) {
             let trustButton = await driver.wait(until.elementLocated(byVisibleText("Yes, I trust the authors")));
