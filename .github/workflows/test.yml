@@ -1,12 +1,18 @@
+name: Test
 
 on:
-  workflow_dispatch:
-  release:
-    types: [published]
+  push:
+    branches:
+      - "main"
+      - "dev"
+      - "base"
 
-name: Deploy Extension
+  pull_request:
+    branches:
+      - "**"
+
 jobs:
-  publish:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,15 +40,8 @@ jobs:
         run: npm run pretest
       - name: Build pre-release extension
         id: package_name_pre
-        if: env.PRE_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
-          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
-      - name: Build release extension
-        id: package_name
-        if: env.FULL_RELEASE == 'true'
-        run: |
-          ./node_modules/.bin/vsce package --no-yarn
           echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
       - name: Run headless test
         run: |
@@ -58,16 +57,4 @@ jobs:
               sudo kill "$xvfb_pids"
           else
               echo "No xvfb processes to kill"
-          fi
-      - name: Publish Pre-release to Visual Studio Marketplace
-        if: env.PRE_RELEASE == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-          VSIX_FILE: ${{ steps.package_name_pre.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --pre-release --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
-      - name: Publish Release to Visual Studio Marketplace
-        if: env.FULL_RELEASE == 'true'
-        env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
-          VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+          fi 

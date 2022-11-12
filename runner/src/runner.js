@@ -39,7 +39,7 @@ stdin_reader.deliver_msg = function(m) {
     try {
         messages = clvm_tools_rs.lsp_service_handle_msg(lsp_id, m);
     } catch (e) {
-        log.write('exn: ' + e + '\n');
+        log.write('exn: ' + e + '\n' + e.stack + '\n');
     }
 
     for (var i = 0; i < messages.length; i++) {
