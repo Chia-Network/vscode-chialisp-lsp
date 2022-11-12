@@ -36,7 +36,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
-          xvfb-run -a npm run test
+          xvfb-run -a ./test/test.sh
+
       - name: Cleanup xvfb pidx
         run: |
           xvfb_pids="$(pgrep tmp/xvfb-run | grep -v grep | awk '{print $2}')"
