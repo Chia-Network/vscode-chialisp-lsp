@@ -42,7 +42,7 @@ var login = async function() {
 // Configure Jasmine's timeout value to account for longer tests.
 // Adjust this value if you find our tests failing due to timeouts.
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 300 * 1000;
-jest.setTimeout(20 * 1000);
+jest.setTimeout(300 * 1000);
 
 async function rightClick(element){
     const actions = driver.actions({async: true});
