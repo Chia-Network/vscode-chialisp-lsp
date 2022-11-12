@@ -5,7 +5,14 @@ sh ./run-server.sh &
 
 /bin/bash ./wait-for-it.sh -h localhost -p 8080
 
-./node_modules/.bin/jest
+STATUS=1
+if ./node_modules/.bin/jest ; then
+    STATUS=0
+else
+    STATUS=1
+fi
 
 docker kill code-server-test
 docker rm code-server-test
+
+exit ${STATUS}
