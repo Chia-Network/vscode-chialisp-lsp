@@ -15,12 +15,6 @@ on:
       - "**"
 
 jobs:
-  run_tests:
-    name: "Run automated browser based tests of our extension"
-    strategy:
-      fail-fast: false
-name: Test Extension
-jobs:
   test:
     runs-on: ubuntu-latest
     steps:
