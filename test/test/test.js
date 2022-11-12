@@ -30,7 +30,7 @@ var login = async function() {
     await driver.get(baseUrl);
 
     // Wait until the page is loaded
-    await driver.wait(until.elementLocated(loginContainer), 10 * 1000);
+    await driver.wait(until.elementLocated(loginContainer), 40 * 1000);
     console.log('Login screen loaded.');
 
     // Wait to be logged in, assuming it was was successful

@@ -3,7 +3,7 @@ cd test
 npm install
 sh ./run-server.sh &
 
-/bin/bash ./wait-for-it.sh -h localhost -p 8080
+/bin/bash ./wait-for-it.sh -t 90 -h localhost -p 8080
 
 STATUS=1
 if ./node_modules/.bin/jest ; then
