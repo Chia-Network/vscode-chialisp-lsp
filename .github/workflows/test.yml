@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - base
+
+    tags:
+      - "**"
+
+  pull_requests:
+    branches:
+      - "**"
+
+jobs:
+  run_tests:
+    run: |
+      vsce package
+      cp -r chialisp-*.vsix ./test
+      cd test
+      npm install
+      sh ./run-server.sh &
+      ./node_modules/.bin/jest
+      docker kill code-server-test
+      docker rm code-server-test
