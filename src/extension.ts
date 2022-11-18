@@ -3,6 +3,8 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
+
 import {
     ExecutableOptions,
     LanguageClient,
@@ -13,6 +15,7 @@ import {
     StaticFeature,
     TransportKind,
 } from 'vscode-languageclient/node';
+import { TextDecoder, TextEncoder } from 'util';
 
 const ourExtension = "ChiaNetwork.chialisp";
 var usingLangClient: LanguageClient|undefined = undefined;
@@ -94,6 +97,116 @@ async function activateServer(context: vscode.ExtensionContext) {
 // this method is called when your extension is activated
 // your extension is activated the very first time the c`ommand is executed
 export async function activate(context: vscode.ExtensionContext) {
+    vscode.commands.registerCommand("chialisp.locateIncludePath", function(value) {
+        console.log('locateIncludePath', JSON.stringify(value));
+        // Open a file selector to find the included file.
+        vscode.window.showOpenDialog({
+            title: `Chialisp include file ${value}`,
+            filters: {
+                "Chialisp Include Files": ["clinc","clib","clvm","clsp"]
+            }
+        }).then((uriList) => {
+            if (!uriList || uriList.length === 0) {
+                return;
+            }
+
+            // Find out which uris are in the workspace
+            const u = uriList[0];
+            const workspace = vscode.workspace.getWorkspaceFolder(u);
+            if (workspace) {
+                return {uri: u, workspace, relative: vscode.workspace.asRelativePath(u)};
+            } else {
+                return {uri: u};
+            }
+        }).then((useFile) => {
+            if (!useFile) {
+                return;
+            }
+
+            const updateChialispJson = (chialispJson: any, newFile: vscode.Uri) => {
+                let targetDirectory = path.dirname(newFile.fsPath);
+                let relativePath = vscode.workspace.asRelativePath(newFile);
+
+                if (relativePath) {
+                    targetDirectory = "./" + path.dirname(relativePath);
+                }
+
+                // Try to enforce correct structure.
+                if (chialispJson.include_paths === undefined || !chialispJson.include_paths.length) {
+                    chialispJson.include_paths = [];
+                }
+
+                // Try not to duplicate.
+                for (var i = 0; i < chialispJson.include_paths; i++) {
+                    if (targetDirectory === chialispJson.include_paths[i]) {
+                        return;
+                    }
+                }
+
+                // We have a new include path to put in.
+                chialispJson.include_paths.push(targetDirectory);
+
+                return chialispJson;
+            };
+
+            const dec = new TextDecoder("utf-8");
+            const enc = new TextEncoder();
+
+            var chialispJsonUri: vscode.Uri | undefined;
+            var treatAndWriteBackChialispJson: (oldChialispJson: any) => Thenable<void>;
+
+            function treatAndWriteFile(chialispJsonUri: vscode.Uri, useFileUri: vscode.Uri) {
+                return (oldChialispJson: any) => {
+                    const newChialispJson = updateChialispJson(oldChialispJson, useFileUri);
+                    return vscode.workspace.fs.writeFile(chialispJsonUri, enc.encode(JSON.stringify(newChialispJson)));
+                };
+            };
+
+            if (useFile.workspace) {
+                chialispJsonUri = vscode.Uri.joinPath(useFile.workspace.uri, "chialisp.json");
+                treatAndWriteBackChialispJson = treatAndWriteFile(chialispJsonUri, useFile.uri);
+            } else {
+                const tryMakeFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.parse("chialisp.json"));
+                if (!tryMakeFolder) {
+                    vscode.window.showErrorMessage("Could not figure out where to create chialisp.json");
+                    return;
+                } else {
+                    chialispJsonUri = tryMakeFolder.uri;
+                    treatAndWriteBackChialispJson = treatAndWriteFile(chialispJsonUri, useFile.uri);
+                }
+            }
+
+            return vscode.workspace.fs.readFile(chialispJsonUri).then((filedata) => {
+                try {
+                    const oldChialispJson = JSON.parse(dec.decode(filedata));
+                    return treatAndWriteBackChialispJson(oldChialispJson);
+                } catch (e) {
+                    vscode.window.showErrorMessage("Could not update existing chialisp.json");
+                }
+            }, (e) => {
+                try {
+                    const oldChialispJson = {include_paths:[]};
+                    return treatAndWriteBackChialispJson(oldChialispJson);
+                } catch (e) {
+                    vscode.window.showErrorMessage("Could not formulate chialisp.json");
+                }
+            });
+        }).then(() => {
+            let editor = vscode.window.activeTextEditor;
+            if (editor) {
+                return editor.edit((builder) => {
+                    builder.insert(new vscode.Position(0, 0), " ");
+                }).then(() => {
+                    return editor?.edit((builder) => {
+                        builder.delete(new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 1)));
+                    });
+                });
+            }
+        }, (e) => {
+            vscode.window.showErrorMessage(`Could not write chialisp.json: ${e}`);
+        });
+    }, context);
+    
     activateServer(context);
 }
 

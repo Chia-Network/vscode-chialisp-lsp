@@ -43,11 +43,17 @@
                 "title": "Chialisp",
                 "properties": {
                     "chialisp.stderrLogPath": {
-                        "type":"string",
-                        "default":"",
-                        "description":"filename for stderr log for lsp"
+                        "type": "string",
+                        "default": "",
+                        "description": "filename for stderr log for lsp"
                     }
                 }
+            }
+        ],
+        "commands": [
+            {"command": "chialisp.locateIncludePath",
+             "title": "Locate include file",
+             "category": "Chialisp"
             }
         ]
     },
