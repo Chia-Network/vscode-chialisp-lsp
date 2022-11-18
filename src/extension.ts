@@ -128,7 +128,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 let relativePath = vscode.workspace.asRelativePath(newFile);
 
                 if (relativePath) {
-                    targetDirectory = "./" + path.dirname(relativePath);
+                    if (!path.isAbsolute(relativePath)) {
+                        targetDirectory = "./" + path.dirname(relativePath);
+                    }
                 }
 
                 // Try to enforce correct structure.
@@ -162,18 +164,14 @@ export async function activate(context: vscode.ExtensionContext) {
                 };
             };
 
-            if (useFile.workspace) {
-                chialispJsonUri = vscode.Uri.joinPath(useFile.workspace.uri, "chialisp.json");
+            let activeTextUri = vscode.window.activeTextEditor?.document.uri;
+            let workspaceUri = useFile.workspace ? useFile.workspace.uri : activeTextUri ? vscode.workspace.getWorkspaceFolder(activeTextUri)?.uri : undefined;
+            if (workspaceUri) {
+                chialispJsonUri = vscode.Uri.joinPath(workspaceUri, "chialisp.json");
                 treatAndWriteBackChialispJson = treatAndWriteFile(chialispJsonUri, useFile.uri);
             } else {
-                const tryMakeFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.parse("chialisp.json"));
-                if (!tryMakeFolder) {
-                    vscode.window.showErrorMessage("Could not figure out where to create chialisp.json");
-                    return;
-                } else {
-                    chialispJsonUri = tryMakeFolder.uri;
-                    treatAndWriteBackChialispJson = treatAndWriteFile(chialispJsonUri, useFile.uri);
-                }
+                vscode.window.showErrorMessage("Could not identify workspace folder root");
+                return;
             }
 
             return vscode.workspace.fs.readFile(chialispJsonUri).then((filedata) => {
