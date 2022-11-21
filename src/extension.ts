@@ -50,15 +50,9 @@ async function activateServer(context: vscode.ExtensionContext) {
         debugArgs = [];
     }
 
-    // Register associations
-    const exeOptions: ExecutableOptions = {
-        cwd: ourExtensionPath,
-        env: { ... process.env }
-    };
-
     const serverOptions: ServerOptions = {
-        run: {command: serverExecutable, transport: TransportKind.stdio, args: serverArgs, options: exeOptions},
-        debug: {command: serverExecutable, transport: TransportKind.stdio, args: debugArgs, options: exeOptions}
+        run: {module: path.join(ourExtensionPath, "runner/build/runner.js")},
+        debug: {module: path.join(ourExtensionPath, "runner/build/runner.js")}
     };
 
     const fileToExaminePattern = '**/*';
