@@ -6,3 +6,5 @@ node_modules
 
 .fake
 runner/build
+wasm/target
+wasm/pkg
