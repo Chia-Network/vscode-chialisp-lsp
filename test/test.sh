@@ -1,3 +1,4 @@
+rm -rf ./test/*.vsix
 cp -r chialisp-*.vsix ./test
 cd test
 npm install
