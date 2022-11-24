@@ -44,9 +44,24 @@ var login = async function() {
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 300 * 1000;
 jest.setTimeout(300 * 1000);
 
-async function rightClick(element){
+async function rightClick(element) {
     const actions = driver.actions({async: true});
     await actions.contextClick(element).perform();
+}
+
+async function hover(element) {
+    const actions = driver.actions({async: true});
+    await actions.move({origin: element}).perform();
+}
+
+async function sendControlP(element) {
+    const actions = driver.actions({async: true});
+    await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).perform();
+}
+
+async function sendReturn() {
+    const actions = driver.actions({async: true});
+    await actions.pause(2000).keyDown(Key.RETURN).keyUp(Key.RETURN).perform();
 }
 
 function byVisibleText(str) {
@@ -121,6 +136,58 @@ describe("Basic element tests", function() {
         let comment = await driver.wait(until.elementLocated(byVisibleText("COLLATZ")));
 
         expect(await comment.getAttribute("class")).toBe("mtk4");
+
+        console.log('we should have an error shown');
+        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-error")));
+
+        console.log('try to resolve includes automatically');
+        let include_name_to_hover = await driver.wait(until.elementLocated(byVisibleText("test-inc.clsp")));
+        await hover(include_name_to_hover);
+
+        console.log('find the quick fix selection');
+        let quickFixElement = await driver.wait(until.elementLocated(byVisibleText("Quick Fix")));
+        quickFixElement.click();
+
+        console.log('find the include path button');
+        await sendReturn();
+
+        console.log('find the input box');
+        let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys("include/test-inc.clsp");
+
+        console.log('accept input');
+        let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
+        okBox.click();
+
+        console.log('Check the content of chialisp.json');
+        await sendControlP();
+
+        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys("chialisp.json");
+
+        let chialispFilename = await driver.wait(until.elementLocated(byExactText("chialisp.json")));
+        await sendReturn();
+
+        console.log('Check content');
+        let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
+
+        await sendControlP();
+
+        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys("collatz.cl");
+        await sendReturn();
+
+        console.log('edit');
+        await sendReturn();
+
+        console.log('comments should move');
+        let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
+        expect(await otherComment.getAttribute("class")).toBe("mtk15");
+
+        console.log('check for squigglies');
+        let squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(0);
+
 
         // Ok, the above didn't throw so we succeeded.
         console.log('we found the styled elements');
