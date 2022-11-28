@@ -118,11 +118,11 @@ describe("Basic element tests", function() {
 
         let installChoice = await driver.wait(until.elementLocated(byVisibleText("VSIX")));
         console.log('click install');
-        installChoice.click();
+        await installChoice.click();
 
         let chialisp = await driver.wait(until.elementLocated(byVisibleText("collatz.cl")));
         console.log('select chialisp file');
-        chialisp.click();
+        await chialisp.click();
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
