@@ -7,7 +7,6 @@ extern crate indoc;
 
 pub mod api;
 mod lsp;
-mod jsval;
 
 #[cfg(test)]
 mod tests;
