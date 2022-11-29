@@ -5,7 +5,7 @@ const {Builder, By, Key, until} = require('selenium-webdriver');
 // You can use a remote Selenium Hub, but we are not doing that here
 require('chromedriver');
 const driver = new Builder()
-    .forBrowser('chrome')
+    .forBrowser('firefox')
     .build();
 
 const baseUrl = "http://localhost:8080";
@@ -72,6 +72,17 @@ function byExactText(str) {
     return By.xpath(`//*[text()='${str}']`);
 }
 
+async function openFile(file) {
+        console.log(`Check the content of ${file}`);
+        await sendControlP();
+
+        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys(file);
+
+        let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
+        await sendReturn();
+}
+
 // Define a category of tests using test framework, in this case Jasmine
 describe("Basic element tests", function() {
     // Before every test, open a browser and login
@@ -110,7 +121,7 @@ describe("Basic element tests", function() {
 
         let projectDir = await driver.wait(until.elementLocated(byExactText("project")));
         console.log('clicking project dir');
-        projectDir.click();
+        await projectDir.click();
 
         let chialispExt = await driver.wait(until.elementLocated(byVisibleText(".vsix")));
         console.log('right click chialisp ext');
@@ -160,25 +171,12 @@ describe("Basic element tests", function() {
         okBox.click();
 
         console.log('Check the content of chialisp.json');
-        await sendControlP();
-
-        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
-        await inputBox.sendKeys("chialisp.json");
-
-        let chialispFilename = await driver.wait(until.elementLocated(byExactText("chialisp.json")));
-        await sendReturn();
+	await openFile("chialisp.json");
 
         console.log('Check content');
         let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
 
-        await sendControlP();
-
-        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
-        await inputBox.sendKeys("collatz.cl");
-        await sendReturn();
-
-        console.log('edit');
-        await sendReturn();
+	await openFile("collatz.cl");
 
         console.log('comments should move');
         let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
@@ -187,7 +185,6 @@ describe("Basic element tests", function() {
         console.log('check for squigglies');
         let squigglies = await driver.findElements(By.css('.squiggly-error'));
         expect(squigglies.length).toBe(0);
-
 
         // Ok, the above didn't throw so we succeeded.
         console.log('we found the styled elements');
