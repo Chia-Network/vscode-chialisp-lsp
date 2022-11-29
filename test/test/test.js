@@ -131,9 +131,7 @@ describe("Basic element tests", function() {
         console.log('click install');
         await installChoice.click();
 
-        let chialisp = await driver.wait(until.elementLocated(byVisibleText("collatz.cl")));
-        console.log('select chialisp file');
-        await chialisp.click();
+	await openFile('collatz.cl');
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
