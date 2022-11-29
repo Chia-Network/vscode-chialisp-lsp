@@ -131,6 +131,8 @@ describe("Basic element tests", function() {
         console.log('click install');
         await installChoice.click();
 
+	await sendReturn();
+
 	await openFile('collatz.cl');
 
         // If these elements can be found, we're highlighting.
