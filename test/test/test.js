@@ -1,5 +1,6 @@
 // Require modules used in the logic below
 const jasmine = require('jasmine');
+const os = require('os');
 const {Builder, By, Key, until} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
@@ -56,7 +57,11 @@ async function hover(element) {
 
 async function sendControlP(element) {
     const actions = driver.actions({async: true});
-    await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).perform();
+    if (os.platform() === 'darwin') {
+      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys('p').keyUp(Key.COMMAND).perform();
+    } else {
+      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).perform();
+    }
 }
 
 async function sendReturn() {
