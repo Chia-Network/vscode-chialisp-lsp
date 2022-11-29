@@ -58,15 +58,20 @@ async function hover(element) {
 async function sendControlP(element) {
     const actions = driver.actions({async: true});
     if (os.platform() === 'darwin') {
-      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys('p').keyUp(Key.COMMAND).perform();
+      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys('p').keyUp(Key.COMMAND).pause(500).perform();
     } else {
-      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).perform();
+      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).pause(500).perform();
     }
+}
+
+async function wait(secs) {
+    const actions = driver.actions({async: true});
+    await actions.pause(secs * 1000).perform();
 }
 
 async function sendReturn() {
     const actions = driver.actions({async: true});
-    await actions.pause(2000).keyDown(Key.RETURN).keyUp(Key.RETURN).perform();
+    await actions.pause(2000).keyDown(Key.RETURN).keyUp(Key.RETURN).pause(500).perform();
 }
 
 function byVisibleText(str) {
@@ -174,6 +179,8 @@ describe("Basic element tests", function() {
         console.log('accept input');
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
         okBox.click();
+
+	await wait(3.0);
 
         console.log('Check the content of chialisp.json');
 	await openFile("chialisp.json");
