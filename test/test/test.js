@@ -5,7 +5,7 @@ const {Builder, By, Key, until} = require('selenium-webdriver');
 // You can use a remote Selenium Hub, but we are not doing that here
 require('chromedriver');
 const driver = new Builder()
-    .forBrowser('firefox')
+    .forBrowser('chrome')
     .build();
 
 const baseUrl = "http://localhost:8080";
