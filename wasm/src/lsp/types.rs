@@ -395,7 +395,7 @@ impl LSPServiceProvider {
         if let (Some(d), Some(p)) = (self.get_doc(uristring), self.get_parsed(uristring)) {
             let mut errors = Vec::new();
 
-            let missing_includes = self.check_for_missing_include_files();
+            let missing_includes = self.check_for_missing_include_files(uristring);
             let mut include_diagnostics: Vec<Diagnostic> = missing_includes.iter().map(|i| {
                 Diagnostic {
                     range: DocRange::from_srcloc(i.nl.clone()).to_range(),
@@ -410,13 +410,13 @@ impl LSPServiceProvider {
                 }
             }).collect();
 
-            if !missing_includes.is_empty() {
+            for mi in missing_includes.iter() {
                 // Send command to show the status bar item.
                 res.push(Message::Notification(Notification {
                     method: "workspace/executeCommand".to_string(),
                     params: serde_json::to_value(ExecuteCommandParams {
                         command: "chialisp.locateIncludeFile".to_string(),
-                        arguments: vec![serde_json::to_value(decode_string(&missing_includes[0].filename)).unwrap()],
+                        arguments: vec![serde_json::to_value(decode_string(&mi.filename)).unwrap()],
                         work_done_progress_params: WorkDoneProgressParams {
                             work_done_token: None
                         }
@@ -445,7 +445,7 @@ impl LSPServiceProvider {
                     method: "textDocument/publishDiagnostics".to_string(),
                     params: serde_json::to_value(PublishDiagnosticsParams {
                         uri: Url::parse(uristring).unwrap(),
-                        version: Some(d.version),
+                        version: None,
                         diagnostics: errors,
                     })
                     .unwrap(),
@@ -471,6 +471,12 @@ impl LSPServiceProvider {
         let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         let coll: Ref<HashMap<String, DocData>> = cell.borrow();
         coll.get(uristring).cloned()
+    }
+
+    pub fn get_doc_keys(&self) -> Vec<String> {
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
+        let coll: Ref<HashMap<String, DocData>> = cell.borrow();
+        coll.keys().cloned().collect()
     }
 
     pub fn get_parsed(&self, uristring: &str) -> Option<ParsedDoc> {

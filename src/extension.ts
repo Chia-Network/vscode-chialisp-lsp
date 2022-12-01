@@ -198,7 +198,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage(`Could not write chialisp.json: ${e}`);
         });
     }, context);
-    
+
     activateServer(context);
 }
 

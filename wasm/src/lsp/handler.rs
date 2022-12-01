@@ -108,14 +108,14 @@ impl LSPServiceProvider {
     }
 
     // Return the includes that couldn't be resolved.
-    pub fn check_for_missing_include_files(&mut self) -> Vec<IncludeData> {
+    pub fn check_for_missing_include_files(&mut self, uristring: &str) -> Vec<IncludeData> {
         let mut to_resolve = Vec::new();
 
         // Find includes we need to resolve
-        for (k,v) in self.parsed_documents.iter() {
-            for (_,i) in v.includes.iter() {
+        if let Some(doc) = self.parsed_documents.get(uristring) {
+            for (_,i) in doc.includes.iter() {
                 if i.found != Some(true) {
-                    to_resolve.push((k, i.clone()));
+                    to_resolve.push((uristring, i.clone()));
                 }
             }
         }
@@ -325,6 +325,21 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                             }
                         }
                     }
+
+                    // Parse all documents and reproduce diagnostics
+                    // This is expensive but I think i may need to do it to
+                    // ensure that after a reparse we completely dismiss all
+                    // errors.
+                    let to_reparse_docs = self.get_doc_keys();
+                    let mut result_messages = Vec::new();
+
+                    for docname in to_reparse_docs.iter() {
+                        let mut errors =
+                            self.parse_document_and_output_errors(docname);
+                        result_messages.append(&mut errors);
+                    }
+
+                    return Ok(result_messages);
                 } else if not.method == "textDocument/didChange" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
                     if let Ok(params) =
