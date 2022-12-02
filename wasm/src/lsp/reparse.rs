@@ -31,6 +31,7 @@ pub struct ReparsedExp {
 }
 
 pub struct ReparsedModule {
+    pub ignored: bool,
     pub mod_kw: Option<Srcloc>,
     pub args: Rc<SExp>,
     pub helpers: HashMap<Vec<u8>, ReparsedHelper>,
@@ -109,6 +110,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
 }
 
 pub fn reparse_subset(
+    prims: &[Vec<u8>],
     opts: Rc<dyn CompilerOpts>,
     doc: &[Rc<Vec<u8>>],
     uristring: &str,
@@ -117,6 +119,7 @@ pub fn reparse_subset(
     prev_helpers: &HashMap<Vec<u8>, ReparsedHelper>,
 ) -> ReparsedModule {
     let mut result = ReparsedModule {
+        ignored: false,
         mod_kw: None,
         args: compiled.args.clone(),
         helpers: HashMap::new(),
@@ -168,9 +171,23 @@ pub fn reparse_subset(
         if !prefix_parse.is_empty() {
             if let SExp::Atom(l, m) = prefix_parse[0].borrow() {
                 have_mod = m == b"mod";
+
+                if !have_mod {
+                    if let Some(_) = prims.iter().position(|prim| {
+                        prim == m
+                    }) {
+                        result.ignored = true;
+                        return result;
+                    }
+                }
+
                 form_error_start = 2;
                 result.mod_kw = Some(l.clone());
+            } else if let SExp::Integer(_, _) = prefix_parse[0].borrow() {
+                result.ignored = true;
+                return result;
             }
+
             if have_mod && prefix_parse.len() == 2 {
                 took_args = true;
                 result.args = Rc::new(prefix_parse[prefix_parse.len() - 1].clone());
@@ -384,6 +401,47 @@ pub fn check_live_helper_calls(
     None
 }
 
+fn determine_same_path(uristring: &str, query_file: &str) -> bool {
+    // Iterate in reverse through path components and match them with case folded.
+    let uristring_comps: Vec<String> = uristring.split('/').map(|s| s.to_owned()).collect();
+    let query_file_comps: Vec<String> = query_file.split('/').map(|s| s.to_owned()).collect();
+
+    // no match if the queried file has a longer path than the uristring.
+    if uristring_comps.is_empty() || query_file_comps.is_empty() ||
+        query_file_comps.len() > uristring.len() {
+        return false;
+    }
+
+    let mut uristring_idx = uristring_comps.len();
+    let mut query_file_idx = query_file_comps.len();
+
+    while uristring_idx > 0 && query_file_idx > 0 {
+        let uristring_comp = &uristring_comps[uristring_idx - 1];
+        let query_file_comp = &query_file_comps[query_file_idx - 1];
+
+        // Ignore single dots that may be joined in.
+        if uristring_comp.is_empty() || uristring_comp == "." {
+            uristring_idx -= 1;
+            continue;
+        }
+
+        if query_file_comp.is_empty() || query_file_comp == "." {
+            query_file_idx -= 1;
+            continue;
+        }
+
+        if uristring_comp.to_lowercase() != query_file_comp.to_lowercase() {
+            return false;
+        }
+
+        uristring_idx -= 1;
+        query_file_idx -= 1;
+    }
+
+    // Same, this should do.
+    return true;
+}
+
 pub fn combine_new_with_old_parse(
     uristring: &str,
     text: &[Rc<Vec<u8>>],
@@ -396,7 +454,10 @@ pub fn combine_new_with_old_parse(
     let mut to_remove = HashSet::new();
     let mut remove_names = HashSet::new();
     let mut hash_to_name = parsed.hash_to_name.clone();
-    let mut out_errors = reparse.errors.clone();
+    let mut out_errors: Vec<CompileErr> = reparse.errors.iter().filter(|e| {
+        let borrowed_file: &String = e.0.file.borrow();
+        determine_same_path(uristring, borrowed_file)
+    }).cloned().collect();
 
     // Collect to-delete set.
     for (h, _) in new_helpers.iter() {
@@ -468,6 +529,7 @@ pub fn combine_new_with_old_parse(
     }
 
     ParsedDoc {
+        ignored: reparse.ignored,
         mod_kw: reparse.mod_kw.clone(),
         compiled: compile_with_dead_helpers_removed,
         errors: out_errors,

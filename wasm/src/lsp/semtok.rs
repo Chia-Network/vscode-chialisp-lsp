@@ -317,6 +317,7 @@ fn process_body_code(
 
             let scopes = recover_scopes(env.uristring, env.lines, m);
             let synthesized_doc = ParsedDoc {
+                ignored: false,
                 mod_kw: Some(l.clone()),
                 compiled: m.clone(),
                 scopes,

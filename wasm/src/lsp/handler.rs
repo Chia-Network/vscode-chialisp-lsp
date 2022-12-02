@@ -308,6 +308,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                     }
                 } else if not.method == "workspace/didChangeWatchedFiles" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
+                    let mut matching_file_for_resync = false;
                     if let Ok(params) =
                         serde_json::from_str::<DidChangeWatchedFilesParams>(&stringified_params)
                     {
@@ -315,6 +316,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                             let doc_id = change.uri.to_string();
 
                             if doc_id.ends_with("chialisp.json") {
+                                matching_file_for_resync = true;
                                 if let Some(config) = self.reconfigure() {
                                     // We have a config file and can read the filesystem.
                                     self.log.write("reconfigured");
@@ -322,6 +324,8 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                                     self.parsed_documents.clear();
                                     self.goto_defs.clear();
                                 }
+                            } else if let Some(_) = self.workspace_file_extensions_to_resync_for.iter().position(|e| doc_id.ends_with(e)) {
+                                matching_file_for_resync = true;
                             }
                         }
                     }
@@ -329,17 +333,20 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                     // Parse all documents and reproduce diagnostics
                     // This is expensive but I think i may need to do it to
                     // ensure that after a reparse we completely dismiss all
-                    // errors.
-                    let to_reparse_docs = self.get_doc_keys();
-                    let mut result_messages = Vec::new();
+                    // errors, but only when selected files are changed.
+                    if matching_file_for_resync {
+                        let mut result_messages = Vec::new();
 
-                    for docname in to_reparse_docs.iter() {
-                        let mut errors =
-                            self.parse_document_and_output_errors(docname);
-                        result_messages.append(&mut errors);
+                        let to_reparse_docs = self.get_doc_keys();
+
+                        for docname in to_reparse_docs.iter() {
+                            let mut errors =
+                                self.parse_document_and_output_errors(docname);
+                            result_messages.append(&mut errors);
+                        }
+
+                        return Ok(result_messages);
                     }
-
-                    return Ok(result_messages);
                 } else if not.method == "textDocument/didChange" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
                     if let Ok(params) =

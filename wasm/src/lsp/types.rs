@@ -26,6 +26,7 @@ use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
 use clvm_tools_rs::compiler::comptypes::CompilerOpts;
+use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::decode_string;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -385,6 +386,12 @@ pub struct LSPServiceProvider {
     // These aren't shared.
     pub parsed_documents: HashMap<String, ParsedDoc>,
     pub goto_defs: HashMap<String, BTreeMap<SemanticTokenSortable, Srcloc>>,
+
+    // Prim list so we can tell if the first atom is a clvm atom.
+    pub prims: Vec<Vec<u8>>,
+
+    // Set of file extensions we should consider changing the world.
+    pub workspace_file_extensions_to_resync_for: Vec<String>,
 }
 
 impl LSPServiceProvider {
@@ -517,6 +524,7 @@ impl LSPServiceProvider {
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
             let ranges = make_simple_ranges(&doc.text);
             let mut new_helpers = reparse_subset(
+                &self.prims,
                 opts,
                 &doc.text,
                 uristring,
@@ -602,6 +610,8 @@ impl LSPServiceProvider {
     }
 
     pub fn new(fs: Rc<dyn IFileReader>, log: Rc<dyn ILogWriter>, configured: bool) -> Self {
+        let clvm_prims = prims().iter().map(|(p,_)| p.clone()).collect();
+
         LSPServiceProvider {
             fs,
             log,
@@ -617,6 +627,15 @@ impl LSPServiceProvider {
 
             parsed_documents: HashMap::new(),
             goto_defs: HashMap::new(),
+
+            workspace_file_extensions_to_resync_for: vec![
+                ".clsp",
+                ".cl",
+                ".clvm",
+                ".clib",
+                ".clinc"
+            ].iter().map(|s| s.to_string()).collect(),
+            prims: clvm_prims
         }
     }
 
