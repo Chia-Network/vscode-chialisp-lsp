@@ -27,6 +27,7 @@ use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::types::{
     ConfigJson, DocData, DocPosition, DocRange, EPrintWriter, FSFileReader,
 };
+use clvm_tools_rs::compiler::prims;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 fn make_did_open_message(uri: &String, v: i32, body: String) -> Message {
@@ -647,11 +648,13 @@ fn run_reparse_steps(
     text_inputs: &[String],
 ) -> ParsedDoc {
     let mut doc = ParsedDoc::new(loc.clone());
+    let prims: Vec<Vec<u8>> = prims::prims().iter().map(|(k,_)| k.clone()).collect();
 
     for content in text_inputs.iter() {
         let text = split_text(&content);
         let ranges = make_simple_ranges(&text);
         let reparsed = reparse_subset(
+            &prims,
             opts.clone(),
             &text,
             &file,
