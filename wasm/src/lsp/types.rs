@@ -413,20 +413,18 @@ pub struct LSPServiceProvider {
     pub workspace_file_extensions_to_resync_for: Vec<String>,
 }
 
-fn urlify(u: &String) -> String {
+pub fn urlify(u: &str) -> String {
     if !u.starts_with("file://") {
         format!("file://{}", u)
     } else {
-        u.clone()
+        u.to_owned()
     }
 }
 
 impl LSPServiceProvider {
     pub fn produce_error_list(&self) -> Vec<Message> {
         let mut all_errors = Vec::new();
-        let tour_documents: Vec<String> = self.parsed_documents.keys().map(|u| {
-            urlify(u)
-        }).collect();
+        let tour_documents: Vec<String> = self.parsed_documents.keys().cloned().collect();
 
         for uristring in tour_documents.iter() {
             if let Some(err) = self.thrown_errors.get(uristring) {
@@ -605,7 +603,7 @@ impl LSPServiceProvider {
                 ) {
                     if let Some(file_uri) = self
                         .get_workspace_root()
-                        .and_then(|r| r.join(filename).to_str().map(|f| f.to_owned()))
+                        .and_then(|r| r.join(filename).to_str().map(urlify))
                     {
                         self.save_doc(file_uri.clone(), file_body);
                         if let Some(p) = self.get_parsed(&file_uri) {
