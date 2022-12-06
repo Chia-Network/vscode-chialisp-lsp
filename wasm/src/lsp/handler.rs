@@ -306,6 +306,8 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                     } else {
                         self.log.write("cast failed in didOpen");
                     }
+
+                    return Ok(self.produce_error_list());
                 } else if not.method == "workspace/didChangeWatchedFiles" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
                     let mut matching_file_for_resync = false;
@@ -335,18 +337,15 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                     // ensure that after a reparse we completely dismiss all
                     // errors, but only when selected files are changed.
                     if matching_file_for_resync {
-                        let mut result_messages = Vec::new();
-
-                        let to_reparse_docs = self.get_doc_keys();
+                        let to_reparse_docs = self.get_doc_keys().to_vec();
 
                         for docname in to_reparse_docs.iter() {
-                            let mut errors =
-                                self.parse_document_and_output_errors(docname);
-                            result_messages.append(&mut errors);
+                            self.parse_document_and_store_errors(docname);
                         }
-
-                        return Ok(result_messages);
                     }
+
+                    let error_msgs = self.produce_error_list();
+                    return Ok(error_msgs);
                 } else if not.method == "textDocument/didChange" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
                     if let Ok(params) =
@@ -354,19 +353,14 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                     {
                         let doc_id = params.text_document.uri.to_string();
 
-                        if doc_id.ends_with("chialisp.json") {
-                            if let Some(config) = self.reconfigure() {
-                                // We have a config file and can read the filesystem.
-                                self.log.write("reconfigured");
-                                self.config = config;
-                            }
-                        }
-
                         self.apply_document_patch(
                             &doc_id,
                             params.text_document.version,
                             &params.content_changes,
                         );
+
+                        let error_msgs = self.produce_error_list();
+                        return Ok(error_msgs);
                     } else {
                         self.log.write("case failed in didChange");
                     }

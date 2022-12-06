@@ -166,8 +166,8 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         params: &CompletionParams,
     ) -> Result<Vec<Message>, String> {
         let uristring = params.text_document_position.text_document.uri.to_string();
-
-        let mut res = self.parse_document_and_output_errors(&uristring);
+        self.parse_document_and_store_errors(&uristring);
+        let mut res = self.produce_error_list();
 
         self.with_doc_and_parsed(&uristring, |doc, output| {
             if let Some(cpl) = get_positional_text(doc, &params.text_document_position.position) {

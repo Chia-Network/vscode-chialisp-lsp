@@ -10,10 +10,10 @@ use std::rc::Rc;
 use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
 use lsp_types::{
-    CodeActionKind, CodeActionProviderCapability, CodeActionOptions, CompletionOptions, Diagnostic, ExecuteCommandParams, InitializeParams, OneOf, Position, PublishDiagnosticsParams,
+    CodeActionKind, CodeActionProviderCapability, CodeActionOptions, CompletionOptions, Diagnostic, InitializeParams, OneOf, Position, PublishDiagnosticsParams,
     Range, SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions,
     SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkDoneProgressParams
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions
 };
 
 use percent_encoding::percent_decode;
@@ -371,6 +371,22 @@ pub enum InitState {
     Initialized(Rc<InitializeParams>),
 }
 
+#[derive(Default)]
+pub struct ErrorSet {
+    preprocessing: Vec<Diagnostic>,
+    semantic: Vec<Diagnostic>,
+}
+
+impl ErrorSet {
+    pub fn from_preprocessing(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: v, semantic: vec![] }
+    }
+
+    pub fn from_semantic(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: vec![], semantic: v }
+    }
+}
+
 pub struct LSPServiceProvider {
     // Init params.
     pub fs: Rc<dyn IFileReader>,
@@ -387,6 +403,9 @@ pub struct LSPServiceProvider {
     pub parsed_documents: HashMap<String, ParsedDoc>,
     pub goto_defs: HashMap<String, BTreeMap<SemanticTokenSortable, Srcloc>>,
 
+    // Collection of all known errors we're throwing.
+    pub thrown_errors: HashMap<String, ErrorSet>,
+
     // Prim list so we can tell if the first atom is a clvm atom.
     pub prims: Vec<Vec<u8>>,
 
@@ -394,73 +413,109 @@ pub struct LSPServiceProvider {
     pub workspace_file_extensions_to_resync_for: Vec<String>,
 }
 
+fn urlify(u: &String) -> String {
+    if !u.starts_with("file://") {
+        format!("file://{}", u)
+    } else {
+        u.clone()
+    }
+}
+
 impl LSPServiceProvider {
-    pub fn parse_document_and_output_errors(&mut self, uristring: &str) -> Vec<Message> {
-        let mut res = Vec::new();
+    pub fn produce_error_list(&self) -> Vec<Message> {
+        let mut all_errors = Vec::new();
+        let tour_documents: Vec<String> = self.parsed_documents.keys().map(|u| {
+            urlify(u)
+        }).collect();
 
-        self.ensure_parsed_document(uristring);
-        if let (Some(d), Some(p)) = (self.get_doc(uristring), self.get_parsed(uristring)) {
-            let mut errors = Vec::new();
-
-            let missing_includes = self.check_for_missing_include_files(uristring);
-            let mut include_diagnostics: Vec<Diagnostic> = missing_includes.iter().map(|i| {
-                Diagnostic {
-                    range: DocRange::from_srcloc(i.nl.clone()).to_range(),
-                    severity: None,
-                    code: None,
-                    code_description: None,
-                    source: Some("chialisp".to_string()),
-                    message: format!("missing include file {} or path not set", decode_string(&i.filename)),
-                    tags: None,
-                    related_information: None,
-                    data: None,
+        for uristring in tour_documents.iter() {
+            if let Some(err) = self.thrown_errors.get(uristring) {
+                if !err.preprocessing.is_empty() {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: err.preprocessing.clone(),
+                        })
+                            .unwrap(),
+                    }));
+                } else if !err.semantic.is_empty() {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: err.semantic.clone(),
+                        })
+                            .unwrap(),
+                    }));
+                } else {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: vec![]
+                        })
+                            .unwrap(),
+                    }));
                 }
-            }).collect();
-
-            for mi in missing_includes.iter() {
-                // Send command to show the status bar item.
-                res.push(Message::Notification(Notification {
-                    method: "workspace/executeCommand".to_string(),
-                    params: serde_json::to_value(ExecuteCommandParams {
-                        command: "chialisp.locateIncludeFile".to_string(),
-                        arguments: vec![serde_json::to_value(decode_string(&mi.filename)).unwrap()],
-                        work_done_progress_params: WorkDoneProgressParams {
-                            work_done_token: None
-                        }
-                    }).unwrap()
-                }));
-            }
-
-            errors.append(&mut include_diagnostics);
-
-            for error in p.errors.iter() {
-                errors.push(Diagnostic {
-                    range: DocRange::from_srcloc(error.0.clone()).to_range(),
-                    severity: None,
-                    code: None,
-                    code_description: None,
-                    source: Some("chialisp".to_string()),
-                    message: error.1.clone(),
-                    tags: None,
-                    related_information: None,
-                    data: None,
-                });
-            }
-
-            if !errors.is_empty() || d.version > 1 {
-                res.push(Message::Notification(Notification {
-                    method: "textDocument/publishDiagnostics".to_string(),
-                    params: serde_json::to_value(PublishDiagnosticsParams {
-                        uri: Url::parse(uristring).unwrap(),
-                        version: None,
-                        diagnostics: errors,
-                    })
-                    .unwrap(),
-                }));
             }
         }
+        all_errors
+    }
 
-        res
+    // Set errors of a given kind for the indicated source file.
+    pub fn set_error_list(&mut self, uristring: &str, preprocessing: bool, errors: Vec<Diagnostic>) {
+        if preprocessing {
+            // Remove semantic errors if errors is not empty, otherwise, clear
+            // preprocessing errors.
+            if let Some(eset) = self.thrown_errors.get_mut(uristring) {
+                if !errors.is_empty() {
+                    eset.semantic.clear();
+                }
+
+                eset.preprocessing = errors;
+            } else {
+                // no previous entry, so just set it.
+                self.thrown_errors.insert(
+                    uristring.to_owned(),
+                    ErrorSet::from_preprocessing(errors)
+                );
+            }
+        } else {
+            if let Some(eset) = self.thrown_errors.get_mut(uristring) {
+                eset.semantic = errors;
+            } else {
+                self.thrown_errors.insert(
+                    uristring.to_owned(),
+                    ErrorSet::from_semantic(errors)
+                );
+            }
+        }
+    }
+
+    // For a given document refresh preprocessing errors.
+    pub fn parse_document_and_store_errors(&mut self, uristring: &str) {
+        self.ensure_parsed_document(uristring);
+
+        let missing_includes = self.check_for_missing_include_files(uristring);
+        let errors = missing_includes.iter().map(|i| {
+            Diagnostic {
+                range: DocRange::from_srcloc(i.nl.clone()).to_range(),
+                severity: None,
+                code: None,
+                code_description: None,
+                source: Some("chialisp".to_string()),
+                message: format!("missing include file {} or path not set", decode_string(&i.filename)),
+                tags: None,
+                related_information: None,
+                data: None,
+            }
+        }).collect();
+
+        self.set_error_list(uristring, true, errors);
     }
 
     pub fn with_doc_and_parsed<F, G>(&mut self, uristring: &str, f: F) -> Option<G>
@@ -553,7 +608,6 @@ impl LSPServiceProvider {
                         .and_then(|r| r.join(filename).to_str().map(|f| f.to_owned()))
                     {
                         self.save_doc(file_uri.clone(), file_body);
-                        self.ensure_parsed_document(&file_uri);
                         if let Some(p) = self.get_parsed(&file_uri) {
                             for (hash, helper) in p.helpers.iter() {
                                 new_helpers.helpers.insert(hash.clone(), helper.clone());
@@ -563,9 +617,25 @@ impl LSPServiceProvider {
                 }
             }
 
+            let new_parse =
+                combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+            self.set_error_list(uristring, false, new_parse.errors.iter().map(|error| {
+                Diagnostic {
+                    range: DocRange::from_srcloc(error.0.clone()).to_range(),
+                    severity: None,
+                    code: None,
+                    code_description: None,
+                    source: Some("chialisp".to_string()),
+                    message: error.1.clone(),
+                    tags: None,
+                    related_information: None,
+                    data: None,
+                }
+            }).collect());
+
             self.save_parse(
                 uristring.to_owned(),
-                combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers),
+                new_parse,
             );
         }
     }
@@ -627,6 +697,7 @@ impl LSPServiceProvider {
 
             parsed_documents: HashMap::new(),
             goto_defs: HashMap::new(),
+            thrown_errors: HashMap::new(),
 
             workspace_file_extensions_to_resync_for: vec![
                 ".clsp",

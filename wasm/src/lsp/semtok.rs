@@ -571,7 +571,8 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
         params: &SemanticTokensParams,
     ) -> Result<Vec<Message>, String> {
         let uristring = params.text_document.uri.to_string();
-        let mut res = self.parse_document_and_output_errors(&uristring);
+        self.parse_document_and_store_errors(&uristring);
+        let mut res = Vec::new();
 
         if let (Some(doc), Some(frontend)) = (self.get_doc(&uristring), self.get_parsed(&uristring))
         {
@@ -591,6 +592,8 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
             self.goto_defs.insert(uristring.clone(), our_goto_defs);
             res.push(Message::Response(resp));
         }
+
+        res.append(&mut self.produce_error_list());
 
         Ok(res)
     }

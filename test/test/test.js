@@ -55,14 +55,23 @@ async function hover(element) {
     await actions.move({origin: element}).perform();
 }
 
-async function sendControlP(element) {
+async function sendControlChar(char) {
     const actions = driver.actions({async: true});
     if (os.platform() === 'darwin') {
-      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys('p').keyUp(Key.COMMAND).pause(500).perform();
+      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys(char).keyUp(Key.COMMAND).pause(500).perform();
     } else {
-      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys('p').keyUp(Key.CONTROL).pause(500).perform();
+      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys(char).keyUp(Key.CONTROL).pause(500).perform();
     }
 }
+
+async function pressTab() {
+    const actions = driver.actions({async: true});
+    await actions.pause(500).keyDown(Key.TAB).keyUp(Key.TAB).perform();
+}
+
+async function sendControlA() { await sendControlChar('a'); }
+async function sendControlH() { await sendControlChar('h'); }
+async function sendControlP() { await sendControlChar('p'); }
 
 async function wait(secs) {
     const actions = driver.actions({async: true});
@@ -74,12 +83,21 @@ async function sendReturn() {
     await actions.pause(2000).keyDown(Key.RETURN).keyUp(Key.RETURN).pause(500).perform();
 }
 
+async function sendEscape() {
+    const actions = driver.actions({async: true});
+    await actions.pause(2000).keyDown(Key.ESCAPE).keyUp(Key.ESCAPE).pause(500).perform();
+}
+
 function byVisibleText(str) {
     return By.xpath(`//*[contains(text(),'${str}')]`);
 }
 
 function byExactText(str) {
     return By.xpath(`//*[text()='${str}']`);
+}
+
+function byAttribute(attr,val) {
+    return By.xpath(`//*[@${attr}='${val}']`);
 }
 
 async function openFile(file) {
@@ -91,6 +109,33 @@ async function openFile(file) {
 
         let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
         await sendReturn();
+}
+
+async function replaceString(olds, news) {
+    await sendControlH();
+
+    console.log('rename a function so some errors appear');
+    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Find")));
+    await inputBox.click();
+    await sendControlA();
+    await inputBox.sendKeys(olds);
+
+    inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace")));
+    await inputBox.click();
+    await sendControlA();
+    await inputBox.sendKeys(news);
+
+    let nextMatchButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Next Match (Enter)")));
+    await nextMatchButton.click();
+
+    let replaceButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace (Enter)")));
+    await replaceButton.click();
+
+    let closeButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
+    await closeButton.click();
+
+    const actions = driver.actions({async: true});
+    await actions.pause(3000).perform();
 }
 
 // Define a category of tests using test framework, in this case Jasmine
@@ -141,9 +186,9 @@ describe("Basic element tests", function() {
         console.log('click install');
         await installChoice.click();
 
-	await sendReturn();
+	      await sendReturn();
 
-	await openFile('collatz.cl');
+	      await openFile('collatz.cl');
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
@@ -180,15 +225,15 @@ describe("Basic element tests", function() {
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
         okBox.click();
 
-	await wait(3.0);
+	      await wait(3.0);
 
         console.log('Check the content of chialisp.json');
-	await openFile("chialisp.json");
+	      await openFile("chialisp.json");
 
         console.log('Check content');
         let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
 
-	await openFile("collatz.cl");
+	      await openFile("collatz.cl");
 
         console.log('comments should move');
         let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
@@ -198,7 +243,19 @@ describe("Basic element tests", function() {
         let squigglies = await driver.findElements(By.css('.squiggly-error'));
         expect(squigglies.length).toBe(0);
 
+        console.log('change an instance of odd to obd');
+        await replaceString('odd', 'obd');
+
+        console.log('check for squigglies caused by rename');
+        squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(1);
+
+        console.log('change back to see the error disappear');
+        await replaceString('obd', 'odd');
+        squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(0);
+
         // Ok, the above didn't throw so we succeeded.
-        console.log('we found the styled elements');
+        console.log('all things we know how to test passed so far');
     });
 });

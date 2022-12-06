@@ -25,7 +25,7 @@ use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::types::{
-    ConfigJson, DocData, DocPosition, DocRange, EPrintWriter, FSFileReader,
+    ConfigJson, DocData, DocPosition, DocRange, EPrintWriter, FSFileReader, IFileReader
 };
 use clvm_tools_rs::compiler::prims;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -160,6 +160,9 @@ fn can_receive_did_open_file_and_give_semantic_tokens() {
     let r2 = lsp
         .handle_message(&sem_tok)
         .expect("should be ok to send sem tok");
+    for msg in r2.iter() {
+        eprintln!(">> {}", serde_json::to_value(msg).unwrap().to_string());
+    }
     let decoded_tokens: SemanticTokens = serde_json::from_str(&get_msg_params(&r2[0])).unwrap();
     assert_eq!(
         decoded_tokens.data,
