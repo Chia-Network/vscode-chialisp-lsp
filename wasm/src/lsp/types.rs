@@ -20,6 +20,7 @@ use percent_encoding::percent_decode;
 use serde::{Deserialize, Serialize};
 use url::{Host, Url};
 
+use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
 use crate::lsp::parse::{make_simple_ranges, IncludeKind, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
@@ -119,46 +120,6 @@ impl HasFilePath for Url {
             return file_url_segments_to_pathbuf(host, segments);
         }
         Err(ToFilePathErr)
-    }
-}
-
-pub trait IFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String>;
-}
-
-pub trait ILogWriter {
-    fn write(&self, text: &str);
-}
-
-#[derive(Default)]
-pub struct FSFileReader {}
-
-impl IFileReader for FSFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String> {
-        std::fs::read(name).map_err(|e| format!("{:?}", e))
-    }
-}
-
-impl FSFileReader {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
-#[derive(Default)]
-pub struct EPrintWriter {}
-
-impl ILogWriter for EPrintWriter {
-    fn write(&self, text: &str) {
-        eprintln!("{}", text);
-    }
-}
-
-impl EPrintWriter {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
     }
 }
 

@@ -11,8 +11,9 @@ use clvm_tools_rs::compiler::compiler::{
     compile_pre_forms, create_prim_map, KNOWN_DIALECTS, STANDARD_MACROS,
 };
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
+use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
-use crate::lsp::types::{DocData, IFileReader, ILogWriter};
+use crate::lsp::types::DocData;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 

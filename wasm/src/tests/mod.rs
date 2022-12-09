@@ -24,9 +24,8 @@ use clvm_tools_rs::compiler::comptypes::CompilerOpts;
 use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
-use crate::lsp::types::{
-    ConfigJson, DocData, DocPosition, DocRange, EPrintWriter, FSFileReader
-};
+use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange};
+use crate::interfaces::{EPrintWriter, FSFileReader};
 use clvm_tools_rs::compiler::prims;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
