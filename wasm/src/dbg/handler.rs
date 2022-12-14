@@ -76,6 +76,7 @@ pub struct RunningDebugger {
     target_depth: Option<TargetDepth>,
     stopped_reason: Option<StoppedReason>,
 
+    source_file: String,
     compiled: Option<CompileForm>,
 
     running: bool,
@@ -355,6 +356,7 @@ fn try_locate_source_file(
 }
 
 struct RunStartData {
+    source_file: String,
     program: Rc<SExp>,
     program_lines: Vec<String>,
     arguments: Rc<SExp>,
@@ -363,6 +365,7 @@ struct RunStartData {
     compiled: Option<CompileForm>
 }
 
+#[derive(Clone, Debug)]
 enum SrclocParseAction {
     ReadingFileName,
     ReadingLineNumber(usize, usize),
@@ -377,7 +380,7 @@ struct ParsedSrclocPart {
     ext: Option<usize>
 }
 
-fn parse_srcloc(s: &str) -> Option<Srcloc> {
+pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
     let parse_one_loc = |skip| {
         let mut parse_state = SrclocParseAction::ReadingFileName;
         for (i,ch) in s.as_bytes().iter().skip(skip).copied().enumerate() {
@@ -430,6 +433,7 @@ fn parse_srcloc(s: &str) -> Option<Srcloc> {
                 }
             }
         }
+
         if let SrclocParseAction::ReadingColumn(f, line, col, ext) = parse_state {
             Some(ParsedSrclocPart {
                 file: s.as_bytes().iter().copied().take(f).collect(),
@@ -450,13 +454,17 @@ fn parse_srcloc(s: &str) -> Option<Srcloc> {
                 parsed.line,
                 parsed.col
             );
-        parsed.ext.and_then(parse_one_loc).map(|second| {
-            if second.file != parsed.file {
-                // Incomplete range, treat the head as a marker.
-                return loc;
-            }
-            loc.ext(&Srcloc::new(filename_rc, second.line, second.col))
-        })
+        if let Some(ext) = parsed.ext {
+            parse_one_loc(ext).map(|second| {
+                if second.file != parsed.file {
+                    // Incomplete range, treat the head as a marker.
+                    return loc;
+                }
+                loc.ext(&Srcloc::new(filename_rc, second.line, second.col))
+            })
+        } else {
+            Some(loc)
+        }
     })
 }
 
@@ -488,13 +496,23 @@ impl Debugger {
         sfargs: &SourceArguments
     ) -> Option<ResponseBody> {
         self.log.write(&format!("get_source_file {:?}", sfargs));
-        None
-        /*
-         Some(ResponseBody::Source(SourceResponse {
-             content: "".to_string(),
-             mime_type: Some("text/plain".to_owned())
-         }))
-         */
+        sfargs.source
+            .as_ref()
+            .and_then(|s| s.name.as_ref())
+            .and_then(|n| {
+                PathBuf::from(&running.source_file)
+                    .parent()
+                    .map(|p| (n,p.to_owned()))
+            }).map(|(n,p)| p.join(n)).and_then(|path| {
+                path.to_str().map(|x| x.to_owned())
+            }).and_then(|path_string| {
+                self.fs.read(&path_string).ok()
+            }).map(|content| {
+                ResponseBody::Source(SourceResponse {
+                    content: decode_string(&content),
+                    mime_type: Some("text/plain".to_owned())
+                })
+            })
     }
 
     fn get_scope_source(
@@ -527,7 +545,8 @@ impl Debugger {
         name: &str,
         read_in_file: &[u8]
     ) -> Result<RunStartData, String> {
-        let program_lines: Vec<String> = read_in_file.lines().map(|x| x.unwrap()).collect();
+        let program_lines: Vec<String> =
+            read_in_file.lines().map(|x| x.unwrap()).collect();
         let parse_err_map = |e: (Srcloc, String)| format!("{}: {}", e.0, e.1);
         let compile_err_map = |e: CompileErr| format!("{}: {}", e.0, e.1);
         let run_err_map = |e: RunFailure| {
@@ -606,6 +625,7 @@ impl Debugger {
         let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
 
         return Ok(RunStartData {
+            source_file: name.to_owned(),
             program: parsed_program.clone(),
             program_lines: program_lines,
             arguments: arguments.clone(),
@@ -652,6 +672,7 @@ impl Debugger {
             stopped_reason: None,
             target_depth: None,
             result: None,
+            source_file: launch_data.source_file,
             compiled: launch_data.compiled
         });
 
@@ -751,7 +772,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         seq: self.msg_seq,
                         message: MessageKind::Response(Response {
                             request_seq: pm.seq,
-                            success: false,
+                            success: true,
                             message: None,
                             body: source_lookup
                         })
@@ -784,9 +805,10 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         .map(|s| {
                             let loc = self.get_source_loc(&r, &s.name).
                                 unwrap_or_else(|| s.source.clone());
+                            let filename_borrowed: &String = loc.file.borrow();
                             StackFrame {
                                 id: s.scope_id as i32,
-                                name: s.name.clone(),
+                                name: filename_borrowed.clone(),
                                 source: self.get_scope_source(&r, &s),
                                 line: loc.line as u32,
                                 column: loc.col as u32,
