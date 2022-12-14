@@ -18,8 +18,6 @@ var log = {
 	write: emptyWriteLog
 };
 
-let awaiting_init_msg = true;
-
 let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
     try {
         return fs.readFileSync(name, 'utf8');
@@ -67,6 +65,7 @@ stdin_reader.remaining_bytes = 0;
 stdin_reader.deliver_msg = function(m) {
     let messages = [];
     try {
+        log.write(`input msg ${m}`);
         messages = clvm_tools_rs.dbg_service_handle_msg(lsp_id, m);
     } catch (e) {
         log.write('exn: ' + e + '\n');
@@ -112,14 +111,14 @@ process.stdin.on('data', function(chunk) {
     for (var i = 0; i < chunk.length; ) {
         let ch = chunk[i];
         let do_inc = 1;
-        if (stdin_reader.mode == START_HEADER) {
-            if (ch == '\r' || ch == '\n') {
+        if (stdin_reader.mode === START_HEADER) {
+            if (ch === '\r' || ch === '\n') {
                 let line = stdin_reader.message_header.split(':');
                 stdin_reader.message_header = '';
                 if (line[0].match(/[Cc]ontent-[Ll]ength/) && line.length > 1) {
                     stdin_reader.remaining_bytes = parseInt(line[1].trim());
                 }
-                if (ch == '\r') {
+                if (ch === '\r') {
                     stdin_reader.mode = EOL_RETURN;
                 } else {
                     stdin_reader.mode = FIRST_EOL;
@@ -128,20 +127,20 @@ process.stdin.on('data', function(chunk) {
                 stdin_reader.message_header += ch;
             }
         } else if (stdin_reader.mode == EOL_RETURN) {
-            if (ch == '\n') {
+            if (ch === '\n') {
                 stdin_reader.mode = FIRST_EOL;
             }
         } else if (stdin_reader.mode == FIRST_EOL) {
-            if (ch == '\r') {
+            if (ch === '\r') {
                 stdin_reader.mode = MAYBE_SECOND_EOL;
-            } else if (ch == '\n') {
+            } else if (ch === '\n') {
                 stdin_reader.mode = MESSAGE_READ;
             } else {
                 stdin_reader.mode = START_HEADER;
                 stdin_reader.message_header += ch;
             }
         } else if (stdin_reader.mode == MAYBE_SECOND_EOL) {
-            if (ch == '\n') {
+            if (ch === '\n') {
                 stdin_reader.mode = MESSAGE_READ;
             }
         } else { // MESSAGE_READ

@@ -117,6 +117,14 @@ async function forkToPipe(pipeName: string, modulePath: string) {
                 targetPipe.on('data', (b) => {
                     newProcess?.stdin?.write(b);
                 });
+                targetPipe.on('close', () => {
+                    log.info('close connection');
+                    newProcess?.kill();
+                    runningSubprocess.running = undefined;
+                    runningSubprocess.pipe = undefined;
+                    runningSubprocess.stdin = undefined;
+                    runningSubprocess.stdout = undefined;
+                });
                 newProcess.once('exit', () => {
                     log.info(`debug subprocess exited`);
                     targetPipe.end();
@@ -146,7 +154,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
     log.info(`selfExtension path ${extensionPath}`);
     const modulePath = path.join(extensionPath, "debug/build/runner.js");
 
-    const debugAdapter = {
+    const debugAdapter: vscode.DebugAdapterDescriptorFactory = {
         createDebugAdapterDescriptor: (session: vscode.DebugSession, executable: vscode.DebugAdapterExecutable | undefined) => {
             log.info(`on:createDebugAdapterDescriptor ${stringify([session,executable])}`);
             if (process.env.CHIALISP_DBG) {
@@ -173,6 +181,35 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
     log.info(`registration ${adapterRegistration}`);
     context.subscriptions.push(adapterRegistration);
 
+    var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider("chialisp", {
+        provideDebugConfigurations: async (folder, token) => {
+            return [{
+                name: "chialisp",
+                type: "chialisp",
+                request: "launch",
+                program: "${workspaceFolder}/program.clvm.hex",
+                stopOnEntry: false,
+                yieldSteps: 4096,
+                onlyDebugGlob: "<${workspaceFolder}/**/*>"
+            }];
+        },
+        resolveDebugConfiguration: async (folder, config, token) => {
+            if (!config.type) {
+                return {
+                    name: "${fileBasename}",
+                    type: "chialisp",
+                    request: "launch",
+                    program: "${file}"
+                };
+            }
+            return config;
+        },
+        resolveDebugConfigurationWithSubstitutedVariables: async (folder, debugConfiguration, token) => {
+            // We can do the rest of our checking server side.
+            return debugConfiguration;
+        }
+    });
+
     context.subscriptions.push(
         vscode.commands.registerCommand(
             `${extensionName}.startDebug`,
@@ -197,11 +234,11 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
                     type: extensionName,
                     request: "launch",
                     stopOnEntry: true,
-                    yieldSteps: 4096
+                    yieldSteps: 4096,
                 };
 
                 log.info(`debug session starting with ${stringify(options)}`);
-                vscode.debug.startDebugging(folder, options);
+                return vscode.debug.startDebugging(folder, options);
             }
         )
     );
