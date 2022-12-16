@@ -141,6 +141,26 @@ fn test_file_segments_to_pathbuf_3() {
     );
 }
 
+#[test]
+fn test_file_segments_to_pathbuf_4() {
+    assert_eq!(
+        Url::parse("file:").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_5() {
+    assert_eq!(
+        Url::parse("file:///").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
 pub fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
 where
     R: lsp_types::request::Request,
