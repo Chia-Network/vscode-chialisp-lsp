@@ -170,6 +170,7 @@ where
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+// DocPosition is 0-based
 pub struct DocPosition {
     pub line: u32,
     pub character: u32,
@@ -220,6 +221,7 @@ impl DocRange {
     }
     */
 
+    // DocPosition is 0 based.  Srcloc is 1 based.
     pub fn from_srcloc(l: Srcloc) -> Self {
         let e = l.ending();
         DocRange {
@@ -327,4 +329,26 @@ fn test_docrange_overlap_same_line_yes() {
         }),
         true
     );
+}
+
+#[test]
+fn test_invalid_zero_srcloc_leads_to_zero_position() {
+    assert_eq!(
+        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
+        DocRange {
+            start: DocPosition { line: 0, character: 0 },
+            end: DocPosition { line: 0, character: 0 }
+        }
+    );
+}
+
+#[test]
+fn test_doc_range_overlap_at_zero() {
+    assert!(DocRange {
+        start: DocPosition { line: 0, character: 0 },
+        end: DocPosition { line: 0, character: 2 }
+    }.overlap(&DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 3 }
+    }));
 }
