@@ -131,6 +131,16 @@ fn test_file_segments_to_pathbuf_2() {
     );
 }
 
+#[test]
+fn test_file_segments_to_pathbuf_3() {
+    assert_eq!(
+        Url::parse("").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        Err(())
+    );
+}
+
 pub fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
 where
     R: lsp_types::request::Request,
