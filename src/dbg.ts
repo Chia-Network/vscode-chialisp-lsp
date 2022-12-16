@@ -6,9 +6,9 @@ import * as net from 'net';
 import {Stream, Writable} from 'stream';
 import {ChildProcess, fork, ForkOptions} from 'child_process';
 
-import {publisher, extensionName} from './constants'
-import {logger, log, stringify} from './logger';
-import {EmptyDisposable, isspace, guessFileType} from './utils'
+import {publisher, extensionName} from './constants';
+import {log, stringify} from './logger';
+import {EmptyDisposable, isspace, guessFileType} from './utils';
 
 // Thanks: https://github.com/mfine15/vscode-languageclient/blob/082cf5541e3568111c69710fbac189f467acf552/src/utils/electron.ts
 // The debug extesion adapter doesn't support a simple child_process runner as
