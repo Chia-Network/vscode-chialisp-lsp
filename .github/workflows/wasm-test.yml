@@ -1,0 +1,39 @@
+name: Wasm Test
+
+on:
+  push:
+    branches:
+      - "main"
+      - "dev"
+      - "base"
+
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set Job Env
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: Chia-Network/actions/setjobenv@main
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            target: wasm32-unknown-unknown
+            override: true
+            components: rustfmt
+      - name: Install wasm-pack
+        run: |
+          cargo install wasm-pack
+      - name: Run tests
+        run: |
+          cd wasm && cargo test

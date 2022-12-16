@@ -9,4 +9,5 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 runner/node_modules
-clvm_tools_rs
+wasm/src
+wasm/target
