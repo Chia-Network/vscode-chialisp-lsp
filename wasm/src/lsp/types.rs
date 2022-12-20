@@ -442,8 +442,8 @@ fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
     }
 }
 
-// Note: This is a test in this language.  Readers find segregated tests confusing
-// so tests are inline.
+// Note: This is a test in this language.  Readers find non-segregated tests an
+// easier read so tests are inline.
 #[test]
 fn test_doc_data_nth_line_ref_1() {
     let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
