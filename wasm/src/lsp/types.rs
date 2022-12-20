@@ -475,7 +475,6 @@ fn test_doc_data_get_prev_position_1() {
     while let Some(p) = &position {
         if let Some((ch, new_position)) = dd.get_prev_position(p) {
             if new_position.line != p.line {
-                eprintln!("jump from {:?} to {:?} char {}", p, new_position, ch as char);
                 have_line_jumps.push(got_characters.len());
             }
             position = Some(new_position);
