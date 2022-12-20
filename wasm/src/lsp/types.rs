@@ -2,15 +2,12 @@ use std::borrow::Borrow;
 use std::cmp::PartialOrd;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use lsp_server::{ExtractError, Request, RequestId};
 
-use lsp_types::{
-    Position,
-    Range, SemanticTokenModifier, SemanticTokenType
-};
+use lsp_types::{Position, Range, SemanticTokenModifier, SemanticTokenType};
 
 use percent_encoding::percent_decode;
 use url::{Host, Url};
@@ -111,14 +108,16 @@ impl HasFilePath for Url {
 }
 
 #[cfg(test)]
-fn uniterr<A>(_: A) -> () { () }
+fn uniterr<A>(_: A) -> () {
+    ()
+}
 
 #[test]
 fn test_file_segments_to_pathbuf_1() {
     assert_eq!(
-        Url::parse("fink:::::not/good").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("fink:::::not/good")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         Err(())
     );
 }
@@ -126,9 +125,9 @@ fn test_file_segments_to_pathbuf_1() {
 #[test]
 fn test_file_segments_to_pathbuf_2() {
     assert_eq!(
-        Url::parse("file:///home/person/stuff.txt").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:///home/person/stuff.txt")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/home/person/stuff.txt").map_err(uniterr)
     );
 }
@@ -136,9 +135,9 @@ fn test_file_segments_to_pathbuf_2() {
 #[test]
 fn test_file_segments_to_pathbuf_3() {
     assert_eq!(
-        Url::parse("").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         Err(())
     );
 }
@@ -146,9 +145,9 @@ fn test_file_segments_to_pathbuf_3() {
 #[test]
 fn test_file_segments_to_pathbuf_4() {
     assert_eq!(
-        Url::parse("file:").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/").map_err(uniterr)
     );
 }
@@ -156,9 +155,9 @@ fn test_file_segments_to_pathbuf_4() {
 #[test]
 fn test_file_segments_to_pathbuf_5() {
     assert_eq!(
-        Url::parse("file:///").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:///")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/").map_err(uniterr)
     );
 }
@@ -200,7 +199,6 @@ impl DocPosition {
             line: pos.line,
             character: pos.character,
         }
-
     }
 
     pub fn to_position(&self) -> Position {
@@ -281,11 +279,24 @@ impl DocRange {
 fn test_docrange_overlap_no() {
     assert_eq!(
         DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 1, character: 2 },
-            end: DocPosition { line: 2, character: 3 }
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 3,
+                character: 4
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 1,
+                character: 2
+            },
+            end: DocPosition {
+                line: 2,
+                character: 3
+            }
         }),
         false
     );
@@ -295,11 +306,24 @@ fn test_docrange_overlap_no() {
 fn test_docrange_overlap_yes() {
     assert_eq!(
         DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 3, character: 2 },
-            end: DocPosition { line: 3, character: 8 }
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 3,
+                character: 4
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 3,
+                character: 2
+            },
+            end: DocPosition {
+                line: 3,
+                character: 8
+            }
         }),
         true
     );
@@ -309,11 +333,24 @@ fn test_docrange_overlap_yes() {
 fn test_docrange_overlap_same_line_no() {
     assert_eq!(
         DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 4 }
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 2,
+                character: 7
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 1
+            },
+            end: DocPosition {
+                line: 2,
+                character: 4
+            }
         }),
         false
     );
@@ -323,11 +360,24 @@ fn test_docrange_overlap_same_line_no() {
 fn test_docrange_overlap_same_line_yes() {
     assert_eq!(
         DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 5 }
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 2,
+                character: 7
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 1
+            },
+            end: DocPosition {
+                line: 2,
+                character: 5
+            }
         }),
         true
     );
@@ -338,8 +388,14 @@ fn test_invalid_zero_srcloc_leads_to_zero_position() {
     assert_eq!(
         DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
         DocRange {
-            start: DocPosition { line: 0, character: 0 },
-            end: DocPosition { line: 0, character: 0 }
+            start: DocPosition {
+                line: 0,
+                character: 0
+            },
+            end: DocPosition {
+                line: 0,
+                character: 0
+            }
         }
     );
 }
@@ -347,11 +403,24 @@ fn test_invalid_zero_srcloc_leads_to_zero_position() {
 #[test]
 fn test_doc_range_overlap_at_zero() {
     assert!(DocRange {
-        start: DocPosition { line: 0, character: 0 },
-        end: DocPosition { line: 0, character: 2 }
-    }.overlap(&DocRange {
-        start: DocPosition { line: 0, character: 1 },
-        end: DocPosition { line: 0, character: 3 }
+        start: DocPosition {
+            line: 0,
+            character: 0
+        },
+        end: DocPosition {
+            line: 0,
+            character: 2
+        }
+    }
+    .overlap(&DocRange {
+        start: DocPosition {
+            line: 0,
+            character: 1
+        },
+        end: DocPosition {
+            line: 0,
+            character: 3
+        }
     }));
 }
 
@@ -435,10 +504,10 @@ fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
             vr("(mod (X)"),
             vr(" (defun F (A) (+ A 1)) ;; A function"),
             vr(" (F X) ;; Call"),
-            vr(" )")
+            vr(" )"),
         ],
         version: 1,
-        comments: comment_hashmap
+        comments: comment_hashmap,
     }
 }
 
@@ -447,7 +516,10 @@ fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
 #[test]
 fn test_doc_data_nth_line_ref_1() {
     let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
-    assert_eq!(dd.nth_line_ref(2), Some(&" (F X) ;; Call".as_bytes().to_vec()));
+    assert_eq!(
+        dd.nth_line_ref(2),
+        Some(&" (F X) ;; Call".as_bytes().to_vec())
+    );
 }
 
 #[test]
@@ -460,7 +532,10 @@ fn test_doc_data_nth_line_ref_2() {
 fn test_doc_data_get_prev_position_1() {
     let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
     // Zero based.
-    let mut position = Some(Position { line: 3, character: 2 });
+    let mut position = Some(Position {
+        line: 3,
+        character: 2,
+    });
     let mut all_expected_characters = Vec::new();
     let mut got_characters = Vec::new();
     let mut have_line_jumps = Vec::new();
