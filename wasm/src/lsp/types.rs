@@ -380,6 +380,8 @@ impl DocData {
 
     // Given a position go back one character, returning the character
     // and the new position if they exist.
+    //
+    // This only visits characters in lines, so it will skip blank lines.
     pub fn get_prev_position(&self, position: &Position) -> Option<(u8, Position)> {
         if position.character == 0
             && position.line > 0
