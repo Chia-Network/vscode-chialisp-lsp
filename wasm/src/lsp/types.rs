@@ -418,10 +418,11 @@ impl DocData {
 // not be used as a test in this language.
 #[cfg(test)]
 fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
-    let mut comment_hashmap = HashMap::new();
     // There is a comment at line 2, column 24 and at line 3, column 8
-    comment_hashmap.insert(1, 23);
-    comment_hashmap.insert(2, 7);
+    let comment_hashmap = HashMap::from([
+        (1, 23),
+        (2, 7)
+    ]);
     // vr vec Rc
     let vr = |s: &str| {
         let bv: Vec<u8> = s.as_bytes().to_vec();
