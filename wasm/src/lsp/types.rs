@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cmp::PartialOrd;
-use std::collections::HashMap;
+use std::cmp::{Ordering, PartialOrd};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 #[cfg(test)]
 use std::str::FromStr;
@@ -9,14 +10,15 @@ use std::rc::Rc;
 use lsp_server::{ExtractError, Request, RequestId};
 
 use lsp_types::{
-    Position,
-    Range, SemanticTokenModifier, SemanticTokenType
+    Diagnostic, InitializeParams, Position, Range, SemanticTokenModifier,
+    SemanticTokenType
 };
 
 use percent_encoding::percent_decode;
 use url::{Host, Url};
 
-use clvm_tools_rs::compiler::sexp::decode_string;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, HelperForm};
+use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -110,6 +112,14 @@ impl HasFilePath for Url {
         Err(ToFilePathErr)
     }
 }
+
+pub trait IFileReader {
+    fn read(&self, name: &str) -> Result<Vec<u8>, String>;
+}
+
+pub trait ILogWriter {
+        fn write(&self, text: &str);
+    }
 
 #[cfg(test)]
 fn uniterr<A>(_: A) -> () { () }
@@ -490,4 +500,128 @@ fn test_doc_data_get_prev_position_1() {
 
     assert_eq!(want_line_jumps, have_line_jumps);
     assert_eq!(got_characters, all_expected_characters);
+}
+
+#[derive(Debug, Clone)]
+struct HelperWithDocRange {
+    pub loc: DocRange,
+}
+
+impl PartialEq for HelperWithDocRange {
+    fn eq(&self, other: &Self) -> bool {
+        self.loc == other.loc
+    }
+}
+
+impl PartialOrd for HelperWithDocRange {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.loc.cmp(&other.loc))
+    }
+}
+
+impl Eq for HelperWithDocRange {}
+impl Ord for HelperWithDocRange {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.loc.cmp(&other.loc)
+    }
+}
+
+#[test]
+fn test_helper_with_doc_range() {
+    let sl1 = DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 2 },
+    };
+    let sl2 = DocRange {
+        start: DocPosition { line: 0, character: 2 },
+        end: DocPosition { line: 0, character: 4 },
+    };
+    let hw1 = HelperWithDocRange { loc: sl1 };
+    let hw2 = HelperWithDocRange { loc: sl2 };
+    assert_eq!(hw1, hw1);
+    assert!(hw1 != hw2);
+    assert!(hw1 < hw2);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConfigJson {
+    pub include_paths: Vec<String>,
+}
+
+pub enum InitState {
+    Preconfig,
+    Initialized(Rc<InitializeParams>),
+}
+
+#[derive(Default)]
+pub struct ErrorSet {
+    pub preprocessing: Vec<Diagnostic>,
+    pub semantic: Vec<Diagnostic>,
+}
+
+impl ErrorSet {
+    pub fn from_preprocessing(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: v, semantic: vec![] }
+    }
+
+    pub fn from_semantic(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: vec![], semantic: v }
+    }
+}
+
+#[derive(Debug, Clone)]
+// What kind of scope form led to this binding.
+pub enum ScopeKind {
+    Module,
+    Macro,
+    Function,
+    Let,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+// Various ways chialisp can include a file (compile and embed pending in
+// https://github.com/Chia-Network/clvm_tools_rs/pull/71 )
+pub enum IncludeKind {
+    Include,
+    CompileFile(Srcloc),
+    EmbedFile(Srcloc, Srcloc),
+}
+
+#[derive(Debug, Clone)]
+// Part of a scope stack showing all bindings available in the given region.
+pub struct ParseScope {
+    pub region: Srcloc,
+    pub kind: ScopeKind,
+    pub variables: HashSet<SExp>,
+    pub functions: HashSet<SExp>,
+    pub containing: Vec<ParseScope>,
+}
+
+#[derive(Debug, Clone)]
+// Information about how we produce semantic tokens for include directives.
+// Found is None if we haven't tried to resolve this include yet, Some(true)
+// if we found it, and Some(false) if we tried and it didn't exist.
+pub struct IncludeData {
+    pub loc: Srcloc,
+    pub nl: Srcloc,
+    pub kw: Srcloc,
+    pub kind: IncludeKind,
+    pub filename: Vec<u8>,
+    pub found: Option<bool>
+}
+
+#[derive(Debug, Clone)]
+// A helper (defmacro, defun, etc)  that we parsed alone via document range.
+pub struct ReparsedHelper {
+    pub hash: Vec<u8>,
+    pub range: DocRange,
+    pub parsed: Result<HelperForm, CompileErr>,
+}
+
+#[derive(Debug, Clone)]
+// Information about the main expression in a chialisp program, parsed from a
+// document range.
+pub struct ReparsedExp {
+    pub hash: Vec<u8>,
+    pub parsed: Result<BodyForm, CompileErr>,
 }
