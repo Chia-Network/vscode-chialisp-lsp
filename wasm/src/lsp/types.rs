@@ -6,6 +6,7 @@ use std::default::Default;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::str::FromStr;
 
 use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
@@ -162,6 +163,59 @@ impl EPrintWriter {
     }
 }
 
+#[cfg(test)]
+fn uniterr<A>(_: A) -> () { () }
+
+#[test]
+fn test_file_segments_to_pathbuf_1() {
+    assert_eq!(
+        Url::parse("fink:::::not/good").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        Err(())
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_2() {
+    assert_eq!(
+        Url::parse("file:///home/person/stuff.txt").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/home/person/stuff.txt").map_err(uniterr)
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_3() {
+    assert_eq!(
+        Url::parse("").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        Err(())
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_4() {
+    assert_eq!(
+        Url::parse("file:").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_5() {
+    assert_eq!(
+        Url::parse("file:///").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
 pub fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
 where
     R: lsp_types::request::Request,
@@ -171,6 +225,7 @@ where
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+// DocPosition is 0-based
 pub struct DocPosition {
     pub line: u32,
     pub character: u32,
@@ -210,7 +265,8 @@ impl DocPosition {
 }
 
 impl DocRange {
-    // Not currently used
+    // Not currently used, therefore causing a clippy violation if uncommented.
+    // This can potentially be useful.
     /*
     pub fn from_range(r: &Range) -> Self {
         DocRange {
@@ -220,6 +276,7 @@ impl DocRange {
     }
     */
 
+    // DocPosition is 0 based.  Srcloc is 1 based.
     pub fn from_srcloc(l: Srcloc) -> Self {
         let e = l.ending();
         DocRange {
@@ -273,15 +330,97 @@ impl DocRange {
     }
 }
 
+#[test]
+fn test_docrange_overlap_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 1, character: 2 },
+            end: DocPosition { line: 2, character: 3 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 3, character: 2 },
+            end: DocPosition { line: 3, character: 8 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 4 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 5 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_invalid_zero_srcloc_leads_to_zero_position() {
+    assert_eq!(
+        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
+        DocRange {
+            start: DocPosition { line: 0, character: 0 },
+            end: DocPosition { line: 0, character: 0 }
+        }
+    );
+}
+
+#[test]
+fn test_doc_range_overlap_at_zero() {
+    assert!(DocRange {
+        start: DocPosition { line: 0, character: 0 },
+        end: DocPosition { line: 0, character: 2 }
+    }.overlap(&DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 3 }
+    }));
+}
+
+// An object that contains the literal text of a document we're working with in
+// the LSP.
 #[derive(Debug, Clone)]
 pub struct DocData {
     pub fullname: String,
     pub text: Vec<Rc<Vec<u8>>>,
     pub version: i32,
+    // Zero based.
     pub comments: HashMap<usize, usize>,
 }
 
 impl DocData {
+    // Return a reference to the nth line's data.
     pub fn nth_line_ref(&self, line: usize) -> Option<&Vec<u8>> {
         if line < self.text.len() {
             let borrowed: &Vec<u8> = self.text[line].borrow();
@@ -293,6 +432,8 @@ impl DocData {
 
     // Given a position go back one character, returning the character
     // and the new position if they exist.
+    //
+    // This only visits characters in lines, so it will skip blank lines.
     pub fn get_prev_position(&self, position: &Position) -> Option<(u8, Position)> {
         if position.character == 0
             && position.line > 0
@@ -766,4 +907,84 @@ impl LSPServiceProvider {
             .map(|d| stringify_doc(&d.text))
             .unwrap_or_else(|| Err(format!("don't have file {}", filename)))
     }
+}
+
+// Note: This is using a directive that ensures that this code is only included
+// in the test build.  It is not necessary to be concerned that it will be
+// included in another configuration.  Although it's name contains test, it will
+// not be used as a test in this language.
+#[cfg(test)]
+fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
+    // There is a comment at line 2, column 24 and at line 3, column 8
+    let comment_hashmap = HashMap::from([
+        (1, 23),
+        (2, 7)
+    ]);
+    // vr vec Rc
+    let vr = |s: &str| {
+        let bv: Vec<u8> = s.as_bytes().to_vec();
+        Rc::new(bv)
+    };
+    DocData {
+        // Note: this structure contains owned objects such as strings and vecs.
+        // The ownership is intended.
+        fullname: "test_name.clsp".to_string(),
+        // Note: This vec contains reference counted lines so patches can move
+        // them without cloning them.  The Rc here, as well as the string
+        // ownership are intended.
+        text: vec![
+            vr("(mod (X)"),
+            vr(" (defun F (A) (+ A 1)) ;; A function"),
+            vr(" (F X) ;; Call"),
+            vr(" )")
+        ],
+        version: 1,
+        comments: comment_hashmap
+    }
+}
+
+// Note: This is a test in this language.  Readers find non-segregated tests an
+// easier read so tests are inline.
+#[test]
+fn test_doc_data_nth_line_ref_1() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    assert_eq!(dd.nth_line_ref(2), Some(&" (F X) ;; Call".as_bytes().to_vec()));
+}
+
+#[test]
+fn test_doc_data_nth_line_ref_2() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    assert_eq!(dd.nth_line_ref(5), None);
+}
+
+#[test]
+fn test_doc_data_get_prev_position_1() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    // Zero based.
+    let mut position = Some(Position { line: 3, character: 2 });
+    let mut all_expected_characters = Vec::new();
+    let mut got_characters = Vec::new();
+    let mut have_line_jumps = Vec::new();
+    let want_line_jumps = vec![2, 16, 52];
+
+    for l in dd.text.iter().rev() {
+        let borrowed_line: &Vec<u8> = l.borrow();
+        let mut reversed_line = borrowed_line.iter().rev().copied().collect();
+        all_expected_characters.append(&mut reversed_line);
+    }
+
+    while let Some(p) = &position {
+        if let Some((ch, new_position)) = dd.get_prev_position(p) {
+            if new_position.line != p.line {
+                have_line_jumps.push(got_characters.len());
+            }
+            position = Some(new_position);
+            got_characters.push(ch);
+        } else {
+            position = None;
+        }
+    }
+
+    assert_eq!(want_line_jumps, have_line_jumps);
+    assert_eq!(got_characters, all_expected_characters);
 }

@@ -6,5 +6,9 @@ node_modules
 
 .fake
 runner/build
+<<<<<<< HEAD
+=======
+debug/build
+>>>>>>> main
 wasm/target
 wasm/pkg
