@@ -1,5 +1,8 @@
+use std::borrow::Borrow;
 use std::cmp::PartialOrd;
+use std::collections::HashMap;
 use std::path::PathBuf;
+#[cfg(test)]
 use std::str::FromStr;
 use std::rc::Rc;
 
@@ -351,4 +354,140 @@ fn test_doc_range_overlap_at_zero() {
         start: DocPosition { line: 0, character: 1 },
         end: DocPosition { line: 0, character: 3 }
     }));
+}
+
+// An object that contains the literal text of a document we're working with in
+// the LSP.
+#[derive(Debug, Clone)]
+pub struct DocData {
+    pub fullname: String,
+    pub text: Vec<Rc<Vec<u8>>>,
+    pub version: i32,
+    // Zero based.
+    pub comments: HashMap<usize, usize>,
+}
+
+impl DocData {
+    // Return a reference to the nth line's data.
+    pub fn nth_line_ref(&self, line: usize) -> Option<&Vec<u8>> {
+        if line < self.text.len() {
+            let borrowed: &Vec<u8> = self.text[line].borrow();
+            Some(borrowed)
+        } else {
+            None
+        }
+    }
+
+    // Given a position go back one character, returning the character
+    // and the new position if they exist.
+    //
+    // This only visits characters in lines, so it will skip blank lines.
+    pub fn get_prev_position(&self, position: &Position) -> Option<(u8, Position)> {
+        if position.character == 0
+            && position.line > 0
+            && ((position.line - 1) as usize) < self.text.len()
+        {
+            let nextline = position.line - 1;
+            self.get_prev_position(&Position {
+                line: nextline,
+                character: self.text[nextline as usize].len() as u32,
+            })
+        } else {
+            self.nth_line_ref(position.line as usize).and_then(|line| {
+                if position.character > 0 && (position.character as usize) <= line.len() {
+                    let prev_char = position.character - 1;
+                    let the_char = line[prev_char as usize];
+                    Some((
+                        the_char,
+                        Position {
+                            line: position.line,
+                            character: prev_char,
+                        },
+                    ))
+                } else {
+                    None
+                }
+            })
+        }
+    }
+}
+
+// Note: This is using a directive that ensures that this code is only included
+// in the test build.  It is not necessary to be concerned that it will be
+// included in another configuration.  Although it's name contains test, it will
+// not be used as a test in this language.
+#[cfg(test)]
+fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
+    // There is a comment at line 2, column 24 and at line 3, column 8
+    let comment_hashmap = HashMap::from([
+        (1, 23),
+        (2, 7)
+    ]);
+    // vr vec Rc
+    let vr = |s: &str| {
+        let bv: Vec<u8> = s.as_bytes().to_vec();
+        Rc::new(bv)
+    };
+    DocData {
+        // Note: this structure contains owned objects such as strings and vecs.
+        // The ownership is intended.
+        fullname: "test_name.clsp".to_string(),
+        // Note: This vec contains reference counted lines so patches can move
+        // them without cloning them.  The Rc here, as well as the string
+        // ownership are intended.
+        text: vec![
+            vr("(mod (X)"),
+            vr(" (defun F (A) (+ A 1)) ;; A function"),
+            vr(" (F X) ;; Call"),
+            vr(" )")
+        ],
+        version: 1,
+        comments: comment_hashmap
+    }
+}
+
+// Note: This is a test in this language.  Readers find non-segregated tests an
+// easier read so tests are inline.
+#[test]
+fn test_doc_data_nth_line_ref_1() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    assert_eq!(dd.nth_line_ref(2), Some(&" (F X) ;; Call".as_bytes().to_vec()));
+}
+
+#[test]
+fn test_doc_data_nth_line_ref_2() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    assert_eq!(dd.nth_line_ref(5), None);
+}
+
+#[test]
+fn test_doc_data_get_prev_position_1() {
+    let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
+    // Zero based.
+    let mut position = Some(Position { line: 3, character: 2 });
+    let mut all_expected_characters = Vec::new();
+    let mut got_characters = Vec::new();
+    let mut have_line_jumps = Vec::new();
+    let want_line_jumps = vec![2, 16, 52];
+
+    for l in dd.text.iter().rev() {
+        let borrowed_line: &Vec<u8> = l.borrow();
+        let mut reversed_line = borrowed_line.iter().rev().copied().collect();
+        all_expected_characters.append(&mut reversed_line);
+    }
+
+    while let Some(p) = &position {
+        if let Some((ch, new_position)) = dd.get_prev_position(p) {
+            if new_position.line != p.line {
+                have_line_jumps.push(got_characters.len());
+            }
+            position = Some(new_position);
+            got_characters.push(ch);
+        } else {
+            position = None;
+        }
+    }
+
+    assert_eq!(want_line_jumps, have_line_jumps);
+    assert_eq!(got_characters, all_expected_characters);
 }
