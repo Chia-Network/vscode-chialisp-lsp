@@ -44,7 +44,11 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 #[derive(Clone, Debug, Deserialize)]
 pub struct ExtraLaunchData {
     #[serde(rename = "stopOnEntry")]
-    stop_on_entry: bool,
+    stop_on_entry: Option<bool>,
+    #[serde(rename = "args")]
+    args: Option<Vec<String>>,
+    #[serde(rename = "program")]
+    program: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -88,6 +92,32 @@ pub struct RunningDebugger {
 }
 
 impl RunningDebugger {
+    fn get_source_file(
+        &self,
+        fs: Rc<dyn IFileReader>,
+        log: Rc<dyn ILogWriter>,
+        sfargs: &SourceArguments
+    ) -> Option<ResponseBody> {
+        log.write(&format!("get_source_file {:?}", sfargs));
+        sfargs.source
+            .as_ref()
+            .and_then(|s| s.name.as_ref())
+            .and_then(|n| {
+                PathBuf::from(&self.source_file)
+                    .parent()
+                    .map(|p| (n,p.to_owned()))
+            }).map(|(n,p)| p.join(n)).and_then(|path| {
+                path.to_str().map(|x| x.to_owned())
+            }).and_then(|path_string| {
+                fs.read(&path_string).ok()
+            }).map(|content| {
+                ResponseBody::Source(SourceResponse {
+                    content: decode_string(&content),
+                    mime_type: Some("text/plain".to_owned())
+                })
+            })
+    }
+
     fn get_stack_depth(&self) -> usize {
         self.output_stack.len()
     }
@@ -490,31 +520,6 @@ impl Debugger {
         })
     }
 
-    fn get_source_file(
-        &self,
-        running: &RunningDebugger,
-        sfargs: &SourceArguments
-    ) -> Option<ResponseBody> {
-        self.log.write(&format!("get_source_file {:?}", sfargs));
-        sfargs.source
-            .as_ref()
-            .and_then(|s| s.name.as_ref())
-            .and_then(|n| {
-                PathBuf::from(&running.source_file)
-                    .parent()
-                    .map(|p| (n,p.to_owned()))
-            }).map(|(n,p)| p.join(n)).and_then(|path| {
-                path.to_str().map(|x| x.to_owned())
-            }).and_then(|path_string| {
-                self.fs.read(&path_string).ok()
-            }).map(|content| {
-                ResponseBody::Source(SourceResponse {
-                    content: decode_string(&content),
-                    mime_type: Some("text/plain".to_owned())
-                })
-            })
-    }
-
     fn get_scope_source(
         &self,
         running: &RunningDebugger,
@@ -565,6 +570,8 @@ impl Debugger {
         if let Some((source_file, source_content)) =
             try_locate_source_file(self.fs.clone(), name)
         {
+            self.log.write(&format!("source file {}", source_file));
+
             let source_parsed = parse_sexp(
                 Srcloc::start(&source_file),
                 source_content.iter().copied()
@@ -642,16 +649,25 @@ impl Debugger {
         name: &str,
         i: &InitializeRequestArguments,
         l: &LaunchRequestArguments,
+        program: &str,
+        args: &[String],
         stop_on_entry: bool,
     ) -> Result<(i64, State, Vec<ProtocolMessage>), String> {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
-        let read_in_file = self.fs.read(name)?;
+        let read_in_file = self.fs.read(program)?;
         let opts = Rc::new(DefaultCompilerOpts::new(name));
-        let launch_data =
+        let mut launch_data =
             self.read_program_data(
-                &mut allocator, opts.clone(), i, l, name, &read_in_file
+                &mut allocator, opts.clone(), i, l, program, &read_in_file
             )?;
+
+        if !args.is_empty() {
+            let parsed_argv0 = parse_sexp(Srcloc::start("*args*"), args[0].bytes()).map_err(|(l,e)| format!("{}: {}", l, e))?;
+            if !parsed_argv0.is_empty() {
+                launch_data.arguments = parsed_argv0[0].clone();
+            }
+        }
 
         let run = HierarchialRunner::new(
             self.runner.clone(),
@@ -744,15 +760,29 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         serde_json::from_value(raw_json.clone())
                             .map(Some)
                             .unwrap_or(None);
-                    let stop_on_entry = launch_extra
-                        .map(|l| l.arguments.stop_on_entry)
-                        .unwrap_or(false);
 
-                    self.log.write(&format!("stop on entry: {}", stop_on_entry));
-
+                    self.log.write(&format!("launch extra {:?}", launch_extra));
+                    let stop_on_entry = launch_extra.as_ref()
+                        .and_then(|l| l.arguments.stop_on_entry)
+                        .unwrap_or(true);
+                    let args = launch_extra.as_ref()
+                        .and_then(|l| l.arguments.args.clone())
+                        .unwrap_or(vec![]);
                     if let Some(name) = &l.name {
+                        let program = launch_extra
+                            .and_then(|l| l.arguments.program)
+                            .unwrap_or(name.clone());
+
                         let (new_seq, new_state, out_msgs) =
-                            self.launch(pm, name, &i, l, stop_on_entry)?;
+                            self.launch(
+                                pm,
+                                name,
+                                &i,
+                                l,
+                                &program,
+                                &args,
+                                stop_on_entry
+                            )?;
                         self.msg_seq = new_seq;
                         self.state = new_state;
 
@@ -765,7 +795,11 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 (State::Launched(r), RequestCommand::Source(s)) => {
                     self.msg_seq += 1;
 
-                    let source_lookup = self.get_source_file(&r, s);
+                    let source_lookup = r.get_source_file(
+                        self.fs.clone(),
+                        self.log.clone(),
+                        s
+                    );
                     self.state = State::Launched(r);
 
                     return Ok(Some(vec![ProtocolMessage {

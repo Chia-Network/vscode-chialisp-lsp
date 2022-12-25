@@ -54,6 +54,7 @@ function startSubprocess(
     resolve: ResolveFunction,
     reject: RejectFunction,
     modulePath: string,
+    workspaceFolder: string
 ) {
     if (runningSubprocess.running) {
         resolve(runningSubprocess);
@@ -67,7 +68,8 @@ function startSubprocess(
                 ELECTRON_RUN_AS_NODE: '1',
                 ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
                 ...process.env
-            }
+            },
+            cwd: workspaceFolder
         };
 
         let newProcess = fork(modulePath, [], options);
@@ -102,7 +104,7 @@ function startSubprocess(
 }
 
 // Start debug process with stdio connected to the given named pipe.
-async function forkToPipe(pipeName: string, modulePath: string) {
+async function forkToPipe(pipeName: string, modulePath: string, workspaceFolder: string) {
     return new Promise((resolve, reject) => {
         let pipeServer: net.Server = net.createServer((targetPipe) => {
             // Connect the process up.
@@ -136,7 +138,7 @@ async function forkToPipe(pipeName: string, modulePath: string) {
         });
         pipeServer.listen(pipeName);
         log.info('starting process');
-        startSubprocess(resolve, reject, modulePath);
+        startSubprocess(resolve, reject, modulePath, workspaceFolder);
     });
 }
 
@@ -162,7 +164,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
             } else {
                 let namedPipeName = generatePipeName();
                 log.info(`forkToPipe ${namedPipeName}`);
-                return forkToPipe(namedPipeName, modulePath).then(() => {
+                return forkToPipe(namedPipeName, modulePath, session.workspaceFolder ? session.workspaceFolder.uri.fsPath : ".").then(() => {
                     log.info(`modulePath ${modulePath}`);
                     return new vscode.DebugAdapterNamedPipeServer(namedPipeName);
                 });
