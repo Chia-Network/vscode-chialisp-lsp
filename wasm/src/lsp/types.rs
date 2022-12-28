@@ -603,8 +603,8 @@ pub struct ParseScope {
 // if we found it, and Some(false) if we tried and it didn't exist.
 pub struct IncludeData {
     pub loc: Srcloc,
-    pub nl: Srcloc,
-    pub kw: Srcloc,
+    pub name_loc: Srcloc,
+    pub kw_loc: Srcloc,
     pub kind: IncludeKind,
     pub filename: Vec<u8>,
     pub found: Option<bool>
