@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::default::Default;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::rc::Rc;
 
 use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
@@ -123,6 +124,59 @@ impl HasFilePath for Url {
     }
 }
 
+#[cfg(test)]
+fn uniterr<A>(_: A) -> () { () }
+
+#[test]
+fn test_file_segments_to_pathbuf_1() {
+    assert_eq!(
+        Url::parse("fink:::::not/good").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        Err(())
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_2() {
+    assert_eq!(
+        Url::parse("file:///home/person/stuff.txt").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/home/person/stuff.txt").map_err(uniterr)
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_3() {
+    assert_eq!(
+        Url::parse("").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        Err(())
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_4() {
+    assert_eq!(
+        Url::parse("file:").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
+#[test]
+fn test_file_segments_to_pathbuf_5() {
+    assert_eq!(
+        Url::parse("file:///").map_err(uniterr).and_then(|uri| {
+            uri.our_to_file_path().map_err(uniterr)
+        }),
+        PathBuf::from_str("/").map_err(uniterr)
+    );
+}
+
 pub fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
 where
     R: lsp_types::request::Request,
@@ -132,6 +186,7 @@ where
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+// DocPosition is 0-based
 pub struct DocPosition {
     pub line: u32,
     pub character: u32,
@@ -171,7 +226,8 @@ impl DocPosition {
 }
 
 impl DocRange {
-    // Not currently used
+    // Not currently used, therefore causing a clippy violation if uncommented.
+    // This can potentially be useful.
     /*
     pub fn from_range(r: &Range) -> Self {
         DocRange {
@@ -181,6 +237,7 @@ impl DocRange {
     }
     */
 
+    // DocPosition is 0 based.  Srcloc is 1 based.
     pub fn from_srcloc(l: Srcloc) -> Self {
         let e = l.ending();
         DocRange {
@@ -727,4 +784,82 @@ impl LSPServiceProvider {
             .map(|d| stringify_doc(&d.text))
             .unwrap_or_else(|| Err(format!("don't have file {}", filename)))
     }
+}
+
+#[test]
+fn test_docrange_overlap_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 1, character: 2 },
+            end: DocPosition { line: 2, character: 3 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 3, character: 2 },
+            end: DocPosition { line: 3, character: 8 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 4 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 5 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_invalid_zero_srcloc_leads_to_zero_position() {
+    assert_eq!(
+        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
+        DocRange {
+            start: DocPosition { line: 0, character: 0 },
+            end: DocPosition { line: 0, character: 0 }
+        }
+    );
+}
+
+#[test]
+fn test_doc_range_overlap_at_zero() {
+    assert!(DocRange {
+        start: DocPosition { line: 0, character: 0 },
+        end: DocPosition { line: 0, character: 2 }
+    }.overlap(&DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 3 }
+    }));
 }

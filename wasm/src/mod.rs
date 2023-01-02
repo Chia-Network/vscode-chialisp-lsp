@@ -8,7 +8,7 @@ extern crate indoc;
 pub mod api;
 mod dbg;
 mod interfaces;
-mod lsp;
+pub mod lsp;
 
 #[cfg(test)]
 mod tests;
