@@ -10,16 +10,17 @@ use std::rc::Rc;
 use debug_types::events::{ContinuedEvent, Event, EventBody, StoppedEvent, StoppedReason};
 use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, RequestCommand, SourceArguments};
 use debug_types::responses::{
-    InitializeResponse, Response, ResponseBody, ScopesResponse, SourceResponse, StackTraceResponse,
+    InitializeResponse, Response, ResponseBody, SetBreakpointsResponse, SetExceptionBreakpointsResponse, ScopesResponse, SourceResponse, StackTraceResponse,
     ThreadsResponse, VariablesResponse,
 };
 use debug_types::types::{
-    Capabilities, ChecksumAlgorithm, Scope, Source, StackFrame, Thread, Variable,
+    Breakpoint, Capabilities, ChecksumAlgorithm, Scope, Source, SourceBreakpoint, StackFrame, Thread, Variable,
 };
 use debug_types::{MessageKind, ProtocolMessage};
 
 use clvmr::allocator::Allocator;
 
+use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
@@ -28,11 +29,13 @@ use clvm_tools_rs::compiler::cldb_hierarchy::{
 use clvm_tools_rs::compiler::compiler::{compile_file, DefaultCompilerOpts};
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
-use crate::interfaces::{IFileReader, ILogWriter};
-use crate::dbg::types::MessageHandler;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+
+use crate::interfaces::{EPrintWriter, IFileReader, ILogWriter};
+use crate::dbg::types::MessageHandler;
+use crate::lsp::types::{DocPosition, DocRange};
 
 // Lifecycle:
 // (a (code... ) (c arg ...))
@@ -40,6 +43,8 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 // (code ...)
 // We enter (code ...) proper via the OpResult of (a ... args) and can fish the
 // arguments.  After that, we're running the subfunction.
+
+const LARGE_COLUMN: u32 = 100000;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ExtraLaunchData {
@@ -74,6 +79,12 @@ pub struct StoredScope {
     source: Srcloc,
 }
 
+#[derive(Clone, Debug)]
+struct RecognizedBreakpoint {
+    hash: String,
+    spec: Breakpoint
+}
+
 pub struct RunningDebugger {
     pub initialized: InitializeRequestArguments,
     pub launch_info: LaunchRequestArguments,
@@ -85,10 +96,144 @@ pub struct RunningDebugger {
 
     running: bool,
     run: HierarchialRunner,
+    symbols: Rc<HashMap<String, String>>,
     output_stack: Vec<StoredScope>,
     result: Option<String>,
 
+    breakpoints: HashMap<String, HashMap<String, RecognizedBreakpoint>>,
+    next_bp_id: usize,
+    pub at_breakpoint: Option<Breakpoint>,
+
     pub opts: Rc<dyn CompilerOpts>,
+}
+
+fn fuzzy_file_match(location_filename: &str, want_filename: &str) -> bool{
+    if let (Some(location_fn), Some(want_fn)) =
+        (PathBuf::from(location_filename).file_name(),
+         PathBuf::from(want_filename).file_name()
+        )
+    {
+        location_fn == want_fn
+    } else {
+        false
+    }
+}
+
+#[test]
+fn test_fuzzy_file_match_1() {
+    assert!(fuzzy_file_match("test/foo/bar.clsp", "bar/baz/bar.clsp"));
+}
+
+fn resolve_function(
+    symbols: Rc<HashMap<String, String>>,
+    name: &str
+) -> Option<String> {
+    for (k,v) in symbols.iter() {
+        if v == name {
+            return Some(k.clone());
+        }
+    }
+
+    None
+}
+
+#[test]
+fn test_resolve_function_1() {
+    let mut symbols_map = HashMap::from([
+        ("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
+         "fact".to_string()
+        )
+    ]);
+    let symbols = Rc::new(symbols_map);
+    assert_eq!(resolve_function(symbols, "fact"), Some("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string()));
+}
+
+fn find_location(
+    symbols: Rc<HashMap<String, String>>,
+    compiled: &Option<CompileForm>,
+    log: Rc<dyn ILogWriter>,
+    file: &str,
+    b: &SourceBreakpoint
+) -> Option<(String, Srcloc)> {
+    let whole_line = DocRange {
+        start: DocPosition { line: b.line - 1, character: 0 },
+        end: DocPosition { line: b.line - 1, character: LARGE_COLUMN }
+    };
+    let breakpoint_range = b.column.map(|col| {
+        DocRange {
+            start: DocPosition {
+                line: b.line - 1, character: 0
+            },
+            end: DocPosition {
+                line: b.line - 1, character: LARGE_COLUMN,
+            }
+        }
+    }).unwrap_or_else(|| {
+        whole_line.clone()
+    });
+
+    let breakpoint_loc = breakpoint_range.to_srcloc(file);
+    for (k,v) in symbols.iter() {
+        log.write(&format!("key {} value {}", k, v));
+        if let Some(parsed_srcloc) = parse_srcloc(&v) {
+            let borrowed_filename: &String = parsed_srcloc.file.borrow();
+            if !fuzzy_file_match(file, &borrowed_filename) {
+                continue;
+            }
+            let normalized_loc = Srcloc::new(breakpoint_loc.file.clone(), parsed_srcloc.line, parsed_srcloc.col);
+            if normalized_loc.overlap(&breakpoint_loc) {
+                return Some((k.clone(), parsed_srcloc.clone()));
+            }
+        }
+    }
+
+    log.write(&format!("whole_line {:?}", whole_line));
+    let whole_line_loc = whole_line.to_srcloc(file);
+    compiled.as_ref().and_then(|c| {
+        log.write(&format!("compiled {}", c.to_sexp()));
+        for h in c.helpers.iter() {
+            let original_loc = h.loc();
+            let original_loc_file: &String = original_loc.file.borrow();
+            if !fuzzy_file_match(&original_loc_file, file) {
+                continue;
+            }
+            let normalized_loc = Srcloc::new(whole_line_loc.file.clone(), original_loc.line, original_loc.col);
+            log.write(&format!("{} vs target loc {}", normalized_loc, whole_line_loc));
+            if whole_line_loc.overlap(&normalized_loc) {
+                log.write(&format!("found function {}", decode_string(h.name())));
+                return resolve_function(symbols, &decode_string(h.name())).
+                    map(|funhash| {
+                        (funhash, original_loc)
+                    });
+            }
+        }
+
+        None
+    })
+}
+
+#[test]
+fn test_simple_find_location_classic_symbols_1() {
+    let log = Rc::new(EPrintWriter::new());
+    let mut symbols_map = HashMap::from([
+        ("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
+         "fact".to_string()
+        )
+    ]);
+    let symbols = Rc::new(symbols_map);
+    let program = "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
+    let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
+    let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
+    let compiled = frontend(opts, &parsed).expect("should compile");
+    let breakpoint_spec = SourceBreakpoint {
+        column: Some(0),
+        condition: None,
+        hit_condition: None,
+        line: 2,
+        log_message: None
+    };
+    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec).expect("should be found");
+    assert_eq!(hash, "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de");
 }
 
 impl RunningDebugger {
@@ -116,6 +261,76 @@ impl RunningDebugger {
                     mime_type: Some("text/plain".to_owned())
                 })
             })
+    }
+
+    fn set_breakpoints(&mut self, log: Rc<dyn ILogWriter>, s: &Source, breakpoints: Vec<SourceBreakpoint>) -> Vec<Breakpoint> {
+        let use_path = s.path.as_ref().cloned().map(Some).unwrap_or_else(|| s.name.clone());
+        log.write(&format!("s.path {:?} s.name {:?}", s.path, s.name));
+        let bp_id_start = self.next_bp_id;
+        self.next_bp_id += breakpoints.len();
+
+        let empty_breakpoint = |(i,b): (usize, &SourceBreakpoint)| {
+            Breakpoint {
+                id: Some(i + bp_id_start),
+                column: b.column,
+                end_column: b.column,
+                line: Some(b.line),
+                end_line: Some(b.line),
+                instruction_reference: None,
+                message: Some("No source file to break in".to_string()),
+                offset: None,
+                source: None,
+                verified: false
+            }
+        };
+
+        if let Some(p) = use_path {
+            log.write(&format!("path {}", p));
+
+            // Clear previous breakpoints for the translation unit.
+            self.breakpoints.remove(&p);
+
+            let mut inserted_breakpoints = HashMap::new();
+            let mut reported_breakpoints = Vec::new();
+
+            for (i,b) in breakpoints.iter().enumerate() {
+                // Verfified if we overlap at least one location in the symbols
+                // We.ll be simple and set it to the first matching point following
+                // the given location.
+                if let Some((hash, found)) = find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b) {
+                    let end_col = found.until.clone().map(|e| e.col as u32);
+                    let end_line = found.until.map(|e| e.line as u32);
+                    let bp = Breakpoint {
+                        id: Some(i + bp_id_start),
+                        line: Some(found.line as u32),
+                        column: Some(found.col as u32),
+                        end_line: end_line,
+                        end_column: end_col,
+                        message: None,
+                        offset: None,
+                        instruction_reference: None,
+                        source: Some(s.clone()),
+                        verified: true
+                    };
+                    reported_breakpoints.push(bp.clone());
+                    inserted_breakpoints.insert(
+                        hash.clone(),
+                        RecognizedBreakpoint {
+                            hash,
+                            spec: bp
+                        }
+                    );
+                } else {
+                    reported_breakpoints.push(empty_breakpoint((i,b)));
+                }
+            }
+
+            self.breakpoints.insert(p, inserted_breakpoints.clone());
+
+            reported_breakpoints
+        } else {
+            breakpoints.iter().enumerate().map(empty_breakpoint).collect()
+        }
     }
 
     fn get_stack_depth(&self) -> usize {
@@ -157,7 +372,10 @@ impl RunningDebugger {
         Some(info)
     }
 
-    fn step(&mut self) -> Option<BTreeMap<String, String>> {
+    fn step(&mut self, log: Rc<dyn ILogWriter>) -> Option<BTreeMap<String, String>> {
+        // Clear breakpoint.
+        self.at_breakpoint = None;
+
         loop {
             if self.run.is_ended() {
                 return None;
@@ -175,6 +393,19 @@ impl RunningDebugger {
                     let frame_idx = self.run.running.len() - 1;
                     let frame = &self.run.running[frame_idx];
                     let step = frame.run.current_step();
+                    let frame_hex_string = Bytes::new(Some(BytesFromType::Raw(frame.function_hash.clone()))).hex();
+
+                    log.write(&format!("frame hex string {}", frame_hex_string));
+
+                    for (translation_unit, breakpoints) in self.breakpoints.iter() {
+                        let keys: Vec<String> = breakpoints.keys().cloned().collect();
+                        log.write(&format!("keys {:?}", keys));
+                        if let Some(bp) = breakpoints.get(&frame_hex_string) {
+                            // Break here.
+                            log.write(&format!("reached breakpoint {:?}", bp.spec));
+                            self.at_breakpoint = Some(bp.spec.clone());
+                        }
+                    }
 
                     if let Some(result) = info.get("Value") {
                         self.result = Some(result.clone());
@@ -220,6 +451,16 @@ pub enum State {
     Launched(RunningDebugger),
 }
 
+impl State {
+    fn state_name(&self) -> String {
+        match self {
+            State::PreInitialization => "PreInitialization",
+            State::Initialized(_) => "Initialized",
+            State::Launched(_) => "Launched"
+        }.to_string()
+    }
+}
+
 pub enum BreakpointLocation {
     Srcloc(Srcloc),
     Treehash(String),
@@ -261,8 +502,8 @@ impl Debugger {
 fn get_initialize_response() -> InitializeResponse {
     InitializeResponse {
         capabilities: Capabilities {
-            supports_configuration_done_request: Some(true),
-            supports_function_breakpoints: Some(true),
+            supports_configuration_done_request: None,
+            supports_function_breakpoints: None,
             supports_conditional_breakpoints: None,
             supports_hit_conditional_breakpoints: None,
             supports_evaluate_for_hovers: None,
@@ -280,13 +521,13 @@ fn get_initialize_response() -> InitializeResponse {
             supports_breakpoint_locations_request: Some(true),
             supports_cancel_request: None,
             supports_clipboard_context: None,
-            supports_data_breakpoints: Some(true),
+            supports_data_breakpoints: None,
             supports_delayed_stack_trace_loading: None,
             supports_disassemble_request: Some(true),
             supports_exception_filter_options: None,
             supports_exception_info_request: None,
             supports_exception_options: None,
-            supports_instruction_breakpoints: Some(true),
+            supports_instruction_breakpoints: None,
             supports_loaded_sources_request: Some(true),
             supports_log_points: Some(true),
             supports_read_memory_request: None,
@@ -571,16 +812,23 @@ impl Debugger {
             try_locate_source_file(self.fs.clone(), name)
         {
             self.log.write(&format!("source file {}", source_file));
+            self.log.write(&format!("source content [{}]", decode_string(&source_content)));
 
             let source_parsed = parse_sexp(
                 Srcloc::start(&source_file),
                 source_content.iter().copied()
             ).map_err(parse_err_map)?;
 
-            compiled = Some(frontend(
+            let frontend_compiled = frontend(
                 opts.clone(),
                 &source_parsed
-            ).map_err(compile_err_map)?);
+            ).map_err(compile_err_map)?;
+
+            for h in frontend_compiled.helpers.iter() {
+                self.log.write(&format!("{}", h.loc()));
+            }
+
+            compiled = Some(frontend_compiled);
         }
 
         let mut parsed_program =
@@ -669,12 +917,14 @@ impl Debugger {
             }
         }
 
+        let symbol_rc = Rc::new(launch_data.symbols);
+
         let run = HierarchialRunner::new(
             self.runner.clone(),
             self.prim_map.clone(),
             Some(name.to_string()),
             Rc::new(launch_data.program_lines),
-            Rc::new(launch_data.symbols),
+            symbol_rc.clone(),
             launch_data.program,
             launch_data.arguments,
         );
@@ -689,7 +939,11 @@ impl Debugger {
             target_depth: None,
             result: None,
             source_file: launch_data.source_file,
-            compiled: launch_data.compiled
+            compiled: launch_data.compiled,
+            breakpoints: HashMap::new(),
+            next_bp_id: 1,
+            at_breakpoint: None,
+            symbols: symbol_rc
         });
 
         seq_nr += 1;
@@ -744,16 +998,24 @@ impl MessageHandler<ProtocolMessage> for Debugger {
             match (state, req) {
                 (State::PreInitialization, RequestCommand::Initialize(irq)) => {
                     self.state = State::Initialized(irq.clone());
-                    self.msg_seq += 1;
-                    return Ok(Some(vec![ProtocolMessage {
-                        seq: self.msg_seq,
-                        message: MessageKind::Response(Response {
-                            request_seq: pm.seq,
-                            success: true,
-                            message: None,
-                            body: Some(ResponseBody::Initialize(get_initialize_response())),
-                        }),
-                    }]));
+                    self.msg_seq += 2;
+                    return Ok(Some(vec![
+                        ProtocolMessage {
+                            seq: self.msg_seq - 1,
+                            message: MessageKind::Response(Response {
+                                request_seq: pm.seq,
+                                success: true,
+                                message: None,
+                                body: Some(ResponseBody::Initialize(get_initialize_response())),
+                            }),
+                        },
+                        ProtocolMessage {
+                            seq: self.msg_seq,
+                            message: MessageKind::Event(Event {
+                                body: Some(EventBody::Initialized)
+                            })
+                        }
+                    ]));
                 }
                 (State::Initialized(i), RequestCommand::Launch(l)) => {
                     let launch_extra: Option<RequestContainer<ExtraLaunchData>> =
@@ -791,6 +1053,44 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         self.state = State::Initialized(i);
                         self.log.write("No program provided");
                     }
+                }
+                // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
+                // Set breakpoints from source.  Requires advertised capability in
+                // package.json.
+                (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {
+                    self.msg_seq += 1;
+                    let result_breakpoints = r.set_breakpoints(self.log.clone(), &b.source, b.breakpoints.clone().unwrap_or_else(|| vec![]));
+                    self.state = State::Launched(r);
+                    return Ok(Some(vec![ProtocolMessage {
+                        seq: self.msg_seq,
+                        message: MessageKind::Response(Response {
+                            request_seq: pm.seq,
+                            success: true,
+                            message: None,
+                            body: Some(ResponseBody::SetBreakpoints(SetBreakpointsResponse {
+                                breakpoints: result_breakpoints
+                            }))
+                        })
+                    }]));
+                }
+                // The way the code in debugServer is structured, if no other
+                // breakpoints of a supported type are sent, an empty,
+                // SetExceptionBreakpoints will be sent.  We don't advertise
+                // support for this type so we can send an empty response.
+                (State::Launched(r), RequestCommand::SetExceptionBreakpoints(b)) => {
+                    self.msg_seq += 1;
+                    self.state = State::Launched(r);
+                    return Ok(Some(vec![ProtocolMessage {
+                        seq: self.msg_seq,
+                        message: MessageKind::Response(Response {
+                            request_seq: pm.seq,
+                            success: true,
+                            message: None,
+                            body: Some(ResponseBody::SetExceptionBreakpoints(SetExceptionBreakpointsResponse {
+                                breakpoints: Some(vec![])
+                            }))
+                        })
+                    }]));
                 }
                 (State::Launched(r), RequestCommand::Source(s)) => {
                     self.msg_seq += 1;
@@ -918,6 +1218,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
 
                         copy_info_member("Function", "_op");
                         copy_info_member("Arguments", "_args");
+                        copy_info_member("Failure", "_failure");
 
                         if let Some(result) = r.result.as_ref() {
                             variables.push(Variable {
@@ -1016,7 +1317,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     return Ok(Some(out_messages));
                 }
                 (State::Launched(mut r), RequestCommand::StepIn(si)) => {
-                    r.step();
+                    r.step(self.log.clone());
 
                     self.msg_seq += 1;
 
@@ -1040,6 +1341,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     //   - The program ended or
                     //     - The stack depth target was reached.
                     let should_stop = si.thread_id != -1
+                        || r.at_breakpoint.is_some()
                         || (r.running
                             && (r.run.is_ended()
                                 || match r.target_depth {
@@ -1066,7 +1368,9 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     // If we should stop, then we emit a stopped message.
                     if should_stop {
                         r.running = false;
-                        r.stopped_reason = None;
+                        r.stopped_reason = r.at_breakpoint.as_ref().map(|_| {
+                            StoppedReason::Breakpoint
+                        });
 
                         self.msg_seq += 1;
                         out_messages.push(ProtocolMessage {
@@ -1193,7 +1497,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 }
                 (st, _rq) => {
                     self.log
-                        .write(&format!("Don't know what to do with {:?}", req));
+                        .write(&format!("Don't know what to do with {:?} in state {}", req, st.state_name()));
                     self.state = st;
                 }
             }

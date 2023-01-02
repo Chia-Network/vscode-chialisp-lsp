@@ -72,7 +72,8 @@
             ]
         },
         "breakpoints":[
-            {"language":"Chialisp"}
+            {"language":"Chialisp"},
+            {"language":"chialisp"}
         ],
         "debuggers":[
             {
