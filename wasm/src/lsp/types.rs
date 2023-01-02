@@ -118,8 +118,8 @@ pub trait IFileReader {
 }
 
 pub trait ILogWriter {
-        fn write(&self, text: &str);
-    }
+    fn write(&self, text: &str);
+}
 
 #[cfg(test)]
 fn uniterr<A>(_: A) -> () { () }
