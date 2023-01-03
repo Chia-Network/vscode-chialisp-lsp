@@ -5,6 +5,7 @@ use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
+    Hash,
     IncludeData,
     ParseScope,
     ReparsedExp,
@@ -27,13 +28,13 @@ pub struct ParsedDoc {
     pub scopes: ParseScope,
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
     // their ranges in the source.
-    pub helpers: HashMap<Vec<u8>, ReparsedHelper>,
+    pub helpers: HashMap<Hash, ReparsedHelper>,
     // If present, the main expression in ReparsedExp form.
     pub exp: Option<ReparsedExp>,
     // Includes in the various files, indexed by included file.
-    pub includes: HashMap<Vec<u8>, IncludeData>,
+    pub includes: HashMap<Hash, IncludeData>,
     // Index of hashed ranges (as Reparsed* data) to the names they bind.
-    pub hash_to_name: HashMap<Vec<u8>, Vec<u8>>,
+    pub hash_to_name: HashMap<Hash, Vec<u8>>,
     // Chialisp frontend errors encountered while parsing.
     pub errors: Vec<CompileErr>,
 }

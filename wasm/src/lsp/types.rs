@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cmp::{Ordering, PartialOrd};
+use std::cmp::PartialOrd;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 #[cfg(test)]
@@ -56,6 +56,11 @@ pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
 
 pub struct ToFilePathErr;
+
+#[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
+pub struct Hash {
+    data: [u8; 256]
+}
 
 // Note: to_file_path is only present on native builds, but we're building to
 // wasm.
@@ -502,28 +507,9 @@ fn test_doc_data_get_prev_position_1() {
     assert_eq!(got_characters, all_expected_characters);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 struct HelperWithDocRange {
     pub loc: DocRange,
-}
-
-impl PartialEq for HelperWithDocRange {
-    fn eq(&self, other: &Self) -> bool {
-        self.loc == other.loc
-    }
-}
-
-impl PartialOrd for HelperWithDocRange {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.loc.cmp(&other.loc))
-    }
-}
-
-impl Eq for HelperWithDocRange {}
-impl Ord for HelperWithDocRange {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.loc.cmp(&other.loc)
-    }
 }
 
 #[test]
@@ -613,7 +599,7 @@ pub struct IncludeData {
 #[derive(Debug, Clone)]
 // A helper (defmacro, defun, etc)  that we parsed alone via document range.
 pub struct ReparsedHelper {
-    pub hash: Vec<u8>,
+    pub hash: Hash,
     pub range: DocRange,
     pub parsed: Result<HelperForm, CompileErr>,
 }
@@ -622,6 +608,6 @@ pub struct ReparsedHelper {
 // Information about the main expression in a chialisp program, parsed from a
 // document range.
 pub struct ReparsedExp {
-    pub hash: Vec<u8>,
+    pub hash: Hash,
     pub parsed: Result<BodyForm, CompileErr>,
 }
