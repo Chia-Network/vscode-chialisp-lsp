@@ -119,11 +119,11 @@ impl HasFilePath for Url {
 }
 
 pub trait IFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String>;
+    fn read_content(&self, name: &str) -> Result<String, String>;
 }
 
 pub trait ILogWriter {
-    fn write(&self, text: &str);
+    fn log(&self, text: &str);
 }
 
 #[cfg(test)]
