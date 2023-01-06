@@ -54,12 +54,13 @@ pub const TK_NUMBER_IDX: u32 = 7;
 
 pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
+pub const HASH_SIZE: usize = 32;
 
 pub struct ToFilePathErr;
 
 #[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
 pub struct Hash {
-    data: [u8; 256]
+    data: [u8; 32]
 }
 
 // Note: to_file_path is only present on native builds, but we're building to
