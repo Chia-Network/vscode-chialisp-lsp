@@ -9,9 +9,9 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 use clvm_tools_rs::compiler::clvm::sha256tree;
 use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{recover_scopes, IncludeData, IncludeKind, ParsedDoc};
+use crate::lsp::parse::{recover_scopes, IncludeData, ParsedDoc};
 use crate::lsp::reparse::{ReparsedExp, ReparsedHelper};
-use crate::lsp::types::{DocPosition, DocRange, ILogWriter, LSPServiceProvider};
+use crate::lsp::types::{DocPosition, DocRange, Hash, ILogWriter, IncludeKind, LSPServiceProvider};
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
@@ -278,10 +278,11 @@ fn process_body_code(
             // For each helper in the submod, process it.
             let mut helpers = HashMap::new();
             for h in m.helpers.iter() {
+                let hash = sha256tree(h.to_sexp());
                 helpers.insert(
-                    h.name().clone(),
+                    Hash::new(&hash),
                     ReparsedHelper {
-                        hash: sha256tree(h.to_sexp()),
+                        hash: Hash::new(&hash),
                         range: DocRange::from_srcloc(h.loc()),
                         parsed: Ok(h.clone()),
                     },
@@ -290,7 +291,7 @@ fn process_body_code(
 
             let borrowed_exp: &BodyForm = m.exp.borrow();
             let reparsed_exp = ReparsedExp {
-                hash: sha256tree(m.exp.to_sexp()),
+                hash: Hash::new(&sha256tree(m.exp.to_sexp())),
                 parsed: Ok(borrowed_exp.clone()),
             };
 
@@ -301,7 +302,7 @@ fn process_body_code(
                     continue;
                 }
 
-                let hashed = sha256tree(i.to_sexp());
+                let hashed = Hash::new(&sha256tree(i.to_sexp()));
                 includes.insert(
                     hashed,
                     IncludeData {

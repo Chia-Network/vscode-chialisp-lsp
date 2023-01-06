@@ -1,12 +1,14 @@
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::cell::{Ref, RefCell};
-use std::cmp::{Ordering, PartialOrd};
-use std::collections::{BTreeMap, HashMap};
+use std::cmp::{PartialOrd, min};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::default::Default;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+#[cfg(test)]
 use std::str::FromStr;
+use std::rc::Rc;
 
 use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
@@ -18,17 +20,16 @@ use lsp_types::{
 };
 
 use percent_encoding::percent_decode;
-use serde::{Deserialize, Serialize};
 use url::{Host, Url};
 
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, IncludeKind, ParsedDoc};
+use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::CompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::decode_string;
+use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -65,7 +66,25 @@ pub const TK_NUMBER_IDX: u32 = 7;
 pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
 
+pub const HASH_SIZE: usize = 32;
+
 pub struct ToFilePathErr;
+
+#[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
+pub struct Hash {
+    data: [u8; HASH_SIZE]
+}
+
+impl Hash {
+    pub fn new(v: &Vec<u8>) -> Self {
+        let len = min(v.len(), HASH_SIZE);
+        let mut data: [u8; HASH_SIZE] = [0; 32];
+        for i in 0..len {
+            data[i] = if i >= v.len() { 0 } else { v[i] }
+        }
+        Hash { data }
+    }
+}
 
 // Note: to_file_path is only present on native builds, but we're building to
 // wasm.
@@ -124,19 +143,21 @@ impl HasFilePath for Url {
 }
 
 pub trait IFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String>;
+    fn read_content(&self, name: &str) -> Result<String, String>;
 }
 
 pub trait ILogWriter {
-    fn write(&self, text: &str);
+    fn log(&self, text: &str);
 }
 
 #[derive(Default)]
 pub struct FSFileReader {}
 
 impl IFileReader for FSFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String> {
-        std::fs::read(name).map_err(|e| format!("{:?}", e))
+    fn read_content(&self, name: &str) -> Result<String, String> {
+        std::fs::read(name).map(|content| {
+            decode_string(&content)
+        }).map_err(|e| format!("{:?}", e))
     }
 }
 
@@ -151,7 +172,7 @@ impl FSFileReader {
 pub struct EPrintWriter {}
 
 impl ILogWriter for EPrintWriter {
-    fn write(&self, text: &str) {
+    fn log(&self, text: &str) {
         eprintln!("{}", text);
     }
 }
@@ -478,28 +499,26 @@ impl DocData {
     */
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 struct HelperWithDocRange {
     pub loc: DocRange,
 }
 
-impl PartialEq for HelperWithDocRange {
-    fn eq(&self, other: &Self) -> bool {
-        self.loc == other.loc
-    }
-}
-
-impl PartialOrd for HelperWithDocRange {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.loc.cmp(&other.loc))
-    }
-}
-
-impl Eq for HelperWithDocRange {}
-impl Ord for HelperWithDocRange {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.loc.cmp(&other.loc)
-    }
+#[test]
+fn test_helper_with_doc_range() {
+    let sl1 = DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 2 },
+    };
+    let sl2 = DocRange {
+        start: DocPosition { line: 0, character: 2 },
+        end: DocPosition { line: 0, character: 4 },
+    };
+    let hw1 = HelperWithDocRange { loc: sl1 };
+    let hw2 = HelperWithDocRange { loc: sl2 };
+    assert_eq!(hw1, hw1);
+    assert!(hw1 != hw2);
+    assert!(hw1 < hw2);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -987,4 +1006,61 @@ fn test_doc_data_get_prev_position_1() {
 
     assert_eq!(want_line_jumps, have_line_jumps);
     assert_eq!(got_characters, all_expected_characters);
+}
+
+#[derive(Debug, Clone)]
+// What kind of scope form led to this binding.
+pub enum ScopeKind {
+    Module,
+    Macro,
+    Function,
+    Let,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+// Various ways chialisp can include a file (compile and embed pending in
+// https://github.com/Chia-Network/clvm_tools_rs/pull/71 )
+pub enum IncludeKind {
+    Include,
+    CompileFile(Srcloc),
+    EmbedFile(Srcloc, Srcloc),
+}
+
+#[derive(Debug, Clone)]
+// Part of a scope stack showing all bindings available in the given region.
+pub struct ParseScope {
+    pub region: Srcloc,
+    pub kind: ScopeKind,
+    pub variables: HashSet<SExp>,
+    pub functions: HashSet<SExp>,
+    pub containing: Vec<ParseScope>,
+}
+
+#[derive(Debug, Clone)]
+// Information about how we produce semantic tokens for include directives.
+// Found is None if we haven't tried to resolve this include yet, Some(true)
+// if we found it, and Some(false) if we tried and it didn't exist.
+pub struct IncludeData {
+    pub loc: Srcloc,
+    pub name_loc: Srcloc,
+    pub kw_loc: Srcloc,
+    pub kind: IncludeKind,
+    pub filename: Vec<u8>,
+    pub found: Option<bool>
+}
+
+#[derive(Debug, Clone)]
+// A helper (defmacro, defun, etc)  that we parsed alone via document range.
+pub struct ReparsedHelper {
+    pub hash: Hash,
+    pub range: DocRange,
+    pub parsed: Result<HelperForm, CompileErr>,
+}
+
+#[derive(Debug, Clone)]
+// Information about the main expression in a chialisp program, parsed from a
+// document range.
+pub struct ReparsedExp {
+    pub hash: Hash,
+    pub parsed: Result<BodyForm, CompileErr>,
 }

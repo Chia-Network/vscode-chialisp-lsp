@@ -135,7 +135,7 @@ impl LSPServiceProvider {
             for path in self.config.include_paths.iter() {
                 let target_name = Path::new(&path).join(&decode_string(&i.filename)).to_str().map(|o| o.to_owned());
                 if let Some(target) = target_name {
-                    if let Ok(_) = self.fs.read(&target) {
+                    if let Ok(_) = self.fs.read_content(&target) {
                         found_include = true;
                         self.update_include_state(parsed, &i.filename, true);
                         break;
@@ -154,8 +154,8 @@ impl LSPServiceProvider {
 
     pub fn reconfigure(&mut self) -> Option<ConfigJson> {
         self.get_config_path()
-            .and_then(|config_path| self.fs.read(&config_path).ok())
-            .and_then(|config_data| serde_json::from_str(&decode_string(&config_data)).ok())
+            .and_then(|config_path| self.fs.read_content(&config_path).ok())
+            .and_then(|config_data| serde_json::from_str(&config_data).ok())
             .map(|config: ConfigJson| {
                 let mut result = config.clone();
                 result.include_paths.clear();
@@ -277,15 +277,15 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                 } else if let Ok((id, params)) = cast::<CodeActionRequest>(req.clone()) {
                     return self.handle_code_action_request(id, &params);
                 } else {
-                    self.log.write(&format!("unknown request {:?}", req));
+                    self.log.log(&format!("unknown request {:?}", req));
                 };
                 // ...
             }
             Message::Response(resp) => {
-                self.log.write(&format!("got response: {:?}", resp));
+                self.log.log(&format!("got response: {:?}", resp));
             }
             Message::Notification(not) => {
-                self.log.write(&format!("got notification: {:?}", not));
+                self.log.log(&format!("got notification: {:?}", not));
                 if not.method == "textDocument/didOpen" {
                     let stringified_params = serde_json::to_string(&not.params).unwrap();
                     if let Ok(params) =
@@ -304,7 +304,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                             },
                         );
                     } else {
-                        self.log.write("cast failed in didOpen");
+                        self.log.log("cast failed in didOpen");
                     }
 
                     return Ok(self.produce_error_list());
@@ -321,7 +321,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                                 matching_file_for_resync = true;
                                 if let Some(config) = self.reconfigure() {
                                     // We have a config file and can read the filesystem.
-                                    self.log.write("reconfigured");
+                                    self.log.log("reconfigured");
                                     self.config = config;
                                     self.parsed_documents.clear();
                                     self.goto_defs.clear();
@@ -362,10 +362,10 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                         let error_msgs = self.produce_error_list();
                         return Ok(error_msgs);
                     } else {
-                        self.log.write("case failed in didChange");
+                        self.log.log("case failed in didChange");
                     }
                 } else {
-                    self.log.write(&format!("not sure what we got: {:?}", not));
+                    self.log.log(&format!("not sure what we got: {:?}", not));
                 }
             }
         }
