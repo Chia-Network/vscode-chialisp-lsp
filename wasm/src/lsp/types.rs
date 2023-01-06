@@ -60,7 +60,7 @@ pub struct ToFilePathErr;
 
 #[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
 pub struct Hash {
-    data: [u8; 32]
+    data: [u8; HASH_SIZE]
 }
 
 // Note: to_file_path is only present on native builds, but we're building to
