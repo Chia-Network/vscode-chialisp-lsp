@@ -25,7 +25,7 @@ struct JSErrWriter {
 }
 
 impl ILogWriter for JSErrWriter {
-    fn write(&self, val: &str) {
+    fn log(&self, val: &str) {
         let val_str = JsValue::from_str(val);
         self.err_writer.call1(&JsValue::null(), &val_str).unwrap();
     }
@@ -44,14 +44,14 @@ struct JSFileReader {
 }
 
 impl IFileReader for JSFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String> {
+    fn read_content(&self, name: &str) -> Result<String, String> {
         let name_str = JsValue::from_str(name);
         let res = self.file_reader.call1(&JsValue::null(), &name_str);
         res.map_err(|_| "Could not read file".to_string()).and_then(|content| {
             if content.loose_eq(&JsValue::null()) {
                 Err("could not read file".to_string())
             } else if let Some(s) = content.as_string() {
-                Ok(s.as_bytes().iter().copied().collect())
+                Ok(s)
             } else {
                 Err("could not convert content to string".to_string())
             }

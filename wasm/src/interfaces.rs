@@ -1,17 +1,21 @@
+use clvm_tools_rs::compiler::sexp::decode_string;
+
 pub trait IFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String>;
+    fn read_content(&self, name: &str) -> Result<String, String>;
 }
 
 pub trait ILogWriter {
-    fn write(&self, text: &str);
+    fn log(&self, text: &str);
 }
 
 #[derive(Default)]
 pub struct FSFileReader {}
 
 impl IFileReader for FSFileReader {
-    fn read(&self, name: &str) -> Result<Vec<u8>, String> {
-        std::fs::read(name).map_err(|e| format!("{:?}", e))
+    fn read_content(&self, name: &str) -> Result<String, String> {
+        std::fs::read(name).map(|content| {
+            decode_string(&content)
+        }).map_err(|e| format!("{:?}", e))
     }
 }
 
@@ -26,7 +30,7 @@ impl FSFileReader {
 pub struct EPrintWriter {}
 
 impl ILogWriter for EPrintWriter {
-    fn write(&self, text: &str) {
+    fn log(&self, text: &str) {
         eprintln!("{}", text);
     }
 }

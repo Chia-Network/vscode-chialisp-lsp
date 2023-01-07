@@ -174,7 +174,7 @@ fn find_location(
 
     let breakpoint_loc = breakpoint_range.to_srcloc(file);
     for (k,v) in symbols.iter() {
-        log.write(&format!("key {} value {}", k, v));
+        log.log(&format!("key {} value {}", k, v));
         if let Some(parsed_srcloc) = parse_srcloc(&v) {
             let borrowed_filename: &String = parsed_srcloc.file.borrow();
             if !fuzzy_file_match(file, &borrowed_filename) {
@@ -187,10 +187,10 @@ fn find_location(
         }
     }
 
-    log.write(&format!("whole_line {:?}", whole_line));
+    log.log(&format!("whole_line {:?}", whole_line));
     let whole_line_loc = whole_line.to_srcloc(file);
     compiled.as_ref().and_then(|c| {
-        log.write(&format!("compiled {}", c.to_sexp()));
+        log.log(&format!("compiled {}", c.to_sexp()));
         for h in c.helpers.iter() {
             let original_loc = h.loc();
             let original_loc_file: &String = original_loc.file.borrow();
@@ -198,9 +198,9 @@ fn find_location(
                 continue;
             }
             let normalized_loc = Srcloc::new(whole_line_loc.file.clone(), original_loc.line, original_loc.col);
-            log.write(&format!("{} vs target loc {}", normalized_loc, whole_line_loc));
+            log.log(&format!("{} vs target loc {}", normalized_loc, whole_line_loc));
             if whole_line_loc.overlap(&normalized_loc) {
-                log.write(&format!("found function {}", decode_string(h.name())));
+                log.log(&format!("found function {}", decode_string(h.name())));
                 return resolve_function(symbols, &decode_string(h.name())).
                     map(|funhash| {
                         (funhash, original_loc)
@@ -243,7 +243,7 @@ impl RunningDebugger {
         log: Rc<dyn ILogWriter>,
         sfargs: &SourceArguments
     ) -> Option<ResponseBody> {
-        log.write(&format!("get_source_file {:?}", sfargs));
+        log.log(&format!("get_source_file {:?}", sfargs));
         sfargs.source
             .as_ref()
             .and_then(|s| s.name.as_ref())
@@ -254,10 +254,10 @@ impl RunningDebugger {
             }).map(|(n,p)| p.join(n)).and_then(|path| {
                 path.to_str().map(|x| x.to_owned())
             }).and_then(|path_string| {
-                fs.read(&path_string).ok()
+                fs.read_content(&path_string).ok()
             }).map(|content| {
                 ResponseBody::Source(SourceResponse {
-                    content: decode_string(&content),
+                    content: content.clone(),
                     mime_type: Some("text/plain".to_owned())
                 })
             })
@@ -265,7 +265,7 @@ impl RunningDebugger {
 
     fn set_breakpoints(&mut self, log: Rc<dyn ILogWriter>, s: &Source, breakpoints: Vec<SourceBreakpoint>) -> Vec<Breakpoint> {
         let use_path = s.path.as_ref().cloned().map(Some).unwrap_or_else(|| s.name.clone());
-        log.write(&format!("s.path {:?} s.name {:?}", s.path, s.name));
+        log.log(&format!("s.path {:?} s.name {:?}", s.path, s.name));
         let bp_id_start = self.next_bp_id;
         self.next_bp_id += breakpoints.len();
 
@@ -285,7 +285,7 @@ impl RunningDebugger {
         };
 
         if let Some(p) = use_path {
-            log.write(&format!("path {}", p));
+            log.log(&format!("path {}", p));
 
             // Clear previous breakpoints for the translation unit.
             self.breakpoints.remove(&p);
@@ -395,14 +395,14 @@ impl RunningDebugger {
                     let step = frame.run.current_step();
                     let frame_hex_string = Bytes::new(Some(BytesFromType::Raw(frame.function_hash.clone()))).hex();
 
-                    log.write(&format!("frame hex string {}", frame_hex_string));
+                    log.log(&format!("frame hex string {}", frame_hex_string));
 
                     for (translation_unit, breakpoints) in self.breakpoints.iter() {
                         let keys: Vec<String> = breakpoints.keys().cloned().collect();
-                        log.write(&format!("keys {:?}", keys));
+                        log.log(&format!("keys {:?}", keys));
                         if let Some(bp) = breakpoints.get(&frame_hex_string) {
                             // Break here.
-                            log.write(&format!("reached breakpoint {:?}", bp.spec));
+                            log.log(&format!("reached breakpoint {:?}", bp.spec));
                             self.at_breakpoint = Some(bp.spec.clone());
                         }
                     }
@@ -595,8 +595,8 @@ fn try_locate_related_file(
                 if let Some(total_filename) =
                     directory.join(synth_fname).to_str()
                 {
-                    if let Ok(content) = fs.read(total_filename) {
-                        return Some((total_filename.to_owned(), content));
+                    if let Ok(content) = fs.read_content(total_filename) {
+                        return Some((total_filename.to_owned(), content.as_bytes().to_vec()));
                     }
                 }
             }
@@ -805,14 +805,14 @@ impl Debugger {
         let mut use_symbol_table = HashMap::new();
         let is_hex = is_hex_file(read_in_file);
 
-        self.log.write(&format!("read program data {} hex {}\n", name, is_hex));
+        self.log.log(&format!("read program data {} hex {}\n", name, is_hex));
 
         let mut compiled = None;
         if let Some((source_file, source_content)) =
             try_locate_source_file(self.fs.clone(), name)
         {
-            self.log.write(&format!("source file {}", source_file));
-            self.log.write(&format!("source content [{}]", decode_string(&source_content)));
+            self.log.log(&format!("source file {}", source_file));
+            self.log.log(&format!("source content [{}]", decode_string(&source_content)));
 
             let source_parsed = parse_sexp(
                 Srcloc::start(&source_file),
@@ -825,7 +825,7 @@ impl Debugger {
             ).map_err(compile_err_map)?;
 
             for h in frontend_compiled.helpers.iter() {
-                self.log.write(&format!("{}", h.loc()));
+                self.log.log(&format!("{}", h.loc()));
             }
 
             compiled = Some(frontend_compiled);
@@ -833,7 +833,7 @@ impl Debugger {
 
         let mut parsed_program =
             if is_hex {
-                self.log.write(&format!("prog source {}\n", name));
+                self.log.log(&format!("prog source {}\n", name));
                 let prog_srcloc = Srcloc::start(&name);
 
                 // Synthesize content by disassembling the file.
@@ -903,11 +903,11 @@ impl Debugger {
     ) -> Result<(i64, State, Vec<ProtocolMessage>), String> {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
-        let read_in_file = self.fs.read(program)?;
+        let read_in_file = self.fs.read_content(program)?;
         let opts = Rc::new(DefaultCompilerOpts::new(name));
         let mut launch_data =
             self.read_program_data(
-                &mut allocator, opts.clone(), i, l, program, &read_in_file
+                &mut allocator, opts.clone(), i, l, program, &read_in_file.as_bytes()
             )?;
 
         if !args.is_empty() {
@@ -987,7 +987,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
         pm: &ProtocolMessage,
     ) -> Result<Option<Vec<ProtocolMessage>>, String> {
         let mut state = State::PreInitialization;
-        self.log.write(&format!(
+        self.log.log(&format!(
             "got message {}",
             serde_json::to_string(pm).unwrap()
         ));
@@ -1023,7 +1023,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             .map(Some)
                             .unwrap_or(None);
 
-                    self.log.write(&format!("launch extra {:?}", launch_extra));
+                    self.log.log(&format!("launch extra {:?}", launch_extra));
                     let stop_on_entry = launch_extra.as_ref()
                         .and_then(|l| l.arguments.stop_on_entry)
                         .unwrap_or(true);
@@ -1051,7 +1051,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         return Ok(Some(out_msgs));
                     } else {
                         self.state = State::Initialized(i);
-                        self.log.write("No program provided");
+                        self.log.log("No program provided");
                     }
                 }
                 // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
@@ -1497,13 +1497,13 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 }
                 (st, _rq) => {
                     self.log
-                        .write(&format!("Don't know what to do with {:?} in state {}", req, st.state_name()));
+                        .log(&format!("Don't know what to do with {:?} in state {}", req, st.state_name()));
                     self.state = st;
                 }
             }
         }
 
-        self.log.write(&format!("unhandled message {:?}", pm));
+        self.log.log(&format!("unhandled message {:?}", pm));
         Err(format!("unhandled message {:?}", pm))
     }
 }

@@ -7,9 +7,9 @@ use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, Comp
 use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{
-    grab_scope_doc_range, recover_scopes, IncludeData, IncludeKind, ParseScope, ParsedDoc,
+    grab_scope_doc_range, recover_scopes, IncludeData, ParseScope, ParsedDoc,
 };
-use crate::lsp::types::{DocPosition, DocRange};
+use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeKind};
 use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -19,14 +19,14 @@ lazy_static! {
 
 #[derive(Debug, Clone)]
 pub struct ReparsedHelper {
-    pub hash: Vec<u8>,
+    pub hash: Hash,
     pub range: DocRange,
     pub parsed: Result<HelperForm, CompileErr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReparsedExp {
-    pub hash: Vec<u8>,
+    pub hash: Hash,
     pub parsed: Result<BodyForm, CompileErr>,
 }
 
@@ -34,10 +34,10 @@ pub struct ReparsedModule {
     pub ignored: bool,
     pub mod_kw: Option<Srcloc>,
     pub args: Rc<SExp>,
-    pub helpers: HashMap<Vec<u8>, ReparsedHelper>,
+    pub helpers: HashMap<Hash, ReparsedHelper>,
     pub exp: Option<ReparsedExp>,
-    pub unparsed: HashMap<Vec<u8>, DocRange>,
-    pub includes: HashMap<Vec<u8>, IncludeData>,
+    pub unparsed: HashMap<Hash, DocRange>,
+    pub includes: HashMap<Hash, IncludeData>,
     pub errors: Vec<CompileErr>,
 }
 
@@ -116,7 +116,7 @@ pub fn reparse_subset(
     uristring: &str,
     simple_ranges: &[DocRange],
     compiled: &CompileForm,
-    prev_helpers: &HashMap<Vec<u8>, ReparsedHelper>,
+    prev_helpers: &HashMap<Hash, ReparsedHelper>,
 ) -> ReparsedModule {
     let mut result = ReparsedModule {
         ignored: false,
@@ -241,7 +241,7 @@ pub fn reparse_subset(
     suffix_text = suffix_text.iter().take(break_end).copied().collect();
     // Collect hash of prefix and suffix so we can reparse everything if
     // they change.
-    let suffix_hash = sha256tree_from_atom(&suffix_text);
+    let suffix_hash = Hash::new(&sha256tree_from_atom(&suffix_text));
 
     if let Ok(suffix_parse) = parse_sexp(
         Srcloc::new(
@@ -284,7 +284,7 @@ pub fn reparse_subset(
 
     for (i, r) in simple_ranges.iter().enumerate() {
         let text = grab_scope_doc_range(doc, r, false);
-        let hash = sha256tree_from_atom(&text);
+        let hash = Hash::new(&sha256tree_from_atom(&text));
 
         // Always reparse the body for convenience.  It's one form so it won't
         // accumulate.
@@ -310,7 +310,7 @@ pub fn reparse_subset(
                         });
                         continue;
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
-                        result.includes.insert(hash.clone(), include.clone());
+                        result.includes.insert(hash, include.clone());
                         continue;
                     }
 
@@ -461,7 +461,7 @@ pub fn combine_new_with_old_parse(
 
     // Collect to-delete set.
     for (h, _) in new_helpers.iter() {
-        if !reparse.unparsed.contains_key(h) && !reparse.helpers.contains_key(h) {
+        if !reparse.unparsed.contains_key(&h) && !reparse.helpers.contains_key(h) {
             if let Some(name) = parsed.hash_to_name.get(h) {
                 remove_names.insert(name.clone());
             }

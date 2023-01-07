@@ -14,7 +14,7 @@ use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodege
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
 use crate::lsp::types::DocData;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
+use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 #[derive(Clone)]
@@ -150,21 +150,21 @@ pub fn get_file_content(
     include_paths: &[String],
     name: &str,
 ) -> Result<(String, DocData), String> {
-    log.write(&format!("get_file_content {}", name));
+    log.log(&format!("get_file_content {}", name));
     for find_path in include_paths.iter() {
         let joined_find_to_root = if let Some(ref r) = ws_root {
             r.join(find_path).to_path_buf()
         } else {
             Path::new(r".").to_path_buf()
         };
-        log.write(&format!(
+        log.log(&format!(
             "joined_find_to_root {}",
             joined_find_to_root.to_str().unwrap()
         ));
         if let Some(try_path) = joined_find_to_root.join(name).to_str() {
-            log.write(&format!("try path {}", try_path));
-            if let Ok(filedata) = reader.read(try_path) {
-                let doc_text = split_text(&decode_string(&filedata));
+            log.log(&format!("try path {}", try_path));
+            if let Ok(filedata) = reader.read_content(try_path) {
+                let doc_text = split_text(&filedata);
                 let comments = compute_comment_lines(&doc_text);
 
                 return Ok((
@@ -211,7 +211,7 @@ impl LSPCompilerOpts {
     }
 
     fn get_file(&self, name: &str) -> Result<(String, DocData), String> {
-        self.log.write(&format!("get_file {}", name));
+        self.log.log(&format!("get_file {}", name));
         let cell: &RefCell<HashMap<String, DocData>> = self.lsp.borrow();
         let coll: Ref<HashMap<String, DocData>> = cell.borrow();
         coll.get(name)

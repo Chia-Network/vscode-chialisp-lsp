@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::cell::{Ref, RefCell};
-use std::cmp::{Ordering, PartialOrd};
-use std::collections::{BTreeMap, HashMap};
+use std::cmp::{PartialOrd, min};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::default::Default;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
@@ -19,18 +20,17 @@ use lsp_types::{
 };
 
 use percent_encoding::percent_decode;
-use serde::{Deserialize, Serialize};
 use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, IncludeKind, ParsedDoc};
+use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::CompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::decode_string;
+use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -66,8 +66,25 @@ pub const TK_NUMBER_IDX: u32 = 7;
 
 pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
+pub const HASH_SIZE: usize = 32;
 
 pub struct ToFilePathErr;
+
+#[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
+pub struct Hash {
+    data: [u8; HASH_SIZE]
+}
+
+impl Hash {
+    pub fn new(v: &Vec<u8>) -> Self {
+        let len = min(v.len(), HASH_SIZE);
+        let mut data: [u8; HASH_SIZE] = [0; 32];
+        for i in 0..len {
+            data[i] = if i >= v.len() { 0 } else { v[i] }
+        }
+        Hash { data }
+    }
+}
 
 // Note: to_file_path is only present on native builds, but we're building to
 // wasm.
@@ -198,7 +215,6 @@ pub struct DocRange {
     pub start: DocPosition,
     pub end: DocPosition,
 }
-
 
 #[test]
 fn test_docrange_overlap_no() {
@@ -371,28 +387,96 @@ impl DocRange {
     }
 }
 
+// An object that contains the literal text of a document we're working with in
+// the LSP.
 #[derive(Debug, Clone)]
+pub struct DocData {
+    pub fullname: String,
+    pub text: Vec<Rc<Vec<u8>>>,
+    pub version: i32,
+    // Zero based.
+    pub comments: HashMap<usize, usize>,
+}
+
+impl DocData {
+    // Return a reference to the nth line's data.
+    pub fn nth_line_ref(&self, line: usize) -> Option<&Vec<u8>> {
+        if line < self.text.len() {
+            let borrowed: &Vec<u8> = self.text[line].borrow();
+            Some(borrowed)
+        } else {
+            None
+        }
+    }
+
+    // Given a position go back one character, returning the character
+    // and the new position if they exist.
+    //
+    // This only visits characters in lines, so it will skip blank lines.
+    pub fn get_prev_position(&self, position: &Position) -> Option<(u8, Position)> {
+        if position.character == 0
+            && position.line > 0
+            && ((position.line - 1) as usize) < self.text.len()
+        {
+            let nextline = position.line - 1;
+            self.get_prev_position(&Position {
+                line: nextline,
+                character: self.text[nextline as usize].len() as u32,
+            })
+        } else {
+            self.nth_line_ref(position.line as usize).and_then(|line| {
+                if position.character > 0 && (position.character as usize) <= line.len() {
+                    let prev_char = position.character - 1;
+                    let the_char = line[prev_char as usize];
+                    Some((
+                        the_char,
+                        Position {
+                            line: position.line,
+                            character: prev_char,
+                        },
+                    ))
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
+    // Given a position, get the pointed-to character.
+    // Not currently used.
+    /*
+    pub fn get_at_position(&self, position: &Position) -> Option<u8> {
+        self.nth_line_ref(position.line as usize).and_then(|line| {
+            if (position.character as usize) < line.len() {
+                Some(line[position.character as usize])
+            } else {
+                None
+            }
+        })
+    }
+    */
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 struct HelperWithDocRange {
     pub loc: DocRange,
 }
 
-impl PartialEq for HelperWithDocRange {
-    fn eq(&self, other: &Self) -> bool {
-        self.loc == other.loc
-    }
-}
-
-impl PartialOrd for HelperWithDocRange {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.loc.cmp(&other.loc))
-    }
-}
-
-impl Eq for HelperWithDocRange {}
-impl Ord for HelperWithDocRange {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.loc.cmp(&other.loc)
-    }
+#[test]
+fn test_helper_with_doc_range() {
+    let sl1 = DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 2 },
+    };
+    let sl2 = DocRange {
+        start: DocPosition { line: 0, character: 2 },
+        end: DocPosition { line: 0, character: 4 },
+    };
+    let hw1 = HelperWithDocRange { loc: sl1 };
+    let hw2 = HelperWithDocRange { loc: sl2 };
+    assert_eq!(hw1, hw1);
+    assert!(hw1 != hw2);
+    assert!(hw1 < hw2);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -802,62 +886,6 @@ impl LSPServiceProvider {
     }
 }
 
-// An object that contains the literal text of a document we're working with in
-// the LSP.
-#[derive(Debug, Clone)]
-pub struct DocData {
-    pub fullname: String,
-    pub text: Vec<Rc<Vec<u8>>>,
-    pub version: i32,
-    // Zero based.
-    pub comments: HashMap<usize, usize>,
-}
-
-impl DocData {
-    // Return a reference to the nth line's data.
-    pub fn nth_line_ref(&self, line: usize) -> Option<&Vec<u8>> {
-        if line < self.text.len() {
-            let borrowed: &Vec<u8> = self.text[line].borrow();
-            Some(borrowed)
-        } else {
-            None
-        }
-    }
-
-    // Given a position go back one character, returning the character
-    // and the new position if they exist.
-    //
-    // This only visits characters in lines, so it will skip blank lines.
-    pub fn get_prev_position(&self, position: &Position) -> Option<(u8, Position)> {
-        if position.character == 0
-            && position.line > 0
-            && ((position.line - 1) as usize) < self.text.len()
-        {
-            let nextline = position.line - 1;
-            self.get_prev_position(&Position {
-                line: nextline,
-                character: self.text[nextline as usize].len() as u32,
-            })
-        } else {
-            self.nth_line_ref(position.line as usize).and_then(|line| {
-                if position.character > 0 && (position.character as usize) <= line.len() {
-                    let prev_char = position.character - 1;
-                    let the_char = line[prev_char as usize];
-                    Some((
-                        the_char,
-                        Position {
-                            line: position.line,
-                            character: prev_char,
-                        },
-                    ))
-                } else {
-                    None
-                }
-            })
-        }
-    }
-}
-
 // Note: This is using a directive that ensures that this code is only included
 // in the test build.  It is not necessary to be concerned that it will be
 // included in another configuration.  Although it's name contains test, it will
@@ -936,4 +964,61 @@ fn test_doc_data_get_prev_position_1() {
 
     assert_eq!(want_line_jumps, have_line_jumps);
     assert_eq!(got_characters, all_expected_characters);
+}
+
+#[derive(Debug, Clone)]
+// What kind of scope form led to this binding.
+pub enum ScopeKind {
+    Module,
+    Macro,
+    Function,
+    Let,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+// Various ways chialisp can include a file (compile and embed pending in
+// https://github.com/Chia-Network/clvm_tools_rs/pull/71 )
+pub enum IncludeKind {
+    Include,
+    CompileFile(Srcloc),
+    EmbedFile(Srcloc, Srcloc),
+}
+
+#[derive(Debug, Clone)]
+// Part of a scope stack showing all bindings available in the given region.
+pub struct ParseScope {
+    pub region: Srcloc,
+    pub kind: ScopeKind,
+    pub variables: HashSet<SExp>,
+    pub functions: HashSet<SExp>,
+    pub containing: Vec<ParseScope>,
+}
+
+#[derive(Debug, Clone)]
+// Information about how we produce semantic tokens for include directives.
+// Found is None if we haven't tried to resolve this include yet, Some(true)
+// if we found it, and Some(false) if we tried and it didn't exist.
+pub struct IncludeData {
+    pub loc: Srcloc,
+    pub name_loc: Srcloc,
+    pub kw_loc: Srcloc,
+    pub kind: IncludeKind,
+    pub filename: Vec<u8>,
+    pub found: Option<bool>
+}
+
+#[derive(Debug, Clone)]
+// A helper (defmacro, defun, etc)  that we parsed alone via document range.
+pub struct ReparsedHelper {
+    pub hash: Hash,
+    pub range: DocRange,
+    pub parsed: Result<HelperForm, CompileErr>,
+}
+
+#[derive(Debug, Clone)]
+// Information about the main expression in a chialisp program, parsed from a
+// document range.
+pub struct ReparsedExp {
+    pub hash: Hash,
+    pub parsed: Result<BodyForm, CompileErr>,
 }

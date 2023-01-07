@@ -8,23 +8,17 @@ use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
 };
 use crate::lsp::reparse::{ReparsedExp, ReparsedHelper};
-use crate::lsp::types::{DocData, DocPosition, DocRange};
+use crate::lsp::types::{DocData, DocPosition, DocRange, Hash, IncludeKind};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 #[derive(Debug, Clone)]
 pub enum ScopeKind {
+    Hash,
     Module,
     Macro,
     Function,
     Let,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IncludeKind {
-    Include,
-    CompileFile(Srcloc),
-    EmbedFile(Srcloc, Srcloc),
 }
 
 #[derive(Debug, Clone)]
@@ -47,16 +41,29 @@ pub struct IncludeData {
 }
 
 #[derive(Debug, Clone)]
+// A parsed document.
 pub struct ParsedDoc {
+    // Ignored means that it didn't look like chialisp language, possibly it's
+    // clvm or another sexp language that is semi-parsable as chialisp.
     pub ignored: bool,
     pub mod_kw: Option<Srcloc>,
+    // If we were able to run a frontend pass (even partially), compiled contains
+    // it.  CompileForm is the result of frontend and is used for analyzing
+    // chialisp in many different tools deriving from clvm_tools_rs.
     pub compiled: CompileForm,
+    // The scope stack for this file.
     pub scopes: ParseScope,
-    pub helpers: HashMap<Vec<u8>, ReparsedHelper>,
+    // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
+    // their ranges in the source.
+    pub helpers: HashMap<Hash, ReparsedHelper>,
+    // If present, the main expression in ReparsedExp form.
     pub exp: Option<ReparsedExp>,
-    pub includes: HashMap<Vec<u8>, IncludeData>,
-    pub hash_to_name: HashMap<Vec<u8>, Vec<u8>>,
-    pub errors: Vec<CompileErr>,
+    // Includes in the various files, indexed by included file.
+    pub includes: HashMap<Hash, IncludeData>,
+    // Index of hashed ranges (as Reparsed* data) to the names they bind.
+    pub hash_to_name: HashMap<Hash, Vec<u8>>,
+    // Chialisp frontend errors encountered while parsing.
+    pub errors: Vec<CompileErr>
 }
 
 impl ParsedDoc {
@@ -65,25 +72,28 @@ impl ParsedDoc {
         ParsedDoc {
             ignored: false,
             mod_kw: None,
-            includes: HashMap::new(),
-            scopes: ParseScope {
-                region: startloc.clone(),
-                kind: ScopeKind::Module,
-                variables: HashSet::new(),
-                functions: HashSet::new(),
-                containing: vec![],
-            },
-            helpers: HashMap::new(),
-            hash_to_name: HashMap::new(),
-            exp: None,
+            // CompileForm doesn't have a Default impl, but we start from the
+            // assumption of an empty program here so we can build it up
+            // incrementally.
             compiled: CompileForm {
-                loc: startloc,
-                include_forms: Vec::new(),
+                loc: startloc.clone(),
+                include_forms: Default::default(),
                 args: Rc::new(nil.clone()),
-                helpers: vec![],
+                helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
             },
-            errors: Vec::new(),
+            scopes: ParseScope {
+                region: startloc,
+                kind: ScopeKind::Module,
+                variables: Default::default(),
+                functions: Default::default(),
+                containing: Default::default(),
+            },
+            helpers: Default::default(),
+            exp: None,
+            includes: Default::default(),
+            hash_to_name: Default::default(),
+            errors: Default::default()
         }
     }
 }
@@ -485,4 +495,26 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
     }
 
     ranges
+}
+
+#[test]
+fn test_doc_vec_byte_iter_0() {
+    // vr vec Rc
+    let vr = |s: &str| {
+        let bv: Vec<u8> = s.as_bytes().to_vec();
+        Rc::new(bv)
+    };
+    let text = vec![
+        vr("(mod (X)"),
+        vr("  (defun F (A) (* A 2))"),
+        vr("  (F X)"),
+        vr("  )")
+    ];
+
+    let expected_bytes =
+        b"(mod (X)\n  (defun F (A) (* A 2))\n  (F X)\n  )\n";
+
+    for (i,b) in DocVecByteIter::new(&text).enumerate() {
+        assert_eq!(expected_bytes[i], b);
+    }
 }
