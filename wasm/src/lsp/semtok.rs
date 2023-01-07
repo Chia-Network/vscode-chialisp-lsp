@@ -9,9 +9,9 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 use clvm_tools_rs::compiler::clvm::sha256tree;
 use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{recover_scopes, IncludeData, ParsedDoc};
+use crate::lsp::parse::{recover_scopes, ParsedDoc};
 use crate::lsp::reparse::{ReparsedExp, ReparsedHelper};
-use crate::lsp::types::{DocPosition, DocRange, Hash, ILogWriter, IncludeKind, LSPServiceProvider};
+use crate::lsp::types::{DocPosition, DocRange, Hash, ILogWriter, IncludeData, IncludeKind, LSPServiceProvider};
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
@@ -307,8 +307,8 @@ fn process_body_code(
                     hashed,
                     IncludeData {
                         loc: i.kw.clone(),
-                        nl: i.nl.clone(),
-                        kw: i.kw.clone(),
+                        name_loc: i.nl.clone(),
+                        kw_loc: i.kw.clone(),
                         kind: IncludeKind::Include,
                         filename: i.name.clone(),
                         found: None
@@ -364,12 +364,12 @@ pub fn build_semantic_tokens(
 
     for (_, incl) in parsed.includes.iter() {
         collected_tokens.push(SemanticTokenSortable {
-            loc: incl.kw.clone(),
+            loc: incl.kw_loc.clone(),
             token_type: TK_KEYWORD_IDX,
             token_mod: 0,
         });
         collected_tokens.push(SemanticTokenSortable {
-            loc: incl.nl.clone(),
+            loc: incl.name_loc.clone(),
             token_type: TK_STRING_IDX,
             token_mod: 0,
         });

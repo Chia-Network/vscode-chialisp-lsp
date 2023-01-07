@@ -7,9 +7,9 @@ use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, Comp
 use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{
-    grab_scope_doc_range, recover_scopes, IncludeData, ParseScope, ParsedDoc,
+    grab_scope_doc_range, recover_scopes, ParseScope, ParsedDoc,
 };
-use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeKind};
+use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeData, IncludeKind};
 use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -61,8 +61,8 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                 if incl == b"include" {
                     return Some(IncludeData {
                         loc: sexp.loc(),
-                        kw: kl,
-                        nl,
+                        kw_loc: kl,
+                        name_loc: nl,
                         kind: IncludeKind::Include,
                         filename: fname,
                         found: None
@@ -76,8 +76,8 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                 if incl == b"compile-file" {
                     return Some(IncludeData {
                         loc: sexp.loc(),
-                        kw: kl.clone(),
-                        nl: nl.clone(),
+                        kw_loc: kl.clone(),
+                        name_loc: nl.clone(),
                         kind: IncludeKind::CompileFile(il.clone()),
                         filename: fname.clone(),
                         found: None
@@ -95,8 +95,8 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                 if incl == b"embed-file" {
                     return Some(IncludeData {
                         loc: sexp.loc(),
-                        kw: kl.clone(),
-                        nl: nl.clone(),
+                        kw_loc: kl.clone(),
+                        name_loc: nl.clone(),
                         kind: IncludeKind::EmbedFile(il.clone(), tl.clone()),
                         filename: fname.clone(),
                         found: None
