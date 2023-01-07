@@ -65,7 +65,6 @@ pub const TK_NUMBER_IDX: u32 = 7;
 
 pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
-
 pub const HASH_SIZE: usize = 32;
 
 pub struct ToFilePathErr;
