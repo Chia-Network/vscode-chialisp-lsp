@@ -1,3 +1,4 @@
+pub mod parse;
 pub mod types;
 
 pub use super::lsp::types::{
