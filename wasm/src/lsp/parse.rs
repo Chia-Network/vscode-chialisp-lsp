@@ -177,14 +177,6 @@ fn test_is_identifier_char_symbol() {
 // Given a refcounted line reference and a "point"
 // (@see https://www.gnu.org/software/emacs/manual/html_node/elisp/Point.html )
 // Search for the bounds of a lisp like identifier at the point.
-//
-// (x y z) 2 -> Some("x")
-// (x yyy z) 5 -> Some("yyy")
-// (x !!!$$$$2234234 z) 7 -> Some("!!!$$$$2234234")
-// (x yyy z) 3 -> None
-// (x yyy z) 0 -> None
-// (x yyy z) 1 -> None
-// (x yyy z) 9 -> None
 pub fn find_ident(line: Rc<Vec<u8>>, char_at: u32) -> Option<Vec<u8>> {
     let ca_size = char_at as usize;
     let ll = line.len();
