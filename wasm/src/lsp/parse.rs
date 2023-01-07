@@ -8,18 +8,9 @@ use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
 };
 use crate::lsp::reparse::{ReparsedExp, ReparsedHelper};
-use crate::lsp::types::{DocData, DocPosition, DocRange, Hash, IncludeKind};
+use crate::lsp::types::{DocData, DocPosition, DocRange, Hash, IncludeData, ScopeKind};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
-
-#[derive(Debug, Clone)]
-pub enum ScopeKind {
-    Hash,
-    Module,
-    Macro,
-    Function,
-    Let,
-}
 
 #[derive(Debug, Clone)]
 pub struct ParseScope {
@@ -28,16 +19,6 @@ pub struct ParseScope {
     pub variables: HashSet<SExp>,
     pub functions: HashSet<SExp>,
     pub containing: Vec<ParseScope>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IncludeData {
-    pub loc: Srcloc,
-    pub nl: Srcloc,
-    pub kw: Srcloc,
-    pub kind: IncludeKind,
-    pub filename: Vec<u8>,
-    pub found: Option<bool>
 }
 
 #[derive(Debug, Clone)]

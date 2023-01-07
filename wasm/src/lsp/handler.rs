@@ -12,12 +12,11 @@ use lsp_types::{
 use lsp_server::{ErrorCode, Message, RequestId, Response};
 
 use crate::lsp::completion::LSPCompletionRequestHandler;
-use crate::lsp::parse::IncludeData;
 use crate::lsp::patch::{
     compute_comment_lines, split_text, LSPServiceProviderApplyDocumentPatch,
 };
 use crate::lsp::semtok::LSPSemtokRequestHandler;
-use crate::lsp::types::{cast, ConfigJson, DocRange, DocData, InitState, LSPServiceProvider};
+use crate::lsp::types::{cast, ConfigJson, DocRange, DocData, IncludeData, InitState, LSPServiceProvider};
 use clvm_tools_rs::compiler::sexp::decode_string;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -187,7 +186,7 @@ impl LSPServiceProvider {
 
         if let Some(doc) = self.parsed_documents.get(&uristring) {
             for (_, inc) in doc.includes.iter() {
-                if DocRange::from_srcloc(inc.nl.clone()).to_range() == params.range {
+                if DocRange::from_srcloc(inc.name_loc.clone()).to_range() == params.range {
                     let code_action = vec![
                         CodeActionOrCommand::CodeAction(CodeAction {
                             title: "Locate include path".to_string(),

@@ -457,54 +457,6 @@ impl DocData {
     */
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
-struct HelperWithDocRange {
-    pub loc: DocRange,
-}
-
-#[test]
-fn test_helper_with_doc_range() {
-    let sl1 = DocRange {
-        start: DocPosition { line: 0, character: 1 },
-        end: DocPosition { line: 0, character: 2 },
-    };
-    let sl2 = DocRange {
-        start: DocPosition { line: 0, character: 2 },
-        end: DocPosition { line: 0, character: 4 },
-    };
-    let hw1 = HelperWithDocRange { loc: sl1 };
-    let hw2 = HelperWithDocRange { loc: sl2 };
-    assert_eq!(hw1, hw1);
-    assert!(hw1 != hw2);
-    assert!(hw1 < hw2);
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ConfigJson {
-    pub include_paths: Vec<String>,
-}
-
-pub enum InitState {
-    Preconfig,
-    Initialized(Rc<InitializeParams>),
-}
-
-#[derive(Default)]
-pub struct ErrorSet {
-    preprocessing: Vec<Diagnostic>,
-    semantic: Vec<Diagnostic>,
-}
-
-impl ErrorSet {
-    pub fn from_preprocessing(v: Vec<Diagnostic>) -> Self {
-        ErrorSet { preprocessing: v, semantic: vec![] }
-    }
-
-    pub fn from_semantic(v: Vec<Diagnostic>) -> Self {
-        ErrorSet { preprocessing: vec![], semantic: v }
-    }
-}
-
 pub struct LSPServiceProvider {
     // Init params.
     pub fs: Rc<dyn IFileReader>,
@@ -619,7 +571,7 @@ impl LSPServiceProvider {
         let missing_includes = self.check_for_missing_include_files(uristring);
         let errors = missing_includes.iter().map(|i| {
             Diagnostic {
-                range: DocRange::from_srcloc(i.nl.clone()).to_range(),
+                range: DocRange::from_srcloc(i.name_loc.clone()).to_range(),
                 severity: None,
                 code: None,
                 code_description: None,
@@ -964,6 +916,54 @@ fn test_doc_data_get_prev_position_1() {
 
     assert_eq!(want_line_jumps, have_line_jumps);
     assert_eq!(got_characters, all_expected_characters);
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+struct HelperWithDocRange {
+    pub loc: DocRange,
+}
+
+#[test]
+fn test_helper_with_doc_range() {
+    let sl1 = DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 2 },
+    };
+    let sl2 = DocRange {
+        start: DocPosition { line: 0, character: 2 },
+        end: DocPosition { line: 0, character: 4 },
+    };
+    let hw1 = HelperWithDocRange { loc: sl1 };
+    let hw2 = HelperWithDocRange { loc: sl2 };
+    assert_eq!(hw1, hw1);
+    assert!(hw1 != hw2);
+    assert!(hw1 < hw2);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConfigJson {
+    pub include_paths: Vec<String>,
+}
+
+pub enum InitState {
+    Preconfig,
+    Initialized(Rc<InitializeParams>),
+}
+
+#[derive(Default)]
+pub struct ErrorSet {
+    preprocessing: Vec<Diagnostic>,
+    semantic: Vec<Diagnostic>,
+}
+
+impl ErrorSet {
+    pub fn from_preprocessing(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: v, semantic: vec![] }
+    }
+
+    pub fn from_semantic(v: Vec<Diagnostic>) -> Self {
+        ErrorSet { preprocessing: vec![], semantic: v }
+    }
 }
 
 #[derive(Debug, Clone)]

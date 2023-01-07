@@ -4,7 +4,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::lsp::parse::IncludeData;
 use crate::lsp::{
     LSPServiceMessageHandler, LSPServiceProvider, TK_COMMENT_IDX, TK_DEFINITION_BIT,
     TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_STRING_IDX,
@@ -25,7 +24,7 @@ use crate::dbg::handler::parse_srcloc;
 use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
-use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange};
+use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
 use crate::interfaces::{EPrintWriter, FSFileReader};
 use clvm_tools_rs::compiler::prims;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -810,10 +809,10 @@ fn include_is_annotated() {
     );
     let includes_flat: Vec<IncludeData> =
         combined.includes.iter().map(|(_, v)| v.clone()).collect();
-    assert_eq!(includes_flat[0].kw.line, 2);
-    assert_eq!(includes_flat[0].kw.col, 4);
-    assert_eq!(includes_flat[0].nl.line, 2);
-    assert_eq!(includes_flat[0].nl.col, 12);
+    assert_eq!(includes_flat[0].kw_loc.line, 2);
+    assert_eq!(includes_flat[0].kw_loc.col, 4);
+    assert_eq!(includes_flat[0].name_loc.line, 2);
+    assert_eq!(includes_flat[0].name_loc.col, 12);
 }
 
 #[test]

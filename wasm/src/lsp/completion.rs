@@ -4,9 +4,9 @@ use lsp_server::{Message, RequestId, Response};
 use lsp_types::{CompletionItem, CompletionList, CompletionParams, CompletionResponse, Position};
 
 use crate::lsp::parse::{
-    find_scope_stack, get_positional_text, is_first_in_list, is_identifier, ParseScope, ScopeKind,
+    find_scope_stack, get_positional_text, is_first_in_list, is_identifier, ParseScope
 };
-use crate::lsp::types::DocData;
+use crate::lsp::types::{DocData, ScopeKind};
 use crate::lsp::LSPServiceProvider;
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
