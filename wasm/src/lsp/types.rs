@@ -556,7 +556,7 @@ impl ErrorSet {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 // What kind of scope form led to this binding.
 pub enum ScopeKind {
     Module,
