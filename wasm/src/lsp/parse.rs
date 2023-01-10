@@ -4,10 +4,14 @@ use std::rc::Rc;
 
 use lsp_types::Position;
 
+#[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind};
+#[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
+#[cfg(test)]
+use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
+use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
