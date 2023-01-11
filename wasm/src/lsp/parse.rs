@@ -6,7 +6,9 @@ use lsp_types::Position;
 
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind};
+use clvm_tools_rs::compiler::comptypes::{
+    BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+};
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
 #[cfg(test)]
@@ -49,7 +51,7 @@ pub struct ParsedDoc {
     // Index of hashed ranges (as Reparsed* data) to the names they bind.
     pub hash_to_name: HashMap<Hash, Vec<u8>>,
     // Chialisp frontend errors encountered while parsing.
-    pub errors: Vec<CompileErr>,
+    pub errors: Vec<CompileErr>
 }
 
 impl ParsedDoc {
@@ -115,6 +117,48 @@ impl<'a> DocVecByteIter<'a> {
             offs: 0,
             target,
         }
+    }
+}
+
+pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> ParseScope {
+    let mut toplevel_args = HashSet::new();
+    let mut toplevel_funs = HashSet::new();
+    let mut contained = Vec::new();
+
+    make_arg_set(&mut toplevel_args, fe.args.clone());
+
+    for h in fe.helpers.iter() {
+        match h {
+            HelperForm::Defun(_, d) => {
+                toplevel_funs.insert(SExp::Atom(d.loc.clone(), d.name.clone()));
+            }
+            HelperForm::Defmacro(m) => {
+                toplevel_funs.insert(SExp::Atom(m.loc.clone(), m.name.clone()));
+            }
+            HelperForm::Defconstant(c) => {
+                toplevel_args.insert(SExp::Atom(c.loc.clone(), c.name.clone()));
+            }
+        }
+
+        let f = h.loc().file.clone();
+        let filename: &String = f.borrow();
+        if filename == ourfile {
+            if let Some(scope) = make_helper_scope(h) {
+                contained.push(scope);
+            }
+        }
+    }
+
+    ParseScope {
+        kind: ScopeKind::Module,
+        region: Srcloc::start(ourfile).ext(&Srcloc::new(
+            Rc::new(ourfile.to_string()),
+            text.len() + 1,
+            0,
+        )),
+        variables: toplevel_args,
+        functions: toplevel_funs,
+        containing: contained,
     }
 }
 

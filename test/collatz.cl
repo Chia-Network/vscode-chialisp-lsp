@@ -2,6 +2,7 @@
 
   ;; set language standard
   (include *standard-cl-22*)
+  (include test-inc.clsp)
 
   ;; Determine if number is odd
   ;; test.

@@ -1,5 +1,6 @@
 // Require modules used in the logic below
 const jasmine = require('jasmine');
+const os = require('os');
 const {Builder, By, Key, until} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
@@ -44,9 +45,47 @@ var login = async function() {
 jasmine.DEFAULT_TIMEOUT_INTERVAL = 300 * 1000;
 jest.setTimeout(300 * 1000);
 
-async function rightClick(element){
+async function rightClick(element) {
     const actions = driver.actions({async: true});
     await actions.contextClick(element).perform();
+}
+
+async function hover(element) {
+    const actions = driver.actions({async: true});
+    await actions.move({origin: element}).perform();
+}
+
+async function sendControlChar(char) {
+    const actions = driver.actions({async: true});
+    if (os.platform() === 'darwin') {
+      await actions.pause(2000).keyDown(Key.COMMAND).sendKeys(char).keyUp(Key.COMMAND).pause(500).perform();
+    } else {
+      await actions.pause(2000).keyDown(Key.CONTROL).sendKeys(char).keyUp(Key.CONTROL).pause(500).perform();
+    }
+}
+
+async function pressTab() {
+    const actions = driver.actions({async: true});
+    await actions.pause(500).keyDown(Key.TAB).keyUp(Key.TAB).perform();
+}
+
+async function sendControlA() { await sendControlChar('a'); }
+async function sendControlH() { await sendControlChar('h'); }
+async function sendControlP() { await sendControlChar('p'); }
+
+async function wait(secs) {
+    const actions = driver.actions({async: true});
+    await actions.pause(secs * 1000).perform();
+}
+
+async function sendReturn() {
+    const actions = driver.actions({async: true});
+    await actions.pause(2000).keyDown(Key.RETURN).keyUp(Key.RETURN).pause(500).perform();
+}
+
+async function sendEscape() {
+    const actions = driver.actions({async: true});
+    await actions.pause(2000).keyDown(Key.ESCAPE).keyUp(Key.ESCAPE).pause(500).perform();
 }
 
 function byVisibleText(str) {
@@ -55,6 +94,48 @@ function byVisibleText(str) {
 
 function byExactText(str) {
     return By.xpath(`//*[text()='${str}']`);
+}
+
+function byAttribute(attr,val) {
+    return By.xpath(`//*[@${attr}='${val}']`);
+}
+
+async function openFile(file) {
+        console.log(`Check the content of ${file}`);
+        await sendControlP();
+
+        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys(file);
+
+        let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
+        await sendReturn();
+}
+
+async function replaceString(olds, news) {
+    await sendControlH();
+
+    console.log('rename a function so some errors appear');
+    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Find")));
+    await inputBox.click();
+    await sendControlA();
+    await inputBox.sendKeys(olds);
+
+    inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace")));
+    await inputBox.click();
+    await sendControlA();
+    await inputBox.sendKeys(news);
+
+    let nextMatchButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Next Match (Enter)")));
+    await nextMatchButton.click();
+
+    let replaceButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace (Enter)")));
+    await replaceButton.click();
+
+    let closeButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
+    await closeButton.click();
+
+    const actions = driver.actions({async: true});
+    await actions.pause(3000).perform();
 }
 
 // Define a category of tests using test framework, in this case Jasmine
@@ -95,7 +176,7 @@ describe("Basic element tests", function() {
 
         let projectDir = await driver.wait(until.elementLocated(byExactText("project")));
         console.log('clicking project dir');
-        projectDir.click();
+        await projectDir.click();
 
         let chialispExt = await driver.wait(until.elementLocated(byVisibleText(".vsix")));
         console.log('right click chialisp ext');
@@ -103,11 +184,11 @@ describe("Basic element tests", function() {
 
         let installChoice = await driver.wait(until.elementLocated(byVisibleText("VSIX")));
         console.log('click install');
-        installChoice.click();
+        await installChoice.click();
 
-        let chialisp = await driver.wait(until.elementLocated(byVisibleText("collatz.cl")));
-        console.log('select chialisp file');
-        chialisp.click();
+	      await sendReturn();
+
+	      await openFile('collatz.cl');
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
@@ -122,7 +203,59 @@ describe("Basic element tests", function() {
 
         expect(await comment.getAttribute("class")).toBe("mtk4");
 
+        console.log('we should have an error shown');
+        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-error")));
+
+        console.log('try to resolve includes automatically');
+        let include_name_to_hover = await driver.wait(until.elementLocated(byVisibleText("test-inc.clsp")));
+        await hover(include_name_to_hover);
+
+        console.log('find the quick fix selection');
+        let quickFixElement = await driver.wait(until.elementLocated(byVisibleText("Quick Fix")));
+        quickFixElement.click();
+
+        console.log('find the include path button');
+        await sendReturn();
+
+        console.log('find the input box');
+        let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys("include/test-inc.clsp");
+
+        console.log('accept input');
+        let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
+        okBox.click();
+
+	      await wait(3.0);
+
+        console.log('Check the content of chialisp.json');
+	      await openFile("chialisp.json");
+
+        console.log('Check content');
+        let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
+
+	      await openFile("collatz.cl");
+
+        console.log('comments should move');
+        let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
+        expect(await otherComment.getAttribute("class")).toBe("mtk15");
+
+        console.log('check for squigglies');
+        let squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(0);
+
+        console.log('change an instance of odd to obd');
+        await replaceString('odd', 'obd');
+
+        console.log('check for squigglies caused by rename');
+        squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(1);
+
+        console.log('change back to see the error disappear');
+        await replaceString('obd', 'odd');
+        squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(0);
+
         // Ok, the above didn't throw so we succeeded.
-        console.log('we found the styled elements');
+        console.log('all things we know how to test passed so far');
     });
 });

@@ -4,7 +4,7 @@
     "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "engines": {
         "vscode": "^1.70.0"
     },
@@ -43,11 +43,18 @@
                 "title": "Chialisp",
                 "properties": {
                     "chialisp.stderrLogPath": {
-                        "type":"string",
-                        "default":"",
-                        "description":"filename for stderr log for lsp"
+                        "type": "string",
+                        "default": "",
+                        "description": "filename for stderr log for lsp"
                     }
                 }
+            }
+        ],
+        "commands": [
+            {
+                "command": "chialisp.locateIncludePath",
+                "title": "Locate include file",
+                "category": "Chialisp"
             }
         ]
     },
