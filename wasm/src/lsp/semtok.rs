@@ -10,8 +10,7 @@ use clvm_tools_rs::compiler::clvm::sha256tree;
 use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{recover_scopes, ParsedDoc};
-use crate::lsp::reparse::{ReparsedExp, ReparsedHelper};
-use crate::lsp::types::{DocPosition, DocRange, Hash, ILogWriter, IncludeData, IncludeKind, LSPServiceProvider};
+use crate::lsp::types::{DocPosition, DocRange, Hash, ILogWriter, IncludeData, IncludeKind, LSPServiceProvider, ReparsedHelper, ReparsedExp};
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,

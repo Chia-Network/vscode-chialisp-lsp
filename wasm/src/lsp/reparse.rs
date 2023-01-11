@@ -7,27 +7,14 @@ use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, Comp
 use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{
-    grab_scope_doc_range, recover_scopes, ParseScope, ParsedDoc,
+    grab_scope_doc_range, recover_scopes, ParsedDoc,
 };
-use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeData, IncludeKind};
+use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedHelper, ReparsedExp};
 use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
     static ref END_TAG: Vec<u8> = b"__chia_end".to_vec();
-}
-
-#[derive(Debug, Clone)]
-pub struct ReparsedHelper {
-    pub hash: Hash,
-    pub range: DocRange,
-    pub parsed: Result<HelperForm, CompileErr>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReparsedExp {
-    pub hash: Hash,
-    pub parsed: Result<BodyForm, CompileErr>,
 }
 
 pub struct ReparsedModule {
