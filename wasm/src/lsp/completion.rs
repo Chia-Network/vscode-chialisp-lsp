@@ -4,9 +4,9 @@ use lsp_server::{Message, RequestId, Response};
 use lsp_types::{CompletionItem, CompletionList, CompletionParams, CompletionResponse, Position};
 
 use crate::lsp::parse::{
-    find_scope_stack, get_positional_text, is_first_in_list, is_identifier, ParseScope
+    find_scope_stack, get_positional_text, is_first_in_list, is_identifier
 };
-use crate::lsp::types::{DocData, ScopeKind};
+use crate::lsp::types::{DocData, ParseScope, ScopeKind};
 use crate::lsp::LSPServiceProvider;
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
@@ -51,12 +51,12 @@ fn complete_variable_name(
                 }
             })
             .filter_map(|(l, n)| {
-                if l.line > 0 && l.col > 0 {
+                if l.line > 0 && l.col > 1 {
                     get_positional_text(
                         doc,
                         &Position {
                             line: (l.line - 1) as u32,
-                            character: l.col as u32,
+                            character: (l.col - 1) as u32,
                         },
                     )
                     .filter(|l| is_identifier(l))
@@ -168,20 +168,30 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         let uristring = params.text_document_position.text_document.uri.to_string();
         self.parse_document_and_store_errors(&uristring);
         let mut res = self.produce_error_list();
+        let log = self.log.clone();
 
         self.with_doc_and_parsed(&uristring, |doc, output| {
-            if let Some(cpl) = get_positional_text(doc, &params.text_document_position.position) {
+            let on_previous_character =
+                if params.text_document_position.position.character > 0 {
+                    Position {
+                        line: params.text_document_position.position.line,
+                        character: params.text_document_position.position.character - 1
+                    }
+                } else {
+                    params.text_document_position.position
+                };
+            log.log(&format!("doing completion with position {:?}", on_previous_character));
+
+            if let Some(cpl) = get_positional_text(doc, &on_previous_character) {
                 let mut found_scopes = Vec::new();
-                let pos = params.text_document_position.position;
                 let want_position = Srcloc::new(
                     Rc::new(uristring.clone()),
-                    (pos.line + 1) as usize,
-                    (pos.character + 1) as usize,
+                    (on_previous_character.line + 1) as usize,
+                    (on_previous_character.character + 1) as usize,
                 );
                 find_scope_stack(&mut found_scopes, &output.scopes, &want_position);
-
                 // Handle variable completions.
-                if is_first_in_list(doc, &params.text_document_position.position) {
+                if is_first_in_list(doc, &on_previous_character) {
                     complete_function_name(&mut res, id, &found_scopes, &cpl);
                 } else {
                     complete_variable_name(&mut res, id, doc, &found_scopes, &cpl);

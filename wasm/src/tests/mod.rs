@@ -258,6 +258,56 @@ fn test_completion_from_argument_single_level() {
 }
 
 #[test]
+fn test_completion_from_argument_single_level_at_end() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    let file = "file:///test.cl".to_string();
+    let open_msg = make_did_open_message(
+        &file,
+        1,
+        indoc! {"
+(mod (A) ;;; COLLATZ conjecture
+
+;; set language standard
+  (include *standard-cl-22*)
+;; Determine if number is odd
+  (defun-inline odd (X) (logand X 1))
+                ;; Actual collatz function
+  ;; determines number of step til 1
+  (defun collatz (N X zoom)
+    (if (= X 1) ; We got 1
+      N ; Return the number of steps
+      (let ((incN (+ N 1))) ; Next N
+        (if (odd X) ; Is it odd?
+          (collatz zoo (+ 1 (* 3 X))) ; Odd? 3 X + 1
+          (collatz incN (/ X 2)) ; Even? X / 2
+          )
+        )
+      )
+    )
+  (collatz 0 A) ; Run it
+  )            "}
+        .to_string(),
+    );
+    let complete_msg = make_completion_request_msg(
+        &file,
+        2,
+        Position {
+            line: 13,
+            character: 22,
+        },
+    );
+    let out_msgs = run_lsp(&mut lsp, &vec![open_msg, complete_msg]).unwrap();
+    assert_eq!(out_msgs.len() > 0, true);
+    let completion_result = find_completion_response(&out_msgs).unwrap();
+    assert_eq!(completion_result.label, "zoom");
+}
+
+
+#[test]
 fn test_completion_from_argument_let_binding() {
     let mut lsp = LSPServiceProvider::new(
         Rc::new(FSFileReader::new()),
