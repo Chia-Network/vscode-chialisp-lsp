@@ -22,6 +22,7 @@ use lsp_types::{
 use percent_encoding::percent_decode;
 use url::{Host, Url};
 
+use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
 use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
@@ -141,48 +142,6 @@ impl HasFilePath for Url {
     }
 }
 
-pub trait IFileReader {
-    fn read_content(&self, name: &str) -> Result<String, String>;
-}
-
-pub trait ILogWriter {
-    fn log(&self, text: &str);
-}
-
-#[derive(Default)]
-pub struct FSFileReader {}
-
-impl IFileReader for FSFileReader {
-    fn read_content(&self, name: &str) -> Result<String, String> {
-        std::fs::read(name).map(|content| {
-            decode_string(&content)
-        }).map_err(|e| format!("{:?}", e))
-    }
-}
-
-impl FSFileReader {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
-#[derive(Default)]
-pub struct EPrintWriter {}
-
-impl ILogWriter for EPrintWriter {
-    fn log(&self, text: &str) {
-        eprintln!("{}", text);
-    }
-}
-
-impl EPrintWriter {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
 #[cfg(test)]
 fn uniterr<A>(_: A) -> () { () }
 
@@ -255,6 +214,84 @@ pub struct DocPosition {
 pub struct DocRange {
     pub start: DocPosition,
     pub end: DocPosition,
+}
+
+#[test]
+fn test_docrange_overlap_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 1, character: 2 },
+            end: DocPosition { line: 2, character: 3 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 3, character: 4 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 3, character: 2 },
+            end: DocPosition { line: 3, character: 8 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 4 }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition { line: 2, character: 5 },
+            end: DocPosition { line: 2, character: 7 },
+        }.overlap(&DocRange {
+            start: DocPosition { line: 2, character: 1 },
+            end: DocPosition { line: 2, character: 5 }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_invalid_zero_srcloc_leads_to_zero_position() {
+    assert_eq!(
+        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
+        DocRange {
+            start: DocPosition { line: 0, character: 0 },
+            end: DocPosition { line: 0, character: 0 }
+        }
+    );
+}
+
+#[test]
+fn test_doc_range_overlap_at_zero() {
+    assert!(DocRange {
+        start: DocPosition { line: 0, character: 0 },
+        end: DocPosition { line: 0, character: 2 }
+    }.overlap(&DocRange {
+        start: DocPosition { line: 0, character: 1 },
+        end: DocPosition { line: 0, character: 3 }
+    }));
 }
 
 #[derive(Clone, Debug)]
@@ -348,84 +385,6 @@ impl DocRange {
         // Not overlapping if both points are on the same side of the other 2
         sortable[0].1 != sortable[1].1
     }
-}
-
-#[test]
-fn test_docrange_overlap_no() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 1, character: 2 },
-            end: DocPosition { line: 2, character: 3 }
-        }),
-        false
-    );
-}
-
-#[test]
-fn test_docrange_overlap_yes() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 3, character: 2 },
-            end: DocPosition { line: 3, character: 8 }
-        }),
-        true
-    );
-}
-
-#[test]
-fn test_docrange_overlap_same_line_no() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 4 }
-        }),
-        false
-    );
-}
-
-#[test]
-fn test_docrange_overlap_same_line_yes() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 5 }
-        }),
-        true
-    );
-}
-
-#[test]
-fn test_invalid_zero_srcloc_leads_to_zero_position() {
-    assert_eq!(
-        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
-        DocRange {
-            start: DocPosition { line: 0, character: 0 },
-            end: DocPosition { line: 0, character: 0 }
-        }
-    );
-}
-
-#[test]
-fn test_doc_range_overlap_at_zero() {
-    assert!(DocRange {
-        start: DocPosition { line: 0, character: 0 },
-        end: DocPosition { line: 0, character: 2 }
-    }.overlap(&DocRange {
-        start: DocPosition { line: 0, character: 1 },
-        end: DocPosition { line: 0, character: 3 }
-    }));
 }
 
 // An object that contains the literal text of a document we're working with in
