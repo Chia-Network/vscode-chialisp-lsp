@@ -1,4 +1,4 @@
-let clvm_tools_rs = require('../build/clvm_tools_wasm');
+let clvm_tools_rs = require('../../wasm/pkg/clvm_tools_lsp');
 let process = require('process');
 let fs = require('fs');
 

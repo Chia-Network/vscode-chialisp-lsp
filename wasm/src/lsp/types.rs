@@ -1,23 +1,34 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::cmp::PartialOrd;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::cell::{Ref, RefCell};
+use std::cmp::{PartialOrd, min};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::default::Default;
+use std::mem::swap;
+use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::str::FromStr;
 use std::rc::Rc;
 
-use lsp_server::{ExtractError, Request, RequestId};
+use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
 use lsp_types::{
-    Diagnostic, InitializeParams, Position, Range, SemanticTokenModifier,
-    SemanticTokenType
+    CodeActionKind, CodeActionProviderCapability, CodeActionOptions, CompletionOptions, Diagnostic, InitializeParams, OneOf, Position, PublishDiagnosticsParams,
+    Range, SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions
 };
 
 use percent_encoding::percent_decode;
 use url::{Host, Url};
 
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, HelperForm};
+use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
+use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
+use crate::lsp::patch::stringify_doc;
+use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
+use crate::lsp::semtok::SemanticTokenSortable;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -61,6 +72,17 @@ pub struct ToFilePathErr;
 #[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
 pub struct Hash {
     data: [u8; HASH_SIZE]
+}
+
+impl Hash {
+    pub fn new(v: &Vec<u8>) -> Self {
+        let len = min(v.len(), HASH_SIZE);
+        let mut data: [u8; HASH_SIZE] = [0; 32];
+        for i in 0..len {
+            data[i] = if i >= v.len() { 0 } else { v[i] }
+        }
+        Hash { data }
+    }
 }
 
 // Note: to_file_path is only present on native builds, but we're building to
@@ -125,6 +147,40 @@ pub trait IFileReader {
 
 pub trait ILogWriter {
     fn log(&self, text: &str);
+}
+
+#[derive(Default)]
+pub struct FSFileReader {}
+
+impl IFileReader for FSFileReader {
+    fn read_content(&self, name: &str) -> Result<String, String> {
+        std::fs::read(name).map(|content| {
+            decode_string(&content)
+        }).map_err(|e| format!("{:?}", e))
+    }
+}
+
+impl FSFileReader {
+    #[cfg(test)]
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+#[derive(Default)]
+pub struct EPrintWriter {}
+
+impl ILogWriter for EPrintWriter {
+    fn log(&self, text: &str) {
+        eprintln!("{}", text);
+    }
+}
+
+impl EPrintWriter {
+    #[cfg(test)]
+    pub fn new() -> Self {
+        Default::default()
+    }
 }
 
 #[cfg(test)]
@@ -426,6 +482,401 @@ impl DocData {
             })
         }
     }
+
+    // Given a position, get the pointed-to character.
+    // Not currently used.
+    /*
+    pub fn get_at_position(&self, position: &Position) -> Option<u8> {
+        self.nth_line_ref(position.line as usize).and_then(|line| {
+            if (position.character as usize) < line.len() {
+                Some(line[position.character as usize])
+            } else {
+                None
+            }
+        })
+    }
+    */
+}
+
+pub struct LSPServiceProvider {
+    // Init params.
+    pub fs: Rc<dyn IFileReader>,
+    pub log: Rc<dyn ILogWriter>,
+    pub init: Option<InitState>,
+    pub workspace_root_override: Option<PathBuf>,
+    pub config: ConfigJson,
+
+    // Let document collection be sharable due to the need to capture it for
+    // use in compiler opts.
+    pub document_collection: Rc<RefCell<HashMap<String, DocData>>>,
+
+    // These aren't shared.
+    pub parsed_documents: HashMap<String, ParsedDoc>,
+    pub goto_defs: HashMap<String, BTreeMap<SemanticTokenSortable, Srcloc>>,
+
+    // Collection of all known errors we're throwing.
+    pub thrown_errors: HashMap<String, ErrorSet>,
+
+    // Prim list so we can tell if the first atom is a clvm atom.
+    pub prims: Vec<Vec<u8>>,
+
+    // Set of file extensions we should consider changing the world.
+    pub workspace_file_extensions_to_resync_for: Vec<String>,
+}
+
+pub fn urlify(u: &str) -> String {
+    if !u.starts_with("file://") {
+        format!("file://{}", u)
+    } else {
+        u.to_owned()
+    }
+}
+
+impl LSPServiceProvider {
+    pub fn produce_error_list(&self) -> Vec<Message> {
+        let mut all_errors = Vec::new();
+        let tour_documents: Vec<String> = self.parsed_documents.keys().cloned().collect();
+
+        for uristring in tour_documents.iter() {
+            if let Some(err) = self.thrown_errors.get(uristring) {
+                if !err.preprocessing.is_empty() {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: err.preprocessing.clone(),
+                        })
+                            .unwrap(),
+                    }));
+                } else if !err.semantic.is_empty() {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: err.semantic.clone(),
+                        })
+                            .unwrap(),
+                    }));
+                } else {
+                    all_errors.push(Message::Notification(Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(PublishDiagnosticsParams {
+                            uri: Url::parse(uristring).unwrap(),
+                            version: None,
+                            diagnostics: vec![]
+                        })
+                            .unwrap(),
+                    }));
+                }
+            }
+        }
+        all_errors
+    }
+
+    // Set errors of a given kind for the indicated source file.
+    pub fn set_error_list(&mut self, uristring: &str, preprocessing: bool, errors: Vec<Diagnostic>) {
+        if preprocessing {
+            // Remove semantic errors if errors is not empty, otherwise, clear
+            // preprocessing errors.
+            if let Some(eset) = self.thrown_errors.get_mut(uristring) {
+                if !errors.is_empty() {
+                    eset.semantic.clear();
+                }
+
+                eset.preprocessing = errors;
+            } else {
+                // no previous entry, so just set it.
+                self.thrown_errors.insert(
+                    uristring.to_owned(),
+                    ErrorSet::from_preprocessing(errors)
+                );
+            }
+        } else {
+            if let Some(eset) = self.thrown_errors.get_mut(uristring) {
+                eset.semantic = errors;
+            } else {
+                self.thrown_errors.insert(
+                    uristring.to_owned(),
+                    ErrorSet::from_semantic(errors)
+                );
+            }
+        }
+    }
+
+    // For a given document refresh preprocessing errors.
+    pub fn parse_document_and_store_errors(&mut self, uristring: &str) {
+        self.ensure_parsed_document(uristring);
+
+        let missing_includes = self.check_for_missing_include_files(uristring);
+        let errors = missing_includes.iter().map(|i| {
+            Diagnostic {
+                range: DocRange::from_srcloc(i.name_loc.clone()).to_range(),
+                severity: None,
+                code: None,
+                code_description: None,
+                source: Some("chialisp".to_string()),
+                message: format!("missing include file {} or path not set", decode_string(&i.filename)),
+                tags: None,
+                related_information: None,
+                data: None,
+            }
+        }).collect();
+
+        self.set_error_list(uristring, true, errors);
+    }
+
+    pub fn with_doc_and_parsed<F, G>(&mut self, uristring: &str, f: F) -> Option<G>
+    where
+        F: FnOnce(&DocData, &ParsedDoc) -> Option<G>,
+    {
+        if let (Some(d), Some(p)) = (self.get_doc(uristring), self.get_parsed(uristring)) {
+            f(&d, &p)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_doc(&self, uristring: &str) -> Option<DocData> {
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
+        let coll: Ref<HashMap<String, DocData>> = cell.borrow();
+        coll.get(uristring).cloned()
+    }
+
+    pub fn get_doc_keys(&self) -> Vec<String> {
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
+        let coll: Ref<HashMap<String, DocData>> = cell.borrow();
+        coll.keys().cloned().collect()
+    }
+
+    pub fn get_parsed(&self, uristring: &str) -> Option<ParsedDoc> {
+        self.parsed_documents.get(uristring).cloned()
+    }
+
+    pub fn save_doc(&mut self, uristring: String, dd: DocData) {
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
+        self.parsed_documents.remove(&uristring);
+        cell.replace_with(|coll| {
+            let mut repl = HashMap::new();
+            swap(&mut repl, coll);
+            repl.insert(uristring.clone(), dd);
+            repl
+        });
+    }
+
+    fn save_parse(&mut self, uristring: String, p: ParsedDoc) {
+        self.parsed_documents.insert(uristring, p);
+    }
+
+    pub fn ensure_parsed_document(&mut self, uristring: &str) {
+        let opts = Rc::new(LSPCompilerOpts::new(
+            self.log.clone(),
+            self.fs.clone(),
+            self.get_workspace_root(),
+            uristring,
+            &self.config.include_paths,
+            self.document_collection.clone(),
+        )).set_frontend_check_live(false);
+
+        if let Some(doc) = self.get_doc(uristring) {
+            let startloc = Srcloc::start(uristring);
+            let output = self
+                .parsed_documents
+                .get(uristring)
+                .cloned()
+                .unwrap_or_else(|| ParsedDoc::new(startloc));
+            let ranges = make_simple_ranges(&doc.text);
+            let mut new_helpers = reparse_subset(
+                &self.prims,
+                opts,
+                &doc.text,
+                uristring,
+                &ranges,
+                &output.compiled,
+                &output.helpers,
+            );
+
+            for (_, incfile) in new_helpers.includes.iter() {
+                if incfile.kind != IncludeKind::Include
+                    || incfile.filename == b"*standard-cl-21*"
+                    || incfile.filename == b"*standard-cl-22*"
+                {
+                    continue;
+                }
+
+                if let Ok((filename, file_body)) = get_file_content(
+                    self.log.clone(),
+                    self.fs.clone(),
+                    self.get_workspace_root(),
+                    &self.config.include_paths,
+                    &decode_string(&incfile.filename),
+                ) {
+                    if let Some(file_uri) = self
+                        .get_workspace_root()
+                        .and_then(|r| r.join(filename).to_str().map(urlify))
+                    {
+                        self.save_doc(file_uri.clone(), file_body);
+                        if let Some(p) = self.get_parsed(&file_uri) {
+                            for (hash, helper) in p.helpers.iter() {
+                                new_helpers.helpers.insert(hash.clone(), helper.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            let new_parse =
+                combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+            self.set_error_list(uristring, false, new_parse.errors.iter().map(|error| {
+                Diagnostic {
+                    range: DocRange::from_srcloc(error.0.clone()).to_range(),
+                    severity: None,
+                    code: None,
+                    code_description: None,
+                    source: Some("chialisp".to_string()),
+                    message: error.1.clone(),
+                    tags: None,
+                    related_information: None,
+                    data: None,
+                }
+            }).collect());
+
+            self.save_parse(
+                uristring.to_owned(),
+                new_parse,
+            );
+        }
+    }
+
+    pub fn get_capabilities() -> ServerCapabilities {
+        ServerCapabilities {
+            // Specify capabilities from the set:
+            // https://docs.rs/lsp-types/latest/lsp_types/struct.ServerCapabilities.html
+            definition_provider: Some(OneOf::Left(true)),
+            semantic_tokens_provider: Some(
+                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                    work_done_progress_options: WorkDoneProgressOptions {
+                        work_done_progress: Some(false),
+                    },
+                    legend: SemanticTokensLegend {
+                        token_types: TOKEN_TYPES.clone(),
+                        token_modifiers: TOKEN_MODIFIERS.clone(),
+                    },
+                    range: None,
+                    full: Some(SemanticTokensFullOptions::Delta { delta: Some(true) }),
+                }),
+            ),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                TextDocumentSyncKind::INCREMENTAL,
+            )),
+            completion_provider: Some(CompletionOptions {
+                resolve_provider: Some(true),
+                //             trigger_characters: Some(completion_start),
+                ..Default::default()
+            }),
+            code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+                code_action_kinds: Some(vec![
+                    CodeActionKind::QUICKFIX
+                ]),
+                work_done_progress_options: WorkDoneProgressOptions {
+                    work_done_progress: None
+                },
+                resolve_provider: None
+            })),
+            ..Default::default()
+        }
+    }
+
+    pub fn new(fs: Rc<dyn IFileReader>, log: Rc<dyn ILogWriter>, configured: bool) -> Self {
+        let clvm_prims = prims().iter().map(|(p,_)| p.clone()).collect();
+
+        LSPServiceProvider {
+            fs,
+            log,
+            init: if configured {
+                Some(InitState::Preconfig)
+            } else {
+                None
+            },
+            workspace_root_override: None,
+            config: Default::default(),
+
+            document_collection: Rc::new(RefCell::new(HashMap::new())),
+
+            parsed_documents: HashMap::new(),
+            goto_defs: HashMap::new(),
+            thrown_errors: HashMap::new(),
+
+            workspace_file_extensions_to_resync_for: vec![
+                ".clsp",
+                ".cl",
+                ".clvm",
+                ".clib",
+                ".clinc"
+            ].iter().map(|s| s.to_string()).collect(),
+            prims: clvm_prims
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_workspace_root(&mut self, root: PathBuf) {
+        self.workspace_root_override = Some(root);
+    }
+
+    #[cfg(test)]
+    pub fn set_config(&mut self, cfg: ConfigJson) {
+        self.config = cfg;
+    }
+
+    pub fn get_workspace_root(&self) -> Option<PathBuf> {
+        self.workspace_root_override
+            .as_ref()
+            .map(|x| Some(x.clone()))
+            .unwrap_or_else(|| {
+                if let Some(InitState::Initialized(init)) = &self.init {
+                    init.root_uri
+                        .as_ref()
+                        .and_then(|uri| Url::parse(uri.as_str()).ok())
+                        .and_then(|uri| uri.our_to_file_path().ok())
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn get_relative_path(&self, target: &str) -> Option<String> {
+        if let Some(r) = self.get_workspace_root() {
+            if target == "." {
+                return Path::new(&r).to_str().map(|o| o.to_owned());
+            } else if target.len() < 2 {
+                return Path::new(&r).join(target).to_str().map(|o| o.to_owned());
+            }
+
+            let target_suffix: Vec<u8> = target.as_bytes().iter().skip(2).copied().collect();
+            Path::new(&r)
+                .join(decode_string(&target_suffix))
+                .to_str()
+                .map(|o| o.to_owned())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_config_path(&self) -> Option<String> {
+        self.get_workspace_root().and_then(|r| {
+            let p = Path::new(&r).join("chialisp.json");
+            p.to_str().map(|s| s.to_owned())
+        })
+    }
+
+    // Used, but not in all configurations.
+    #[allow(dead_code)]
+    pub fn get_file(&self, filename: &str) -> Result<String, String> {
+        self.get_doc(filename)
+            .map(|d| stringify_doc(&d.text))
+            .unwrap_or_else(|| Err(format!("don't have file {}", filename)))
+    }
 }
 
 // Note: This is using a directive that ensures that this code is only included
@@ -542,8 +993,8 @@ pub enum InitState {
 
 #[derive(Default)]
 pub struct ErrorSet {
-    pub preprocessing: Vec<Diagnostic>,
-    pub semantic: Vec<Diagnostic>,
+    preprocessing: Vec<Diagnostic>,
+    semantic: Vec<Diagnostic>,
 }
 
 impl ErrorSet {
