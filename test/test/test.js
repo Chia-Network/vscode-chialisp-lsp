@@ -112,7 +112,7 @@ async function sendString(s) {
         if (s.charAt(i) === ' ') {
             actions = actions.keyDown(Key.SPACE).keyUp(Key.SPACE).pause(200);
         } else if (s.charAt(i) >= 'a' && s.charAt(i) <= 'z') {
-            let letter = s.charAt(i).toUpperCase().charCodeAt(0);
+            let letter = s.charCodeAt(i);
             actions = actions.keyDown(letter).keyUp(letter).pause(200);
         } else if (s.charAt(i) >= 'A' && s.charAt(i) <= 'Z') {
             let letter = s.charCodeAt(i);
