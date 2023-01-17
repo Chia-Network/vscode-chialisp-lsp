@@ -12,11 +12,11 @@ const driver = new Builder()
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
 
-var login = async function() {
+let login = async function() {
     let loginContainer = By.css('.login-form');
     let inpPassword = By.css('.password');
     let btnLogin = By.css('.submit');
-    var enterCredentialsAndLogin = async function() {
+    let enterCredentialsAndLogin = async function() {
         console.log('Entering credentials...');
         // Wait until an input element appears
         await driver.wait(until.elementLocated(inpPassword), 10 * 1000);
@@ -111,10 +111,7 @@ async function sendString(s) {
     for (var i = 0; i < s.length; i++) {
         if (s.charAt(i) === ' ') {
             actions = actions.keyDown(Key.SPACE).keyUp(Key.SPACE).pause(200);
-        } else if (s.charAt(i) >= 'a' && s.charAt(i) <= 'z') {
-            let letter = s.charCodeAt(i);
-            actions = actions.keyDown(letter).keyUp(letter).pause(200);
-        } else if (s.charAt(i) >= 'A' && s.charAt(i) <= 'Z') {
+        } else if (s.charCodeAt(i) >= 33 && s.charCodeAt(i) <= 127) {
             let letter = s.charCodeAt(i);
             actions = actions.keyDown(letter).keyUp(letter).pause(200);
         } else {
@@ -148,7 +145,7 @@ async function openFile(file) {
     console.log(`Check the content of ${file}`);
     await sendControlP();
 
-    var inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+    let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
     await inputBox.sendKeys(file);
 
     let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
@@ -315,10 +312,10 @@ describe("Basic element tests", function() {
         await sendString(" Q");
 
         let monacoLists = await driver.findElements(By.css(".monaco-list"));
-        var foundCompletionOffers = 0;
+        let foundCompletionOffers = 0;
         for (var i = 0; i < monacoLists.length; i++) {
-            var mlist = monacoLists[i];
-            var foundElements = await mlist.findElements(byVisibleText("QQEX"));
+            let mlist = monacoLists[i];
+            let foundElements = await mlist.findElements(byVisibleText("QQEX"));
             if (foundElements.length !== 0) {
                 foundCompletionOffers += 1;
                 break;
