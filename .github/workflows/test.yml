@@ -42,7 +42,7 @@ jobs:
         id: package_name_pre
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
-          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
+          echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Run headless test
         run: |
           sudo apt update

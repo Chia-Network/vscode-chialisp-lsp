@@ -9,3 +9,4 @@ runner/build
 debug/build
 wasm/target
 wasm/pkg
+.idea/*

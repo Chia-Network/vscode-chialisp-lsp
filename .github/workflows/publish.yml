@@ -37,13 +37,13 @@ jobs:
         if: env.PRE_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
-          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
+          echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Build release extension
         id: package_name
         if: env.FULL_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --no-yarn
-          echo "::set-output name=VSIX_FILE::$(ls -- *.vsix)"
+          echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Run headless test
         run: |
           sudo apt update
