@@ -92,6 +92,8 @@ export function languageActivate(context: vscode.ExtensionContext) {
         vscode.window.showOpenDialog({
             title: `Chialisp include file ${value}`,
             filters: {
+                // This is part of the user interface
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 "Chialisp Include Files": ["clinc","clib","clvm","clsp"]
             }
         }).then((uriList) => {
@@ -123,19 +125,19 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
 
                 // Try to enforce correct structure.
-                if (chialispJson.include_paths === undefined || !chialispJson.include_paths.length) {
-                    chialispJson.include_paths = [];
+                if (chialispJson.includePaths === undefined || !chialispJson.includePaths.length) {
+                    chialispJson.includePaths = [];
                 }
 
                 // Try not to duplicate.
-                for (var i = 0; i < chialispJson.include_paths; i++) {
-                    if (targetDirectory === chialispJson.include_paths[i]) {
+                for (var i = 0; i < chialispJson.includePaths; i++) {
+                    if (targetDirectory === chialispJson.includePaths[i]) {
                         return;
                     }
                 }
 
                 // We have a new include path to put in.
-                chialispJson.include_paths.push(targetDirectory);
+                chialispJson.includePaths.push(targetDirectory);
 
                 return chialispJson;
             };
@@ -172,7 +174,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
             }, (e) => {
                 try {
-                    const oldChialispJson = {include_paths:[]};
+                    const oldChialispJson = {includePaths:[]};
                     return treatAndWriteBackChialispJson(oldChialispJson);
                 } catch (e) {
                     vscode.window.showErrorMessage("Could not formulate chialisp.json");
