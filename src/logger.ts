@@ -1,5 +1,5 @@
-import * as vscode from 'vscode'
-import {extensionName} from './constants'
+import * as vscode from 'vscode';
+import {extensionName} from './constants';
 
 export const logger = vscode.window.createOutputChannel(extensionName);
 export const logWithLevel = (level: any, text: string) => {
