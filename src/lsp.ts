@@ -125,19 +125,19 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
 
                 // Try to enforce correct structure.
-                if (chialispJson.includePaths === undefined || !chialispJson.includePaths.length) {
-                    chialispJson.includePaths = [];
+                if (chialispJson.include_paths === undefined || !chialispJson.include_paths.length) {
+                    chialispJson.include_paths = [];
                 }
 
                 // Try not to duplicate.
-                for (var i = 0; i < chialispJson.includePaths; i++) {
-                    if (targetDirectory === chialispJson.includePaths[i]) {
+                for (var i = 0; i < chialispJson.include_paths; i++) {
+                    if (targetDirectory === chialispJson.include_paths[i]) {
                         return;
                     }
                 }
 
                 // We have a new include path to put in.
-                chialispJson.includePaths.push(targetDirectory);
+                chialispJson.include_paths.push(targetDirectory);
 
                 return chialispJson;
             };
@@ -174,7 +174,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
             }, (e) => {
                 try {
-                    const oldChialispJson = {includePaths:[]};
+                    const oldChialispJson = {include_paths:[]};
                     return treatAndWriteBackChialispJson(oldChialispJson);
                 } catch (e) {
                     vscode.window.showErrorMessage("Could not formulate chialisp.json");
