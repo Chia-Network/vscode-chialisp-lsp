@@ -1051,7 +1051,24 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         self.log.log("No program provided");
                     }
                 }
-                // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
+
+                // Pre initialization: recognize and respond to the breakpoint
+                // request (but that's all we can do now).
+                (State::Initialized(i), RequestCommand::SetBreakpoints(b)) => {
+                    self.msg_seq += 1;
+                    self.state = State::Initialized(i);
+                    return Ok(Some(vec![ProtocolMessage {
+                        seq: self.msg_seq,
+                        message: MessageKind::Response(Response {
+                            request_seq: pm.seq,
+                            success: false,
+                            message: Some("nothing loaded yet".to_string()),
+                            body: None
+                        })
+                    }]));
+                }
+
+// ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
                 // Set breakpoints from source.  Requires advertised capability in
                 // package.json.
                 (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {
