@@ -33,7 +33,9 @@ use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
-use crate::interfaces::{EPrintWriter, IFileReader, ILogWriter};
+#[cfg(test)]
+use crate::interfaces::EPrintWriter;
+use crate::interfaces::{IFileReader, ILogWriter};
 use crate::dbg::types::MessageHandler;
 use crate::lsp::types::{DocPosition, DocRange};
 
@@ -81,7 +83,7 @@ pub struct StoredScope {
 
 #[derive(Clone, Debug)]
 struct RecognizedBreakpoint {
-    hash: String,
+    // hash: String, // Future: break by hash (clippy)
     spec: Breakpoint
 }
 
@@ -159,7 +161,7 @@ fn find_location(
         start: DocPosition { line: b.line - 1, character: 0 },
         end: DocPosition { line: b.line - 1, character: LARGE_COLUMN }
     };
-    let breakpoint_range = b.column.map(|col| {
+    let breakpoint_range = b.column.map(|_col| {
         DocRange {
             start: DocPosition {
                 line: b.line - 1, character: 0
@@ -316,7 +318,7 @@ impl RunningDebugger {
                     inserted_breakpoints.insert(
                         hash.clone(),
                         RecognizedBreakpoint {
-                            hash,
+                            // hash,
                             spec: bp
                         }
                     );
@@ -397,7 +399,7 @@ impl RunningDebugger {
 
                     log.log(&format!("frame hex string {}", frame_hex_string));
 
-                    for (translation_unit, breakpoints) in self.breakpoints.iter() {
+                    for (_translation_unit, breakpoints) in self.breakpoints.iter() {
                         let keys: Vec<String> = breakpoints.keys().cloned().collect();
                         log.log(&format!("keys {:?}", keys));
                         if let Some(bp) = breakpoints.get(&frame_hex_string) {
@@ -459,11 +461,6 @@ impl State {
             State::Launched(_) => "Launched"
         }.to_string()
     }
-}
-
-pub enum BreakpointLocation {
-    Srcloc(Srcloc),
-    Treehash(String),
 }
 
 pub struct Debugger {
@@ -632,7 +629,7 @@ struct RunStartData {
     program_lines: Vec<String>,
     arguments: Rc<SExp>,
     symbols: HashMap<String, String>,
-    is_hex: bool,
+    // is_hex: bool, // Future: if tools need to know this. (clippy)
     compiled: Option<CompileForm>
 }
 
@@ -885,7 +882,7 @@ impl Debugger {
             program_lines: program_lines,
             arguments: arguments.clone(),
             symbols: use_symbol_table,
-            is_hex,
+            // is_hex,
             compiled
         });
     }
@@ -1077,7 +1074,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 // breakpoints of a supported type are sent, an empty,
                 // SetExceptionBreakpoints will be sent.  We don't advertise
                 // support for this type so we can send an empty response.
-                (State::Launched(r), RequestCommand::SetExceptionBreakpoints(b)) => {
+                (State::Launched(r), RequestCommand::SetExceptionBreakpoints(_b)) => {
                     self.msg_seq += 1;
                     self.state = State::Launched(r);
                     return Ok(Some(vec![ProtocolMessage {

@@ -42,7 +42,7 @@ impl CompilerOpts for LSPCompilerOpts {
     fn filename(&self) -> String {
         self.filename.clone()
     }
-    fn compiler(&self) -> Option<PrimaryCodegen> {
+    fn code_generator(&self) -> Option<PrimaryCodegen> {
         self.compiler.clone()
     }
     fn in_defun(&self) -> bool {
@@ -65,6 +65,9 @@ impl CompilerOpts for LSPCompilerOpts {
     }
     fn prim_map(&self) -> Rc<HashMap<Vec<u8>, Rc<SExp>>> {
         self.prim_map.clone()
+    }
+    fn get_search_paths(&self) -> Vec<String> {
+        self.include_dirs.clone()
     }
 
     fn set_search_paths(&self, dirs: &[String]) -> Rc<dyn CompilerOpts> {
@@ -97,7 +100,7 @@ impl CompilerOpts for LSPCompilerOpts {
         copy.frontend_check_live = check;
         Rc::new(copy)
     }
-    fn set_compiler(&self, new_compiler: PrimaryCodegen) -> Rc<dyn CompilerOpts> {
+    fn set_code_generator(&self, new_compiler: PrimaryCodegen) -> Rc<dyn CompilerOpts> {
         let mut copy = self.clone();
         copy.compiler = Some(new_compiler);
         Rc::new(copy)

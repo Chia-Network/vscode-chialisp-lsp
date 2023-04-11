@@ -123,7 +123,7 @@ dependencies = [
 [[package]]
 name = "clvm_tools_rs"
 version = "0.1.30"
-source = "git+https://github.com/Chia-Network/clvm_tools_rs?rev=0cc2c151919f1262ef94f3e9c840bad78051652e#0cc2c151919f1262ef94f3e9c840bad78051652e"
+source = "git+https://github.com/Chia-Network/clvm_tools_rs?rev=03bd78c82cb7553b24afa870904caedf9bdbabad#03bd78c82cb7553b24afa870904caedf9bdbabad"
 dependencies = [
  "binascii",
  "bls12_381",
@@ -143,6 +143,7 @@ dependencies = [
  "num-traits",
  "pyo3",
  "pyo3-build-config 0.15.2",
+ "serde",
  "serde_json",
  "sha2 0.9.9",
  "tempfile",
@@ -497,6 +498,7 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
