@@ -1,0 +1,7 @@
+(mod (X)
+  (include *standard-cl-21*)
+  (include fact.clinc)
+
+  ;; Do factorial.
+  (fact X)
+  )
