@@ -36,6 +36,7 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
+use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::types::MessageHandler;
 use crate::lsp::types::{DocPosition, DocRange};
 
@@ -819,7 +820,10 @@ impl Debugger {
             let frontend_compiled = frontend(
                 opts.clone(),
                 &source_parsed
-            ).map_err(compile_err_map)?;
+            ).map_err(|e| {
+                self.log.log(&format!("error {e:?}"));
+                compile_err_map(e)
+            })?;
 
             for h in frontend_compiled.helpers.iter() {
                 self.log.log(&format!("{}", h.loc()));
@@ -901,7 +905,12 @@ impl Debugger {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
         let read_in_file = self.fs.read_content(program)?;
-        let opts = Rc::new(DefaultCompilerOpts::new(name));
+        let opts = Rc::new(DbgCompilerOpts::new(
+            self.log.clone(),
+            self.fs.clone(),
+            name,
+            &[".".to_string()],
+        ));
         let mut launch_data =
             self.read_program_data(
                 &mut allocator, opts.clone(), i, l, program, &read_in_file.as_bytes()
@@ -1054,7 +1063,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
 
                 // Pre initialization: recognize and respond to the breakpoint
                 // request (but that's all we can do now).
-                (State::Initialized(i), RequestCommand::SetBreakpoints(b)) => {
+                (State::Initialized(i), RequestCommand::SetBreakpoints(_b)) => {
                     self.msg_seq += 1;
                     self.state = State::Initialized(i);
                     return Ok(Some(vec![ProtocolMessage {
@@ -1068,7 +1077,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     }]));
                 }
 
-// ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
+                // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
+
                 // Set breakpoints from source.  Requires advertised capability in
                 // package.json.
                 (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {

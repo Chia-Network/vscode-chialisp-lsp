@@ -67,6 +67,7 @@ function startSubprocess(
             env: {
                 ELECTRON_RUN_AS_NODE: '1',
                 ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
+                WORKSPACE_FOLDER: workspaceFolder,
                 ...process.env
             },
             cwd: workspaceFolder

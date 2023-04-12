@@ -1,5 +1,6 @@
 let clvm_tools_rs = require('../build/clvm_tools_lsp');
 let process = require('process');
+let path = require('path');
 let fs = require('fs');
 
 // clean 1:1 8-bit encoding.
@@ -11,6 +12,8 @@ const FIRST_EOL = 2;
 const MAYBE_SECOND_EOL = 3;
 const MESSAGE_READ = 4;
 
+var workspaceFolder = process.env.WORKSPACE_FOLDER ? process.env.WORKSPACE_FOLDER : ".";
+
 let emptyWriteLog = (line) => {
 	process.stderr.write(`${line}\n`);
 };
@@ -18,13 +21,47 @@ var log = {
 	write: emptyWriteLog
 };
 
-let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
+function tryGetIncludePaths() {
+    // Try to load include paths from chialisp.json if it exists.
     try {
-        return fs.readFileSync(name, 'utf8');
+        var chialispJsonData = JSON.parse(fs.readFileSync(path.join(workspaceFolder, "chialisp.json")));
+        log.write(`chialispJsonData ${chialispJsonData}`);
+        if (chialispJsonData.include_paths) {
+            return chialispJsonData.include_paths;
+        }
+    } catch(e) {
+        log.write(`exception ${e} loading chialisp.json`);
+        return ["."];
+    }
+}
+
+function tryOpenFile(name,tryDir) {
+    let nameWithPath = (tryDir === null) ? name : path.join(tryDir,name);
+    try {
+        return fs.readFileSync(nameWithPath, 'utf8');
     } catch(e) {
         log.write('read file failed: ' + e + '\n');
         return null;
     }
+}
+
+let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
+    // Try suitable paths from chialisp.json and some predefined directories
+    // in order to find files ambiguously specified.
+    const directoryTryList = [null, ".", workspaceFolder];
+    let includePaths = tryGetIncludePaths();
+    for (let i = 0; i < includePaths.length; i++) {
+        directoryTryList.push(includePaths[i]);
+    }
+    log.write(`try directories ${directoryTryList}`);
+    for (let i = 0; i < directoryTryList.length; i++) {
+        let tryDir = directoryTryList[i];
+        const fileContent = tryOpenFile(name, tryDir);
+        if (fileContent !== null) {
+            return fileContent;
+        }
+    }
+    return null;
 }, function(e) {
     log.write('stderr> ' + e + '\n');
 });
