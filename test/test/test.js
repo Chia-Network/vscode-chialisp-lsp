@@ -439,7 +439,8 @@ describe("Basic element tests", function() {
         await debugButton.click();
 
         console.log('selecting debug tab');
-        let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+
+        let configDropdown = await driver.wait(until.elementLocated(By.css(".monaco-select-box")));
         await configDropdown.click();
         let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
         await factClspSelection.click();
