@@ -411,7 +411,7 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         await sendControlF();
-        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+            inputBox = await driver.wait(until.elementLocated(By.css(".input")));
         await inputBox.click();
         await sendControlA();
         await inputBox.sendKeys("QQEX");
@@ -435,24 +435,21 @@ describe("Basic element tests", function() {
 
         await openFileTheLongWay('include/fact.clinc');
 
-        let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
-        await debugButton.click();
-
-        console.log('selecting debug tab');
-
-        let configDropdown = await driver.wait(until.elementLocated(By.css(".monaco-select-box")));
-        await configDropdown.click();
-        let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
-        await factClspSelection.click();
-
+        console.log('Try to select the function name in the text');
         let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
         await factFunction.click();
 
+        console.log('Try to do the palette command "inline breakpoint"');
         await performCommand('Debug: Inline Breakpoint');
 
-        let startButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-start")));
-        await startButton.click();
+        await performCommand('Debug: Select and Start Debugging');
+        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        await inputBox.sendKeys("fact.clsp");
+        await sendReturn();
 
+        await wait(5.0);
+
+        console.log('Step a few times');
         await clickStepInto();
         await clickStepInto();
         await clickStepInto();
