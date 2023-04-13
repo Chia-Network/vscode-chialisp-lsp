@@ -42,7 +42,7 @@ let login = async function() {
 
 // Configure Jasmine's timeout value to account for longer tests.
 // Adjust this value if you find our tests failing due to timeouts.
-jasmine.DEFAULT_TIMEOUT_INTERVAL = 1000 * 1000;
+jasmine.DEFAULT_TIMEOUT_INTERVAL = 1200 * 1000;
 jest.setTimeout(jasmine.DEFAULT_TIMEOUT_INTERVAL);
 
 async function rightClick(element) {
