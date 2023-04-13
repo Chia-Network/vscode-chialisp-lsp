@@ -435,17 +435,24 @@ describe("Basic element tests", function() {
 
         await openFileTheLongWay('include/fact.clinc');
 
-        console.log('Try to select the function name in the text');
+        let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
+        await debugButton.click();
+
+        console.log('selecting debug tab');
+        let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+        await configDropdown.click();
+        let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
+        await factClspSelection.click();
+
+        console.log('find factorial function to set a breakpoint');
         let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
         await factFunction.click();
 
         console.log('Try to do the palette command "inline breakpoint"');
         await performCommand('Debug: Inline Breakpoint');
 
-        await performCommand('Debug: Select and Start Debugging');
-        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
-        await inputBox.sendKeys("fact.clsp");
-        await sendReturn();
+        let startButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-start")));
+        await startButton.click();
 
         await wait(5.0);
 
