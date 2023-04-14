@@ -40,9 +40,7 @@ impl<'a> Iterator for MessageByteIter<'a> {
 
 impl<H> MessageBuffer<H> {
     pub fn new(handler: H) -> MessageBuffer<H> {
-        MessageBuffer {
-            handler,
-        }
+        MessageBuffer { handler }
     }
 
     pub fn process_message<M>(&mut self, msgdata: &[u8]) -> Result<Option<Vec<M>>, String>
@@ -52,9 +50,9 @@ impl<H> MessageBuffer<H> {
     {
         let msg_string = decode_string(msgdata);
         let as_json: serde_json::Value = serde_json::from_str(&msg_string)
-            .map_err(|_| format!("failed to decode {}", msg_string))?;
+            .map_err(|_| format!("failed to decode {msg_string}"))?;
         let msg: M = serde_json::from_value(as_json.clone())
-            .map_err(|_| format!("failed to decode {}", msg_string))?;
+            .map_err(|_| format!("failed to decode {msg_string}"))?;
         self.handler.handle_message(&as_json, &msg)
     }
 }

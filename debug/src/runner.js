@@ -14,9 +14,7 @@ const MESSAGE_READ = 4;
 
 var workspaceFolder = process.env.WORKSPACE_FOLDER ? process.env.WORKSPACE_FOLDER : ".";
 
-let emptyWriteLog = (line) => {
-	process.stderr.write(`${line}\n`);
-};
+let emptyWriteLog = (line) => { };
 var log = {
 	write: emptyWriteLog
 };

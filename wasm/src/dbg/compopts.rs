@@ -1,19 +1,17 @@
-use std::borrow::Borrow;
-use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use clvmr::allocator::Allocator;
 
+use crate::interfaces::{IFileReader, ILogWriter};
+use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
+use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::compiler::compiler::{
     compile_pre_forms, create_prim_map, KNOWN_DIALECTS, STANDARD_MACROS,
 };
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
-use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
-use crate::lsp::types::DocData;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -122,7 +120,7 @@ impl CompilerOpts for DbgCompilerOpts {
         let (computed_filename, content) = self.get_file(&filename).map_err(|_| {
             CompileErr(
                 Srcloc::start(&inc_from),
-                format!("could not find {} to include", filename),
+                format!("could not find {filename} to include"),
             )
         })?;
 
@@ -149,15 +147,10 @@ pub fn get_file_content(
     include_paths: &[String],
     name: &str,
 ) -> Result<(String, DocData), String> {
-    log.log(&format!("get_file_content {}", name));
+    log.log(&format!("get_file_content {name}"));
     for find_path in include_paths.iter() {
         let joined_find_to_root = Path::new(find_path).to_path_buf();
-        log.log(&format!(
-            "joined_find_to_root {}",
-            joined_find_to_root.to_str().unwrap()
-        ));
         if let Some(try_path) = joined_find_to_root.join(name).to_str() {
-            log.log(&format!("try path {}", try_path));
             if let Ok(filedata) = reader.read_content(try_path) {
                 let doc_text = split_text(&filedata);
                 let comments = compute_comment_lines(&doc_text);
@@ -174,7 +167,7 @@ pub fn get_file_content(
             }
         }
     }
-    Err(format!("don't have {} to open", name))
+    Err(format!("don't have {name} to open"))
 }
 
 impl DbgCompilerOpts {
@@ -202,11 +195,6 @@ impl DbgCompilerOpts {
     }
 
     fn get_file(&self, name: &str) -> Result<(String, DocData), String> {
-        get_file_content(
-            self.log.clone(),
-            self.fs.clone(),
-            &self.include_dirs,
-            name
-        )
+        get_file_content(self.log.clone(), self.fs.clone(), &self.include_dirs, name)
     }
 }

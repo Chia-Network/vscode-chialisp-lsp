@@ -6,16 +6,19 @@ use std::rc::Rc;
 use lsp_server::{Message, RequestId, Response};
 use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
-use clvm_tools_rs::compiler::clvm::sha256tree;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{recover_scopes, ParsedDoc};
-use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedHelper, ReparsedExp};
+use crate::lsp::types::{
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedExp,
+    ReparsedHelper,
+};
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
+use clvm_tools_rs::compiler::clvm::sha256tree;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -311,7 +314,7 @@ fn process_body_code(
                         kw_loc: i.kw.clone(),
                         kind: IncludeKind::Include,
                         filename: i.name.clone(),
-                        found: None
+                        found: None,
                     },
                 );
             }

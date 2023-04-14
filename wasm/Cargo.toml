@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-clvm_tools_rs = { git = "https://github.com/Chia-Network/clvm_tools_rs", rev = "2d24b054a222a48f51ec06c22174c17b70b4bdfd" }
+clvm_tools_rs = { git = "https://github.com/Chia-Network/clvm_tools_rs", rev = "948c9576c85805c57ca906dd8e61a8af2c054bf6" }
 clvmr = "0.1.24"
 wasm-bindgen = "=0.2.83"
 wasm-bindgen-test = "=0.3.25"

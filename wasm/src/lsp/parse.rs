@@ -11,20 +11,13 @@ use clvm_tools_rs::compiler::comptypes::{
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
+use clvm_tools_rs::compiler::sexp::SExp;
 #[cfg(test)]
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
-use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
-    DocData,
-    DocPosition,
-    DocRange,
-    Hash,
-    IncludeData,
-    ParseScope,
-    ReparsedExp,
-    ReparsedHelper,
+    DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedHelper,
     ScopeKind,
 };
 
@@ -51,7 +44,7 @@ pub struct ParsedDoc {
     // Index of hashed ranges (as Reparsed* data) to the names they bind.
     pub hash_to_name: HashMap<Hash, Vec<u8>>,
     // Chialisp frontend errors encountered while parsing.
-    pub errors: Vec<CompileErr>
+    pub errors: Vec<CompileErr>,
 }
 
 impl ParsedDoc {
@@ -81,7 +74,7 @@ impl ParsedDoc {
             exp: None,
             includes: Default::default(),
             hash_to_name: Default::default(),
-            errors: Default::default()
+            errors: Default::default(),
         }
     }
 }
@@ -182,13 +175,12 @@ fn test_doc_vec_byte_iter_0() {
         vec_ref("(mod (X)"),
         vec_ref("  (defun F (A) (* A 2))"),
         vec_ref("  (F X)"),
-        vec_ref("  )")
+        vec_ref("  )"),
     ];
 
-    let expected_bytes =
-        b"(mod (X)\n  (defun F (A) (* A 2))\n  (F X)\n  )\n";
+    let expected_bytes = b"(mod (X)\n  (defun F (A) (* A 2))\n  (F X)\n  )\n";
 
-    for (i,b) in DocVecByteIter::new(&text).enumerate() {
+    for (i, b) in DocVecByteIter::new(&text).enumerate() {
         assert_eq!(expected_bytes[i], b);
     }
 }
@@ -336,50 +328,68 @@ fn make_simple_test_doc_data_from_lines(filename: &str, lines: &[&str]) -> DocDa
         fullname: filename.to_string(),
         text: lines.iter().copied().map(vec_ref).collect(),
         version: 1,
-        comments: Default::default()
+        comments: Default::default(),
     }
 }
 
 #[test]
 fn test_is_first_in_list_simple() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(hi there)"
-    ]);
-    assert!(is_first_in_list(&simple_doc, &Position { line: 0, character: 2 }));
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(hi there)"]);
+    assert!(is_first_in_list(
+        &simple_doc,
+        &Position {
+            line: 0,
+            character: 2
+        }
+    ));
 }
 
 #[test]
 fn test_is_first_in_list_with_spaces() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(    hi there)"
-    ]);
-    assert!(is_first_in_list(&simple_doc, &Position { line: 0, character: 6 }));
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(    hi there)"]);
+    assert!(is_first_in_list(
+        &simple_doc,
+        &Position {
+            line: 0,
+            character: 6
+        }
+    ));
 }
 
 #[test]
 fn test_is_first_in_list_diff_line() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(",
-        "  hi there",
-        ")"
-    ]);
-    assert!(is_first_in_list(&simple_doc, &Position { line: 1, character: 2 }));
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(", "  hi there", ")"]);
+    assert!(is_first_in_list(
+        &simple_doc,
+        &Position {
+            line: 1,
+            character: 2
+        }
+    ));
 }
 
 #[test]
 fn test_is_first_in_list_one_after() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(hi there)"
-    ]);
-    assert!(is_first_in_list(&simple_doc, &Position { line: 0, character: 3 }));
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(hi there)"]);
+    assert!(is_first_in_list(
+        &simple_doc,
+        &Position {
+            line: 0,
+            character: 3
+        }
+    ));
 }
 
 #[test]
 fn test_not_is_first_in_list_next_word() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(hi there)"
-    ]);
-    assert!(!is_first_in_list(&simple_doc, &Position { line: 0, character: 4 }));
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(hi there)"]);
+    assert!(!is_first_in_list(
+        &simple_doc,
+        &Position {
+            line: 0,
+            character: 4
+        }
+    ));
 }
 
 // Given a position, return the identifier at that position.  Relies on find_ident.
@@ -395,13 +405,15 @@ pub fn get_positional_text(lines: &DocData, position: &Position) -> Option<Vec<u
 
 #[test]
 fn test_get_positional_text() {
-    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &[
-        "(",
-        "  hi there",
-        ")"
-    ]);
+    let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(", "  hi there", ")"]);
     assert_eq!(
-        get_positional_text(&simple_doc, &Position { line: 1, character: 3 }),
+        get_positional_text(
+            &simple_doc,
+            &Position {
+                line: 1,
+                character: 3
+            }
+        ),
         Some(b"hi".to_vec())
     );
 }
@@ -534,25 +546,32 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
 
 #[cfg(test)]
 fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, ParseScope) {
-    let compiled = get_test_program_for_scope_tests(
-        file,
-        prog,
-    );
-    (compiled.clone(),
-     ParseScope {
-         region: compiled.loc.clone(),
-         kind: ScopeKind::Module,
-         variables: Default::default(),
-         functions: compiled.helpers.iter().filter_map(|h| {
-             if let HelperForm::Defun(_,d) = &h {
-                 return Some(SExp::atom_from_string(d.nl.clone(), &decode_string(h.name())));
-             }
-             None
-         }).collect(),
-         containing: compiled.helpers.iter().filter_map(|h| {
-             make_helper_scope(&h)
-         }).collect()
-     }
+    let compiled = get_test_program_for_scope_tests(file, prog);
+    (
+        compiled.clone(),
+        ParseScope {
+            region: compiled.loc.clone(),
+            kind: ScopeKind::Module,
+            variables: Default::default(),
+            functions: compiled
+                .helpers
+                .iter()
+                .filter_map(|h| {
+                    if let HelperForm::Defun(_, d) = &h {
+                        return Some(SExp::atom_from_string(
+                            d.nl.clone(),
+                            &decode_string(h.name()),
+                        ));
+                    }
+                    None
+                })
+                .collect(),
+            containing: compiled
+                .helpers
+                .iter()
+                .filter_map(|h| make_helper_scope(&h))
+                .collect(),
+        },
     )
 }
 
@@ -564,14 +583,18 @@ fn make_scope_stack_simple() {
         "  (defun test1 (X) (+ X 1))",
         "  (defconstant RRR 3)",
         "  (defun-inline test2 (A B) (let ((C 5)) (+ A B C)))",
-        "  (- (test1 8) (test2 9 7)))"
+        "  (- (test1 8) (test2 9 7)))",
     ];
     let doc = make_simple_test_doc_data_from_lines(file, prog);
     let (compiled, program_scope) = make_test_program_scope(file, &doc.text);
     assert_eq!(program_scope.functions.len(), 2);
     assert_eq!(program_scope.containing.len(), 2);
-    assert!(program_scope.functions.contains(&SExp::atom_from_string(compiled.loc.clone(), "test1")));
-    assert!(program_scope.functions.contains(&SExp::atom_from_string(compiled.loc.clone(), "test2")));
+    assert!(program_scope
+        .functions
+        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test1")));
+    assert!(program_scope
+        .functions
+        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test2")));
     let filename_rc = compiled.loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,
@@ -581,17 +604,17 @@ fn make_scope_stack_simple() {
         program_scope.containing[1].region,
         Srcloc::new(filename_rc.clone(), 4, 3).ext(&Srcloc::new(filename_rc.clone(), 4, 51))
     );
-    assert_eq!(
-        program_scope.containing[1].containing.len(),
-        1
-    );
+    assert_eq!(program_scope.containing[1].containing.len(), 1);
     assert_eq!(
         program_scope.containing[1].containing[0].kind,
         ScopeKind::Let
     );
     for v in program_scope.containing[1].containing[0].variables.iter() {
         let vrange = DocRange::from_srcloc(v.loc()).to_range();
-        assert_eq!(get_positional_text(&doc, &vrange.start), Some(b"C".to_vec()));
+        assert_eq!(
+            get_positional_text(&doc, &vrange.start),
+            Some(b"C".to_vec())
+        );
     }
 }
 
@@ -686,16 +709,22 @@ fn test_grab_scope_doc_range_spaces() {
         "  (defun test1 (X) (+ X 1))",
         "  (defconstant RRR 3)",
         "  (defun-inline test2 (A B) (let ((C 5)) (+ A B C)))",
-        "  (- (test1 8) (test2 9 7)))"
+        "  (- (test1 8) (test2 9 7)))",
     ];
     let doc = make_simple_test_doc_data_from_lines(file, prog);
     let captured = grab_scope_doc_range(
         &doc.text,
         &DocRange {
-            start: DocPosition { line: 1, character: 2 },
-            end: DocPosition { line: 3, character: 0 }
+            start: DocPosition {
+                line: 1,
+                character: 2,
+            },
+            end: DocPosition {
+                line: 3,
+                character: 0,
+            },
         },
-        true
+        true,
     );
 
     assert_eq!(
@@ -712,16 +741,22 @@ fn test_grab_scope_doc_range_no_spaces() {
         "  (defun test1 (X) (+ X 1))",
         "  (defconstant RRR 3)",
         "  (defun-inline test2 (A B) (let ((C 5)) (+ A B C)))",
-        "  (- (test1 8) (test2 9 7)))"
+        "  (- (test1 8) (test2 9 7)))",
     ];
     let doc = make_simple_test_doc_data_from_lines(file, prog);
     let captured = grab_scope_doc_range(
         &doc.text,
         &DocRange {
-            start: DocPosition { line: 1, character: 2 },
-            end: DocPosition { line: 3, character: 0 }
+            start: DocPosition {
+                line: 1,
+                character: 2,
+            },
+            end: DocPosition {
+                line: 3,
+                character: 0,
+            },
         },
-        false
+        false,
     );
 
     assert_eq!(
@@ -746,7 +781,11 @@ pub fn make_arg_set(set: &mut HashSet<SExp>, args: Rc<SExp>) {
 #[test]
 fn test_make_arg_set() {
     let sl = Srcloc::start("test.clsp");
-    let parsed = parse_sexp(sl.clone(), b"(arg1 arg2 (hi . there) () 999)".iter().copied()).expect("should parse");
+    let parsed = parse_sexp(
+        sl.clone(),
+        b"(arg1 arg2 (hi . there) () 999)".iter().copied(),
+    )
+    .expect("should parse");
     let mut arg_set = HashSet::new();
     make_arg_set(&mut arg_set, parsed[0].clone());
     assert_eq!(arg_set.len(), 4);
@@ -761,53 +800,53 @@ fn test_make_arg_set() {
 // one toplevel element, so the areas of interest that may move or change are at
 // the second level.
 pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
-        let mut ranges = Vec::new();
-        let mut in_comment = false;
-        let mut start = None;
-        let mut level = 0;
-        let mut line = 0;
-        let mut character = 0;
+    let mut ranges = Vec::new();
+    let mut in_comment = false;
+    let mut start = None;
+    let mut level = 0;
+    let mut line = 0;
+    let mut character = 0;
 
-        for i in DocVecByteIter::new(srctext) {
-                    if i == b';' {
-                        character += 1;
-                        in_comment = true;
-                    } else if i == b'\n' {
-                        line += 1;
-                        character = 0;
-                        in_comment = false;
-                    } else if i == b'(' {
-                        if !in_comment {
-                            if level == 1 && start.is_none() {
-                                start = Some(DocPosition { line, character });
-                            }
-                            level += 1;
-                        }
-                        character += 1;
-                    } else if i == b')' {
-                        // We expect to contain only one toplevel list, so other ends
-                        // are probably a misparse.
-                        if !in_comment && level > 0 {
-                            level -= 1;
+    for i in DocVecByteIter::new(srctext) {
+        if i == b';' {
+            character += 1;
+            in_comment = true;
+        } else if i == b'\n' {
+            line += 1;
+            character = 0;
+            in_comment = false;
+        } else if i == b'(' {
+            if !in_comment {
+                if level == 1 && start.is_none() {
+                    start = Some(DocPosition { line, character });
+                }
+                level += 1;
+            }
+            character += 1;
+        } else if i == b')' {
+            // We expect to contain only one toplevel list, so other ends
+            // are probably a misparse.
+            if !in_comment && level > 0 {
+                level -= 1;
 
-                            if level == 1 {
-                                if let Some(s) = start.clone() {
-                                    ranges.push(DocRange {
-                                        start: s,
-                                        end: DocPosition {
-                                            line,
-                                            character: character + 1,
-                                        },
-                                    });
-                                    start = None;
-                                }
-                            }
-                        }
-                        character += 1;
-                    } else {
-                        character += 1;
+                if level == 1 {
+                    if let Some(s) = start.clone() {
+                        ranges.push(DocRange {
+                            start: s,
+                            end: DocPosition {
+                                line,
+                                character: character + 1,
+                            },
+                        });
+                        start = None;
                     }
+                }
+            }
+            character += 1;
+        } else {
+            character += 1;
         }
+    }
 
     ranges
 }
@@ -821,30 +860,60 @@ fn test_make_simple_ranges_1() {
         vec_ref("     (inner inner) () and more and more)"),
         vec_ref("(and here)"),
         vec_ref("  ()"),
-        vec_ref(")")
+        vec_ref(")"),
     ];
     assert_eq!(
         make_simple_ranges(test_data),
         vec![
             DocRange {
-                start: DocPosition { line: 0, character: 2 },
-                end: DocPosition { line: 0, character: 8 }
+                start: DocPosition {
+                    line: 0,
+                    character: 2
+                },
+                end: DocPosition {
+                    line: 0,
+                    character: 8
+                }
             },
             DocRange {
-                start: DocPosition { line: 0, character: 9 },
-                end: DocPosition { line: 0, character: 16 }
+                start: DocPosition {
+                    line: 0,
+                    character: 9
+                },
+                end: DocPosition {
+                    line: 0,
+                    character: 16
+                }
             },
             DocRange {
-                start: DocPosition { line: 2, character: 3 },
-                end: DocPosition { line: 3, character: 40 }
+                start: DocPosition {
+                    line: 2,
+                    character: 3
+                },
+                end: DocPosition {
+                    line: 3,
+                    character: 40
+                }
             },
             DocRange {
-                start: DocPosition { line: 4, character: 0 },
-                end: DocPosition { line: 4, character: 10 }
+                start: DocPosition {
+                    line: 4,
+                    character: 0
+                },
+                end: DocPosition {
+                    line: 4,
+                    character: 10
+                }
             },
             DocRange {
-                start: DocPosition { line: 5, character: 2 },
-                end: DocPosition { line: 5, character: 4 }
+                start: DocPosition {
+                    line: 5,
+                    character: 2
+                },
+                end: DocPosition {
+                    line: 5,
+                    character: 4
+                }
             }
         ]
     );

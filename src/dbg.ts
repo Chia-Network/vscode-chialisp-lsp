@@ -77,9 +77,10 @@ function startSubprocess(
         runningSubprocess.running = newProcess;
         newProcess.stdout?.pause();
 
-        newProcess.stderr?.addListener('data', (b) => {
-            log.info(`stderr> ${b.toString('utf8')}`);
-        });
+        // Uncomment to surface output in the debug display in vscode.
+        // newProcess.stderr?.addListener('data', (b) => {
+        //     log.info(`stderr> ${b.toString('utf8')}`);
+        // });
 
         // Handle exit.
         newProcess.once('error', (err) => {
@@ -95,9 +96,8 @@ function startSubprocess(
                 runningSubprocess.running = undefined;
                 // Nothing to do.
             }
- ``       });
+        });
 
-        log.info('subprocess should have started');
         resolve(runningSubprocess);
     } catch (e) {
         reject(e);
@@ -109,19 +109,16 @@ async function forkToPipe(pipeName: string, modulePath: string, workspaceFolder:
     return new Promise((resolve, reject) => {
         let pipeServer: net.Server = net.createServer((targetPipe) => {
             // Connect the process up.
-            log.info('got connection to pipe');
             let newProcess = runningSubprocess.running;
             if (newProcess && newProcess.stdin && newProcess.stdout) {
                 newProcess.stdout.addListener('data', (b) => {
                     targetPipe.write(b);
                 });
-                log.info(`unpausing stdout`);
                 newProcess.stdout.resume();
                 targetPipe.on('data', (b) => {
                     newProcess?.stdin?.write(b);
                 });
                 targetPipe.on('close', () => {
-                    log.info('close connection');
                     newProcess?.kill();
                     runningSubprocess.running = undefined;
                     runningSubprocess.pipe = undefined;
@@ -144,7 +141,6 @@ async function forkToPipe(pipeName: string, modulePath: string, workspaceFolder:
 }
 
 export function debuggerActivate(context: vscode.ExtensionContext) {
-        log.info('activate chialisp-dbg extension');
     const config = vscode.workspace.getConfiguration(extensionName);
     //const serializedConfig = JSON.stringify(config);
 
@@ -159,20 +155,16 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
 
     const debugAdapter: vscode.DebugAdapterDescriptorFactory = {
         createDebugAdapterDescriptor: (session: vscode.DebugSession, executable: vscode.DebugAdapterExecutable | undefined) => {
-            log.info(`on:createDebugAdapterDescriptor ${stringify([session,executable])}`);
             if (process.env.CHIALISP_DBG) {
                 return new vscode.DebugAdapterExecutable(process.env.CHIALISP_DBG);
             } else {
                 let namedPipeName = generatePipeName();
-                log.info(`forkToPipe ${namedPipeName}`);
                 return forkToPipe(namedPipeName, modulePath, session.workspaceFolder ? session.workspaceFolder.uri.fsPath : ".").then(() => {
-                    log.info(`modulePath ${modulePath}`);
                     return new vscode.DebugAdapterNamedPipeServer(namedPipeName);
                 });
             }
         }
     };
-    log.info(`registering ...`);
     var adapterRegistration: vscode.Disposable = new EmptyDisposable();
     try {
         adapterRegistration = vscode.debug.registerDebugAdapterDescriptorFactory(extensionName, debugAdapter);
@@ -181,7 +173,6 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
         throw e;
     }
 
-    log.info(`registration ${adapterRegistration}`);
     context.subscriptions.push(adapterRegistration);
 
     var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider("chialisp", {
@@ -217,14 +208,11 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand(
             `${extensionName}.startDebug`,
             async () => {
-                log.info(`on:${extensionName}:startDebug`);
                 let textEditor = vscode.window.activeTextEditor;
-                log.info(`text editor ${textEditor?.document.fileName}`);
                 let uri = vscode.window.activeTextEditor?.document.uri;
                 if (!uri) {
                     throw new Error("could not get uri for active text editor");
                 }
-                log.info(`file uri ${uri.fsPath}`);
                 let folder = vscode.workspace.getWorkspaceFolder(uri);
                 if (!folder) {
                     throw new Error(
@@ -240,13 +228,10 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
                     yieldSteps: 4096,
                 };
 
-                log.info(`debug session starting with ${stringify(options)}`);
                 return vscode.debug.startDebugging(folder, options);
             }
         )
     );
-
-    log.info(`Congratulations, your extension ${extensionName} is now active!`);
 }
 
 export function debuggerDeactivate() {

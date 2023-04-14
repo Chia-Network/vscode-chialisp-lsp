@@ -8,13 +8,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use debug_types::events::{ContinuedEvent, Event, EventBody, StoppedEvent, StoppedReason};
-use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, RequestCommand, SourceArguments};
+use debug_types::requests::{
+    InitializeRequestArguments, LaunchRequestArguments, RequestCommand, SourceArguments,
+};
 use debug_types::responses::{
-    InitializeResponse, Response, ResponseBody, SetBreakpointsResponse, SetExceptionBreakpointsResponse, ScopesResponse, SourceResponse, StackTraceResponse,
-    ThreadsResponse, VariablesResponse,
+    InitializeResponse, Response, ResponseBody, ScopesResponse, SetBreakpointsResponse,
+    SetExceptionBreakpointsResponse, SourceResponse, StackTraceResponse, ThreadsResponse,
+    VariablesResponse,
 };
 use debug_types::types::{
-    Breakpoint, Capabilities, ChecksumAlgorithm, Scope, Source, SourceBreakpoint, StackFrame, Thread, Variable,
+    Breakpoint, Capabilities, ChecksumAlgorithm, Scope, Source, SourceBreakpoint, StackFrame,
+    Thread, Variable,
 };
 use debug_types::{MessageKind, ProtocolMessage};
 
@@ -26,20 +30,19 @@ use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose
+    HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
+use crate::dbg::compopts::DbgCompilerOpts;
+use crate::dbg::types::MessageHandler;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::types::MessageHandler;
 use crate::lsp::types::{ConfigJson, DocPosition, DocRange};
 
 // Lifecycle:
@@ -87,7 +90,7 @@ pub struct StoredScope {
 #[derive(Clone, Debug)]
 struct RecognizedBreakpoint {
     // hash: String, // Future: break by hash (clippy)
-    spec: Breakpoint
+    spec: Breakpoint,
 }
 
 pub struct RunningDebugger {
@@ -112,12 +115,11 @@ pub struct RunningDebugger {
     pub opts: Rc<dyn CompilerOpts>,
 }
 
-fn fuzzy_file_match(location_filename: &str, want_filename: &str) -> bool{
-    if let (Some(location_fn), Some(want_fn)) =
-        (PathBuf::from(location_filename).file_name(),
-         PathBuf::from(want_filename).file_name()
-        )
-    {
+fn fuzzy_file_match(location_filename: &str, want_filename: &str) -> bool {
+    if let (Some(location_fn), Some(want_fn)) = (
+        PathBuf::from(location_filename).file_name(),
+        PathBuf::from(want_filename).file_name(),
+    ) {
         location_fn == want_fn
     } else {
         false
@@ -129,11 +131,8 @@ fn test_fuzzy_file_match_1() {
     assert!(fuzzy_file_match("test/foo/bar.clsp", "bar/baz/bar.clsp"));
 }
 
-fn resolve_function(
-    symbols: Rc<HashMap<String, String>>,
-    name: &str
-) -> Option<String> {
-    for (k,v) in symbols.iter() {
+fn resolve_function(symbols: Rc<HashMap<String, String>>, name: &str) -> Option<String> {
+    for (k, v) in symbols.iter() {
         if v == name {
             return Some(k.clone());
         }
@@ -144,13 +143,15 @@ fn resolve_function(
 
 #[test]
 fn test_resolve_function_1() {
-    let mut symbols_map = HashMap::from([
-        ("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
-         "fact".to_string()
-        )
-    ]);
+    let mut symbols_map = HashMap::from([(
+        "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
+        "fact".to_string(),
+    )]);
     let symbols = Rc::new(symbols_map);
-    assert_eq!(resolve_function(symbols, "fact"), Some("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string()));
+    assert_eq!(
+        resolve_function(symbols, "fact"),
+        Some("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string())
+    );
 }
 
 fn find_location(
@@ -158,58 +159,68 @@ fn find_location(
     compiled: &Option<CompileForm>,
     log: Rc<dyn ILogWriter>,
     file: &str,
-    b: &SourceBreakpoint
+    b: &SourceBreakpoint,
 ) -> Option<(String, Srcloc)> {
     let whole_line = DocRange {
-        start: DocPosition { line: b.line - 1, character: 0 },
-        end: DocPosition { line: b.line - 1, character: LARGE_COLUMN }
+        start: DocPosition {
+            line: b.line - 1,
+            character: 0,
+        },
+        end: DocPosition {
+            line: b.line - 1,
+            character: LARGE_COLUMN,
+        },
     };
-    let breakpoint_range = b.column.map(|_col| {
-        DocRange {
+    let breakpoint_range = b
+        .column
+        .map(|_col| DocRange {
             start: DocPosition {
-                line: b.line - 1, character: 0
+                line: b.line - 1,
+                character: 0,
             },
             end: DocPosition {
-                line: b.line - 1, character: LARGE_COLUMN,
-            }
-        }
-    }).unwrap_or_else(|| {
-        whole_line.clone()
-    });
+                line: b.line - 1,
+                character: LARGE_COLUMN,
+            },
+        })
+        .unwrap_or_else(|| whole_line.clone());
 
     let breakpoint_loc = breakpoint_range.to_srcloc(file);
-    for (k,v) in symbols.iter() {
-        log.log(&format!("key {} value {}", k, v));
-        if let Some(parsed_srcloc) = parse_srcloc(&v) {
+    for (k, v) in symbols.iter() {
+        if let Some(parsed_srcloc) = parse_srcloc(v) {
             let borrowed_filename: &String = parsed_srcloc.file.borrow();
-            if !fuzzy_file_match(file, &borrowed_filename) {
+            if !fuzzy_file_match(file, borrowed_filename) {
                 continue;
             }
-            let normalized_loc = Srcloc::new(breakpoint_loc.file.clone(), parsed_srcloc.line, parsed_srcloc.col);
+            let normalized_loc = Srcloc::new(
+                breakpoint_loc.file.clone(),
+                parsed_srcloc.line,
+                parsed_srcloc.col,
+            );
             if normalized_loc.overlap(&breakpoint_loc) {
                 return Some((k.clone(), parsed_srcloc.clone()));
             }
         }
     }
 
-    log.log(&format!("whole_line {:?}", whole_line));
     let whole_line_loc = whole_line.to_srcloc(file);
     compiled.as_ref().and_then(|c| {
-        log.log(&format!("compiled {}", c.to_sexp()));
         for h in c.helpers.iter() {
             let original_loc = h.loc();
             let original_loc_file: &String = original_loc.file.borrow();
-            if !fuzzy_file_match(&original_loc_file, file) {
+            if !fuzzy_file_match(original_loc_file, file) {
                 continue;
             }
-            let normalized_loc = Srcloc::new(whole_line_loc.file.clone(), original_loc.line, original_loc.col);
-            log.log(&format!("{} vs target loc {}", normalized_loc, whole_line_loc));
+            let normalized_loc = Srcloc::new(
+                whole_line_loc.file.clone(),
+                original_loc.line,
+                original_loc.col,
+            );
+            log.log(&format!("{normalized_loc} vs target loc {whole_line_loc}"));
             if whole_line_loc.overlap(&normalized_loc) {
                 log.log(&format!("found function {}", decode_string(h.name())));
-                return resolve_function(symbols, &decode_string(h.name())).
-                    map(|funhash| {
-                        (funhash, original_loc)
-                    });
+                return resolve_function(symbols, &decode_string(h.name()))
+                    .map(|funhash| (funhash, original_loc));
             }
         }
 
@@ -220,13 +231,13 @@ fn find_location(
 #[test]
 fn test_simple_find_location_classic_symbols_1() {
     let log = Rc::new(EPrintWriter::new());
-    let mut symbols_map = HashMap::from([
-        ("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
-         "fact".to_string()
-        )
-    ]);
+    let mut symbols_map = HashMap::from([(
+        "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
+        "fact".to_string(),
+    )]);
     let symbols = Rc::new(symbols_map);
-    let program = "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
+    let program =
+        "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
     let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
     let compiled = frontend(opts, &parsed).expect("should compile");
@@ -235,56 +246,71 @@ fn test_simple_find_location_classic_symbols_1() {
         condition: None,
         hit_condition: None,
         line: 2,
-        log_message: None
+        log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec).expect("should be found");
-    assert_eq!(hash, "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de");
+    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
+        .expect("should be found");
+    assert_eq!(
+        hash,
+        "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
+    );
 }
 
 impl RunningDebugger {
     fn get_source_file(
         &self,
-        fs: Rc<dyn IFileReader>,
         log: Rc<dyn ILogWriter>,
-        sfargs: &SourceArguments
+        sfargs: &SourceArguments,
     ) -> Option<ResponseBody> {
-        log.log(&format!("get_source_file {:?}", sfargs));
-        sfargs.source
+        log.log(&format!("get_source_file {sfargs:?}"));
+        sfargs
+            .source
             .as_ref()
             .and_then(|s| s.name.as_ref())
             .and_then(|n| {
-                self.opts.read_new_file(self.source_file.to_string(), n.to_string()).ok()
-            }).map(|content| {
+                self.opts
+                    .read_new_file(self.source_file.to_string(), n.to_string())
+                    .ok()
+            })
+            .map(|content| {
                 ResponseBody::Source(SourceResponse {
-                    content: content.1.clone(),
-                    mime_type: Some("text/plain".to_owned())
+                    content: content.1,
+                    mime_type: Some("text/plain".to_owned()),
                 })
             })
     }
 
-    fn set_breakpoints(&mut self, log: Rc<dyn ILogWriter>, s: &Source, breakpoints: Vec<SourceBreakpoint>) -> Vec<Breakpoint> {
-        let use_path = s.path.as_ref().cloned().map(Some).unwrap_or_else(|| s.name.clone());
+    fn set_breakpoints(
+        &mut self,
+        log: Rc<dyn ILogWriter>,
+        s: &Source,
+        breakpoints: Vec<SourceBreakpoint>,
+    ) -> Vec<Breakpoint> {
+        let use_path = s
+            .path
+            .as_ref()
+            .cloned()
+            .map(Some)
+            .unwrap_or_else(|| s.name.clone());
         log.log(&format!("s.path {:?} s.name {:?}", s.path, s.name));
         let bp_id_start = self.next_bp_id;
         self.next_bp_id += breakpoints.len();
 
-        let empty_breakpoint = |(i,b): (usize, &SourceBreakpoint)| {
-            Breakpoint {
-                id: Some(i + bp_id_start),
-                column: b.column,
-                end_column: b.column,
-                line: Some(b.line),
-                end_line: Some(b.line),
-                instruction_reference: None,
-                message: Some("No source file to break in".to_string()),
-                offset: None,
-                source: None,
-                verified: false
-            }
+        let empty_breakpoint = |(i, b): (usize, &SourceBreakpoint)| Breakpoint {
+            id: Some(i + bp_id_start),
+            column: b.column,
+            end_column: b.column,
+            line: Some(b.line),
+            end_line: Some(b.line),
+            instruction_reference: None,
+            message: Some("No source file to break in".to_string()),
+            offset: None,
+            source: None,
+            verified: false,
         };
 
         if let Some(p) = use_path {
-            log.log(&format!("path {}", p));
+            log.log(&format!("path {p}"));
 
             // Clear previous breakpoints for the translation unit.
             self.breakpoints.remove(&p);
@@ -292,35 +318,37 @@ impl RunningDebugger {
             let mut inserted_breakpoints = HashMap::new();
             let mut reported_breakpoints = Vec::new();
 
-            for (i,b) in breakpoints.iter().enumerate() {
+            for (i, b) in breakpoints.iter().enumerate() {
                 // Verfified if we overlap at least one location in the symbols
                 // We.ll be simple and set it to the first matching point following
                 // the given location.
-                if let Some((hash, found)) = find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b) {
+                if let Some((hash, found)) =
+                    find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
+                {
                     let end_col = found.until.clone().map(|e| e.col as u32);
                     let end_line = found.until.map(|e| e.line as u32);
                     let bp = Breakpoint {
                         id: Some(i + bp_id_start),
                         line: Some(found.line as u32),
                         column: Some(found.col as u32),
-                        end_line: end_line,
+                        end_line,
                         end_column: end_col,
                         message: None,
                         offset: None,
                         instruction_reference: None,
                         source: Some(s.clone()),
-                        verified: true
+                        verified: true,
                     };
                     reported_breakpoints.push(bp.clone());
                     inserted_breakpoints.insert(
                         hash.clone(),
                         RecognizedBreakpoint {
                             // hash,
-                            spec: bp
-                        }
+                            spec: bp,
+                        },
                     );
                 } else {
-                    reported_breakpoints.push(empty_breakpoint((i,b)));
+                    reported_breakpoints.push(empty_breakpoint((i, b)));
                 }
             }
 
@@ -328,7 +356,11 @@ impl RunningDebugger {
 
             reported_breakpoints
         } else {
-            breakpoints.iter().enumerate().map(empty_breakpoint).collect()
+            breakpoints
+                .iter()
+                .enumerate()
+                .map(empty_breakpoint)
+                .collect()
         }
     }
 
@@ -392,13 +424,10 @@ impl RunningDebugger {
                     let frame_idx = self.run.running.len() - 1;
                     let frame = &self.run.running[frame_idx];
                     let step = frame.run.current_step();
-                    let frame_hex_string = Bytes::new(Some(BytesFromType::Raw(frame.function_hash.clone()))).hex();
-
-                    log.log(&format!("frame hex string {}", frame_hex_string));
+                    let frame_hex_string =
+                        Bytes::new(Some(BytesFromType::Raw(frame.function_hash.clone()))).hex();
 
                     for (_translation_unit, breakpoints) in self.breakpoints.iter() {
-                        let keys: Vec<String> = breakpoints.keys().cloned().collect();
-                        log.log(&format!("keys {:?}", keys));
                         if let Some(bp) = breakpoints.get(&frame_hex_string) {
                             // Break here.
                             log.log(&format!("reached breakpoint {:?}", bp.spec));
@@ -432,11 +461,11 @@ impl RunningDebugger {
                     // Nothing
                 }
                 Err(RunFailure::RunErr(l, e)) => {
-                    println!("Runtime Error: {}: {}", l, e);
+                    println!("Runtime Error: {l}: {e}");
                     // Nothing
                 }
                 Err(RunFailure::RunExn(l, e)) => {
-                    println!("Raised exception: {}: {}", l, e);
+                    println!("Raised exception: {l}: {e}");
                     // Nothing
                 }
             }
@@ -455,8 +484,9 @@ impl State {
         match self {
             State::PreInitialization => "PreInitialization",
             State::Initialized(_) => "Initialized",
-            State::Launched(_) => "Launched"
-        }.to_string()
+            State::Launched(_) => "Launched",
+        }
+        .to_string()
     }
 }
 
@@ -568,27 +598,29 @@ fn is_hex_file(filedata: &[u8]) -> bool {
 fn try_locate_related_file(
     fs: Rc<dyn IFileReader>,
     fname: &str,
-    new_ext: &str
+    new_ext: &str,
 ) -> Option<(String, Vec<u8>)> {
     let path_components = PathBuf::from(fname);
     if let (Some(directory), Some(only_filename)) =
-        (path_components.parent(), path_components.file_name()) {
+        (path_components.parent(), path_components.file_name())
+    {
         if let Some(rust_str_filename) = only_filename.to_str() {
             let filename_bytes = rust_str_filename.as_bytes().to_vec();
-            let mut dots: Vec<usize> = filename_bytes.iter().copied().enumerate().filter(|(_,ch)| {
-                *ch == b'.'
-            }).map(|(i,_)| i).collect();
+            let mut dots: Vec<usize> = filename_bytes
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, ch)| *ch == b'.')
+                .map(|(i, _)| i)
+                .collect();
             dots.push(only_filename.len());
             for d in dots.iter() {
                 let mut synthesized_filename: Vec<u8> =
                     filename_bytes.iter().copied().take(*d).collect();
                 synthesized_filename.append(&mut new_ext.as_bytes().to_vec());
-                let synth_fname =
-                    PathBuf::from(&decode_string(&synthesized_filename));
+                let synth_fname = PathBuf::from(&decode_string(&synthesized_filename));
 
-                if let Some(total_filename) =
-                    directory.join(synth_fname).to_str()
-                {
+                if let Some(total_filename) = directory.join(synth_fname).to_str() {
                     if let Ok(content) = fs.read_content(total_filename) {
                         return Some((total_filename.to_owned(), content.as_bytes().to_vec()));
                     }
@@ -600,17 +632,11 @@ fn try_locate_related_file(
     None
 }
 
-fn try_locate_symbols(
-    fs: Rc<dyn IFileReader>,
-    fname: &str
-) -> Option<(String, Vec<u8>)> {
+fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
     try_locate_related_file(fs, fname, ".sym")
 }
 
-fn try_locate_source_file(
-    fs: Rc<dyn IFileReader>,
-    fname: &str
-) -> Option<(String, Vec<u8>)> {
+fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
     for ext in vec![".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
@@ -627,7 +653,7 @@ struct RunStartData {
     arguments: Rc<SExp>,
     symbols: HashMap<String, String>,
     // is_hex: bool, // Future: if tools need to know this. (clippy)
-    compiled: Option<CompileForm>
+    compiled: Option<CompileForm>,
 }
 
 #[derive(Clone, Debug)]
@@ -642,59 +668,59 @@ struct ParsedSrclocPart {
     file: Vec<u8>,
     line: usize,
     col: usize,
-    ext: Option<usize>
+    ext: Option<usize>,
+}
+
+struct LaunchArgs<'a> {
+    proto_msg: &'a ProtocolMessage,
+    name: &'a str,
+    init_args: &'a InitializeRequestArguments,
+    launch_request: &'a LaunchRequestArguments,
+    program: &'a str,
+    args_for_program: &'a [String],
+    stop_on_entry: bool,
 }
 
 pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
     let parse_one_loc = |skip| {
         let mut parse_state = SrclocParseAction::ReadingFileName;
-        for (i,ch) in s.as_bytes().iter().skip(skip).copied().enumerate() {
+        for (i, ch) in s.as_bytes().iter().skip(skip).copied().enumerate() {
             match (&parse_state, ch) {
                 (SrclocParseAction::ReadingFileName, b'(') => {
                     parse_state = SrclocParseAction::ReadingLineNumber(i, 0);
                 }
-                (SrclocParseAction::ReadingFileName, _) => { }
+                (SrclocParseAction::ReadingFileName, _) => {}
                 (SrclocParseAction::ReadingLineNumber(eof, l), b')') => {
                     parse_state = SrclocParseAction::AfterLineNumber(*eof, *l);
                 }
                 (SrclocParseAction::ReadingLineNumber(eof, l), ch) => {
-                    if !ch.is_ascii_digit() { return None; }
-                    parse_state =
-                        SrclocParseAction::ReadingLineNumber(
-                            *eof,
-                            10 * *l + ((ch - b'0') as usize)
-                        );
+                    if !ch.is_ascii_digit() {
+                        return None;
+                    }
+                    parse_state = SrclocParseAction::ReadingLineNumber(
+                        *eof,
+                        10 * *l + ((ch - b'0') as usize),
+                    );
                 }
                 (SrclocParseAction::AfterLineNumber(eof, l), b':') => {
-                    parse_state =
-                        SrclocParseAction::ReadingColumn(
-                            *eof,
-                            *l,
-                            0,
-                            None
-                        );
+                    parse_state = SrclocParseAction::ReadingColumn(*eof, *l, 0, None);
                 }
                 (SrclocParseAction::AfterLineNumber(_, _), _) => {
                     return None;
                 }
                 (SrclocParseAction::ReadingColumn(eof, l, c, _), b'-') => {
-                    parse_state =
-                        SrclocParseAction::ReadingColumn(
-                            *eof,
-                            *l,
-                            *c,
-                            Some(i+1)
-                        );
+                    parse_state = SrclocParseAction::ReadingColumn(*eof, *l, *c, Some(i + 1));
                 }
                 (SrclocParseAction::ReadingColumn(eof, l, c, e), ch) => {
-                    if !ch.is_ascii_digit() { return None; }
-                    parse_state =
-                        SrclocParseAction::ReadingColumn(
-                            *eof,
-                            *l,
-                            10 * *c + ((ch - b'0') as usize),
-                            *e
-                        );
+                    if !ch.is_ascii_digit() {
+                        return None;
+                    }
+                    parse_state = SrclocParseAction::ReadingColumn(
+                        *eof,
+                        *l,
+                        10 * *c + ((ch - b'0') as usize),
+                        *e,
+                    );
                 }
             }
         }
@@ -704,7 +730,7 @@ pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
                 file: s.as_bytes().iter().copied().take(f).collect(),
                 line,
                 col,
-                ext
+                ext,
             })
         } else {
             None
@@ -713,12 +739,7 @@ pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
 
     parse_one_loc(0).and_then(|parsed| {
         let filename_rc = Rc::new(decode_string(&parsed.file));
-        let loc =
-            Srcloc::new(
-                filename_rc.clone(),
-                parsed.line,
-                parsed.col
-            );
+        let loc = Srcloc::new(filename_rc.clone(), parsed.line, parsed.col);
         if let Some(ext) = parsed.ext {
             parse_one_loc(ext).map(|second| {
                 if second.file != parsed.file {
@@ -734,11 +755,7 @@ pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
 }
 
 impl Debugger {
-    fn get_source_loc(
-        &self,
-        running: &RunningDebugger,
-        name: &str
-    ) -> Option<Srcloc> {
+    fn get_source_loc(&self, running: &RunningDebugger, name: &str) -> Option<Srcloc> {
         let get_helper_loc = |name: &str| {
             if let Some(compiled) = running.compiled.as_ref() {
                 for h in compiled.helpers.iter() {
@@ -750,16 +767,12 @@ impl Debugger {
             None
         };
 
-        get_helper_loc(name).map(Some).unwrap_or_else(|| {
-            parse_srcloc(name)
-        })
+        get_helper_loc(name)
+            .map(Some)
+            .unwrap_or_else(|| parse_srcloc(name))
     }
 
-    fn get_scope_source(
-        &self,
-        running: &RunningDebugger,
-        scope: &StoredScope
-    ) -> Option<Source> {
+    fn get_scope_source(&self, running: &RunningDebugger, scope: &StoredScope) -> Option<Source> {
         let source_from_loc = |loc: Srcloc| {
             let borrowed_filename: &String = loc.file.borrow();
             Some(Source {
@@ -770,15 +783,17 @@ impl Debugger {
                 origin: None,
                 presentation_hint: None,
                 source_reference: None,
-                sources: None
+                sources: None,
             })
         };
-        self.get_source_loc(running, &scope.name).and_then(source_from_loc)
+        self.get_source_loc(running, &scope.name)
+            .and_then(source_from_loc)
     }
 
     fn read_chialisp_json(&self) -> Result<ConfigJson, String> {
         let chialisp_json_content = self.fs.read_content("chialisp.json")?;
-        let decoded_chialisp_json: ConfigJson = serde_json::from_str(&&chialisp_json_content).map_err(|_| format!("error decoding chialisp.json"))?;
+        let decoded_chialisp_json: ConfigJson = serde_json::from_str(&chialisp_json_content)
+            .map_err(|_| "error decoding chialisp.json".to_string())?;
         Ok(decoded_chialisp_json)
     }
 
@@ -789,16 +804,15 @@ impl Debugger {
         _i: &InitializeRequestArguments,
         _l: &LaunchRequestArguments,
         name: &str,
-        read_in_file: &[u8]
+        read_in_file: &[u8],
     ) -> Result<RunStartData, String> {
-        let program_lines: Vec<String> =
-            read_in_file.lines().map(|x| x.unwrap()).collect();
+        let program_lines: Vec<String> = read_in_file.lines().map(|x| x.unwrap()).collect();
         let parse_err_map = |e: (Srcloc, String)| format!("{}: {}", e.0, e.1);
         let compile_err_map = |e: CompileErr| format!("{}: {}", e.0, e.1);
         let run_err_map = |e: RunFailure| {
             let res = match e {
-                RunFailure::RunErr(l,e) => format!("{}: {}", l, e),
-                RunFailure::RunExn(l,v) => format!("{}: exception {}", l, v)
+                RunFailure::RunErr(l, e) => format!("{l}: {e}"),
+                RunFailure::RunExn(l, v) => format!("{l}: exception {v}"),
             };
             self.log.log(&format!("runfailure {res}"));
             res
@@ -807,64 +821,47 @@ impl Debugger {
         let mut use_symbol_table = HashMap::new();
         let is_hex = is_hex_file(read_in_file);
 
-        self.log.log(&format!("read program data {} hex {}\n", name, is_hex));
-
         let mut compiled = None;
-        if let Some((source_file, source_content)) =
-            try_locate_source_file(self.fs.clone(), name)
-        {
-            self.log.log(&format!("source file {}", source_file));
-            self.log.log(&format!("source content [{}]", decode_string(&source_content)));
+        if let Some((source_file, source_content)) = try_locate_source_file(self.fs.clone(), name) {
+            let source_parsed =
+                parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
+                    .map_err(parse_err_map)?;
 
-            let source_parsed = parse_sexp(
-                Srcloc::start(&source_file),
-                source_content.iter().copied()
-            ).map_err(parse_err_map)?;
-
-            let frontend_compiled = frontend(
-                opts.clone(),
-                &source_parsed
-            ).map_err(compile_err_map)?;
-
-            for h in frontend_compiled.helpers.iter() {
-                self.log.log(&format!("{}", h.loc()));
-            }
+            let frontend_compiled =
+                frontend(opts.clone(), &source_parsed).map_err(compile_err_map)?;
 
             compiled = Some(frontend_compiled);
         }
 
-        let mut parsed_program =
-            if is_hex {
-                self.log.log(&format!("prog source {}\n", name));
-                let prog_srcloc = Srcloc::start(&name);
+        let mut parsed_program = if is_hex {
+            let prog_srcloc = Srcloc::start(name);
 
-                // Synthesize content by disassembling the file.
-                use_symbol_table =
-                    if let Some((symfile, symdata)) = try_locate_symbols(self.fs.clone(), name) {
-                        serde_json::from_str(&decode_string(&symdata)).map_err(|_| {
-                            format!("Failure decoding symbols from {}", symfile)
-                        })?
-                    } else {
-                        HashMap::new()
-                    };
+            // Synthesize content by disassembling the file.
+            use_symbol_table =
+                if let Some((symfile, symdata)) = try_locate_symbols(self.fs.clone(), name) {
+                    serde_json::from_str(&decode_string(&symdata))
+                        .map_err(|_| format!("Failure decoding symbols from {symfile}"))?
+                } else {
+                    HashMap::new()
+                };
 
-                hex_to_modern_sexp(
-                    allocator,
-                    &use_symbol_table,
-                    prog_srcloc.clone(),
-                    &decode_string(read_in_file),
-                ).map_err(run_err_map)?
-            } else {
-                let parsed =
-                    parse_sexp(Srcloc::start(name), read_in_file.iter().copied())
-                    .map_err(parse_err_map)?;
+            hex_to_modern_sexp(
+                allocator,
+                &use_symbol_table,
+                prog_srcloc,
+                &decode_string(read_in_file),
+            )
+            .map_err(run_err_map)?
+        } else {
+            let parsed = parse_sexp(Srcloc::start(name), read_in_file.iter().copied())
+                .map_err(parse_err_map)?;
 
-                if parsed.is_empty() {
-                    return Err(format!("Empty program file {}", name));
-                }
+            if parsed.is_empty() {
+                return Err(format!("Empty program file {name}"));
+            }
 
-                parsed[0].clone()
-            };
+            parsed[0].clone()
+        };
 
         if is_mod(parsed_program.clone()) {
             // Compile program.
@@ -872,64 +869,59 @@ impl Debugger {
                 allocator,
                 opts.clone(),
                 &mut use_symbol_table,
-                &decode_string(&read_in_file),
+                &decode_string(read_in_file),
                 name,
-                true
+                true,
             )
-                .map_err(|e| {
-                    self.log.log(&format!("error compiling: {}", e.1));
-                    e.1
-                })?;
+            .map_err(|e| {
+                self.log.log(&format!("error compiling: {}", e.1));
+                e.1
+            })?;
             let bin = sexp_as_bin(allocator, clvm_res).hex();
-            parsed_program = hex_to_modern_sexp(
-                allocator,
-                &use_symbol_table,
-                Srcloc::start(name),
-                &bin,
-            ).map_err(run_err_map)?;
+            parsed_program =
+                hex_to_modern_sexp(allocator, &use_symbol_table, Srcloc::start(name), &bin)
+                    .map_err(run_err_map)?;
         };
 
         let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
 
-        return Ok(RunStartData {
+        Ok(RunStartData {
             source_file: name.to_owned(),
-            program: parsed_program.clone(),
-            program_lines: program_lines,
-            arguments: arguments.clone(),
+            program: parsed_program,
+            program_lines,
+            arguments,
             symbols: use_symbol_table,
             // is_hex,
-            compiled
-        });
+            compiled,
+        })
     }
-
 
     fn launch(
         &self,
-        pm: &ProtocolMessage,
-        name: &str,
-        i: &InitializeRequestArguments,
-        l: &LaunchRequestArguments,
-        program: &str,
-        args: &[String],
-        stop_on_entry: bool,
+        launch_args: LaunchArgs,
     ) -> Result<(i64, State, Vec<ProtocolMessage>), String> {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
         let config = self.read_chialisp_json()?;
-        let read_in_file = self.fs.read_content(program)?;
+        let read_in_file = self.fs.read_content(launch_args.program)?;
         let opts = Rc::new(DbgCompilerOpts::new(
             self.log.clone(),
             self.fs.clone(),
-            name,
-            &config.include_paths
+            launch_args.name,
+            &config.include_paths,
         ));
-        let mut launch_data =
-            self.read_program_data(
-                &mut allocator, opts.clone(), i, l, program, &read_in_file.as_bytes()
-            )?;
+        let mut launch_data = self.read_program_data(
+            &mut allocator,
+            opts.clone(),
+            launch_args.init_args,
+            launch_args.launch_request,
+            launch_args.program,
+            read_in_file.as_bytes(),
+        )?;
 
-        if !args.is_empty() {
-            let parsed_argv0 = parse_sexp(Srcloc::start("*args*"), args[0].bytes()).map_err(|(l,e)| format!("{}: {}", l, e))?;
+        if !launch_args.args_for_program.is_empty() {
+            let parsed_argv0 = parse_sexp(Srcloc::start("*args*"), launch_args.args_for_program[0].bytes())
+                .map_err(|(l, e)| format!("{l}: {e}"))?;
             if !parsed_argv0.is_empty() {
                 launch_data.arguments = parsed_argv0[0].clone();
             }
@@ -940,16 +932,16 @@ impl Debugger {
         let run = HierarchialRunner::new(
             self.runner.clone(),
             self.prim_map.clone(),
-            Some(name.to_string()),
+            Some(launch_args.name.to_string()),
             Rc::new(launch_data.program_lines),
             symbol_rc.clone(),
             launch_data.program,
             launch_data.arguments,
         );
         let state = State::Launched(RunningDebugger {
-            initialized: i.clone(),
-            launch_info: l.clone(),
-            running: !stop_on_entry,
+            initialized: launch_args.init_args.clone(),
+            launch_info: launch_args.launch_request.clone(),
+            running: !launch_args.stop_on_entry,
             run,
             opts,
             output_stack: Vec::new(),
@@ -961,14 +953,14 @@ impl Debugger {
             breakpoints: HashMap::new(),
             next_bp_id: 1,
             at_breakpoint: None,
-            symbols: symbol_rc
+            symbols: symbol_rc,
         });
 
         seq_nr += 1;
         let mut out_messages = vec![ProtocolMessage {
             seq: self.msg_seq,
             message: MessageKind::Response(Response {
-                request_seq: pm.seq,
+                request_seq: launch_args.proto_msg.seq,
                 success: true,
                 message: None,
                 body: Some(ResponseBody::Launch),
@@ -976,7 +968,7 @@ impl Debugger {
         }];
 
         // Signal that we're paused if stop on entry.
-        if stop_on_entry {
+        if launch_args.stop_on_entry {
             seq_nr += 1;
             out_messages.push(ProtocolMessage {
                 seq: self.msg_seq,
@@ -1030,9 +1022,9 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         ProtocolMessage {
                             seq: self.msg_seq,
                             message: MessageKind::Event(Event {
-                                body: Some(EventBody::Initialized)
-                            })
-                        }
+                                body: Some(EventBody::Initialized),
+                            }),
+                        },
                     ]));
                 }
                 (State::Initialized(i), RequestCommand::Launch(l)) => {
@@ -1041,11 +1033,13 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             .map(Some)
                             .unwrap_or(None);
 
-                    self.log.log(&format!("launch extra {:?}", launch_extra));
-                    let stop_on_entry = launch_extra.as_ref()
+                    self.log.log(&format!("launch extra {launch_extra:?}"));
+                    let stop_on_entry = launch_extra
+                        .as_ref()
                         .and_then(|l| l.arguments.stop_on_entry)
                         .unwrap_or(true);
-                    let args = launch_extra.as_ref()
+                    let args = launch_extra
+                        .as_ref()
                         .and_then(|l| l.arguments.args.clone())
                         .unwrap_or(vec![]);
                     if let Some(name) = &l.name {
@@ -1054,15 +1048,15 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             .unwrap_or(name.clone());
 
                         let (new_seq, new_state, out_msgs) =
-                            self.launch(
-                                pm,
+                            self.launch(LaunchArgs {
+                                proto_msg: pm,
                                 name,
-                                &i,
-                                l,
-                                &program,
-                                &args,
+                                init_args: &i,
+                                launch_request: l,
+                                program: &program,
+                                args_for_program: &args,
                                 stop_on_entry
-                            )?;
+                            })?;
                         self.msg_seq = new_seq;
                         self.state = new_state;
 
@@ -1084,8 +1078,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             request_seq: pm.seq,
                             success: false,
                             message: Some("nothing loaded yet".to_string()),
-                            body: None
-                        })
+                            body: None,
+                        }),
                     }]));
                 }
 
@@ -1094,7 +1088,11 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 // package.json.
                 (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {
                     self.msg_seq += 1;
-                    let result_breakpoints = r.set_breakpoints(self.log.clone(), &b.source, b.breakpoints.clone().unwrap_or_else(|| vec![]));
+                    let result_breakpoints = r.set_breakpoints(
+                        self.log.clone(),
+                        &b.source,
+                        b.breakpoints.clone().unwrap_or(vec![]),
+                    );
                     self.state = State::Launched(r);
                     return Ok(Some(vec![ProtocolMessage {
                         seq: self.msg_seq,
@@ -1103,9 +1101,9 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             success: true,
                             message: None,
                             body: Some(ResponseBody::SetBreakpoints(SetBreakpointsResponse {
-                                breakpoints: result_breakpoints
-                            }))
-                        })
+                                breakpoints: result_breakpoints,
+                            })),
+                        }),
                     }]));
                 }
                 // The way the code in debugServer is structured, if no other
@@ -1121,20 +1119,18 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             request_seq: pm.seq,
                             success: true,
                             message: None,
-                            body: Some(ResponseBody::SetExceptionBreakpoints(SetExceptionBreakpointsResponse {
-                                breakpoints: Some(vec![])
-                            }))
-                        })
+                            body: Some(ResponseBody::SetExceptionBreakpoints(
+                                SetExceptionBreakpointsResponse {
+                                    breakpoints: Some(vec![]),
+                                },
+                            )),
+                        }),
                     }]));
                 }
                 (State::Launched(r), RequestCommand::Source(s)) => {
                     self.msg_seq += 1;
 
-                    let source_lookup = r.get_source_file(
-                        self.fs.clone(),
-                        self.log.clone(),
-                        s
-                    );
+                    let source_lookup = r.get_source_file(self.log.clone(), s);
                     self.state = State::Launched(r);
 
                     return Ok(Some(vec![ProtocolMessage {
@@ -1143,8 +1139,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             request_seq: pm.seq,
                             success: true,
                             message: None,
-                            body: source_lookup
-                        })
+                            body: source_lookup,
+                        }),
                     }]));
                 }
                 (State::Launched(r), RequestCommand::Threads) => {
@@ -1172,13 +1168,14 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         .iter()
                         .rev()
                         .map(|s| {
-                            let loc = self.get_source_loc(&r, &s.name).
-                                unwrap_or_else(|| s.source.clone());
+                            let loc = self
+                                .get_source_loc(&r, &s.name)
+                                .unwrap_or_else(|| s.source.clone());
                             let filename_borrowed: &String = loc.file.borrow();
                             StackFrame {
                                 id: s.scope_id as i32,
                                 name: filename_borrowed.clone(),
-                                source: self.get_scope_source(&r, &s),
+                                source: self.get_scope_source(&r, s),
                                 line: loc.line as u32,
                                 column: loc.col as u32,
                                 end_line: None,
@@ -1218,7 +1215,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     let mut variables = Vec::new();
 
                     if let Some(scope) = s.get(0) {
-                        let mut function_args = scope.named_args
+                        let mut function_args = scope
+                            .named_args
                             .iter()
                             .map(|(k, v)| Variable {
                                 indexed_variables: None,
@@ -1234,9 +1232,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             .collect();
                         variables.append(&mut function_args);
                         let mut copy_info_member = |name, target: &str| {
-                            if let Some(v) = scope.rundata.as_ref().and_then(|info| {
-                                info.get(name)
-                            }) {
+                            if let Some(v) = scope.rundata.as_ref().and_then(|info| info.get(name))
+                            {
                                 variables.push(Variable {
                                     name: target.to_owned(),
                                     indexed_variables: None,
@@ -1246,7 +1243,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                                     var_type: None,
                                     variables_reference: -1,
                                     memory_reference: None,
-                                    evaluate_name: None
+                                    evaluate_name: None,
                                 });
                             }
                         };
@@ -1265,7 +1262,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                                 var_type: None,
                                 variables_reference: -1,
                                 memory_reference: None,
-                                evaluate_name: None
+                                evaluate_name: None,
                             });
                         }
                     };
@@ -1297,7 +1294,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             expensive: false,
                             indexed_variables: None,
                             named_variables: Some(s.named_args.len()),
-                            source: self.get_scope_source(&r, &s),
+                            source: self.get_scope_source(&r, s),
                             variables_reference: s.scope_id as i32,
                             presentation_hint: None,
                         })
@@ -1403,9 +1400,8 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     // If we should stop, then we emit a stopped message.
                     if should_stop {
                         r.running = false;
-                        r.stopped_reason = r.at_breakpoint.as_ref().map(|_| {
-                            StoppedReason::Breakpoint
-                        });
+                        r.stopped_reason =
+                            r.at_breakpoint.as_ref().map(|_| StoppedReason::Breakpoint);
 
                         self.msg_seq += 1;
                         out_messages.push(ProtocolMessage {
@@ -1531,26 +1527,29 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     return Ok(Some(out_messages));
                 }
                 (st, _rq) => {
-                    self.log
-                        .log(&format!("Don't know what to do with {:?} in state {}", req, st.state_name()));
+                    self.log.log(&format!(
+                        "Don't know what to do with {:?} in state {}",
+                        req,
+                        st.state_name()
+                    ));
                     self.state = st;
                     self.msg_seq += 1;
 
-                    self.log.log(&format!("unhandled message {:?}", pm));
+                    self.log.log(&format!("unhandled message {pm:?}"));
                     return Ok(Some(vec![ProtocolMessage {
                         seq: self.msg_seq,
                         message: MessageKind::Response(Response {
                             request_seq: pm.seq,
                             success: false,
-                            message: Some(format!("unhandled message {:?}", pm)),
-                            body: None
+                            message: Some(format!("unhandled message {pm:?}")),
+                            body: None,
                         }),
                     }]));
                 }
             }
         }
 
-        self.log.log(&format!("unhandled message {:?}", pm));
-        Err(format!("unhandled message {:?}", pm))
+        self.log.log(&format!("unhandled message {pm:?}"));
+        Err(format!("unhandled message {pm:?}"))
     }
 }

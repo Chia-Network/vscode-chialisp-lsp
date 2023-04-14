@@ -13,9 +13,9 @@ pub struct FSFileReader {}
 
 impl IFileReader for FSFileReader {
     fn read_content(&self, name: &str) -> Result<String, String> {
-        std::fs::read(name).map(|content| {
-            decode_string(&content)
-        }).map_err(|e| format!("{:?}", e))
+        std::fs::read(name)
+            .map(|content| decode_string(&content))
+            .map_err(|e| format!("{e:?}"))
     }
 }
 
@@ -31,7 +31,7 @@ pub struct EPrintWriter {}
 
 impl ILogWriter for EPrintWriter {
     fn log(&self, text: &str) {
-        eprintln!("{}", text);
+        eprintln!("{text}");
     }
 }
 

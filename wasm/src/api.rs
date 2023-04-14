@@ -15,10 +15,10 @@ use wasm_bindgen::JsCast;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::DefaultProgramRunner;
 use clvm_tools_rs::compiler::prims;
 
-use crate::interfaces::{IFileReader, ILogWriter};
 use crate::dbg::handler::Debugger;
 use crate::dbg::server::MessageBuffer;
-use crate::lsp::{LSPServiceProvider, LSPServiceMessageHandler};
+use crate::interfaces::{IFileReader, ILogWriter};
+use crate::lsp::{LSPServiceMessageHandler, LSPServiceProvider};
 
 struct JSErrWriter {
     err_writer: js_sys::Function,
@@ -47,15 +47,16 @@ impl IFileReader for JSFileReader {
     fn read_content(&self, name: &str) -> Result<String, String> {
         let name_str = JsValue::from_str(name);
         let res = self.file_reader.call1(&JsValue::null(), &name_str);
-        res.map_err(|_| "Could not read file".to_string()).and_then(|content| {
-            if content.loose_eq(&JsValue::null()) {
-                Err("could not read file".to_string())
-            } else if let Some(s) = content.as_string() {
-                Ok(s)
-            } else {
-                Err("could not convert content to string".to_string())
-            }
-        })
+        res.map_err(|_| "Could not read file".to_string())
+            .and_then(|content| {
+                if content.loose_eq(&JsValue::null()) {
+                    Err("could not read file".to_string())
+                } else if let Some(s) = content.as_string() {
+                    Ok(s)
+                } else {
+                    Err("could not convert content to string".to_string())
+                }
+            })
     }
 }
 
@@ -158,12 +159,7 @@ pub fn create_dbg_service(file_reader: &JsValue, err_writer: &JsValue) -> i32 {
 
     let prims = Rc::new(prim_map);
     let runner = Rc::new(DefaultProgramRunner::new());
-    let debugger = Debugger::new(
-        fs,
-        log,
-        runner.clone(),
-        prims.clone(),
-    );
+    let debugger = Debugger::new(fs, log, runner.clone(), prims.clone());
     let service = MessageBuffer::new(debugger);
 
     DBG_SERVERS.with(|servers| {
