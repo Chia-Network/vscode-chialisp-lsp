@@ -873,7 +873,8 @@ impl Debugger {
                 opts.clone(),
                 &mut use_symbol_table,
                 &decode_string(&read_in_file),
-                name
+                name,
+                true
             )
                 .map_err(|e| {
                     self.log.log(&format!("error compiling: {}", e.1));
