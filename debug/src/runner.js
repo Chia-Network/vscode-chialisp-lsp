@@ -21,22 +21,9 @@ var log = {
 	write: emptyWriteLog
 };
 
-function tryGetIncludePaths() {
-    // Try to load include paths from chialisp.json if it exists.
-    try {
-        var chialispJsonData = JSON.parse(fs.readFileSync(path.join(workspaceFolder, "chialisp.json")));
-        log.write(`chialispJsonData ${chialispJsonData}`);
-        if (chialispJsonData.include_paths) {
-            return chialispJsonData.include_paths;
-        }
-    } catch(e) {
-        log.write(`exception ${e} loading chialisp.json`);
-        return ["."];
-    }
-}
-
 function tryOpenFile(name,tryDir) {
     let nameWithPath = (tryDir === null) ? name : path.join(tryDir,name);
+    log.write(`tryDir ${tryDir} name ${name}`);
     try {
         return fs.readFileSync(nameWithPath, 'utf8');
     } catch(e) {
@@ -46,20 +33,13 @@ function tryOpenFile(name,tryDir) {
 }
 
 let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
-    // Try suitable paths from chialisp.json and some predefined directories
-    // in order to find files ambiguously specified.
-    const directoryTryList = [null, ".", workspaceFolder];
-    let includePaths = tryGetIncludePaths();
-    for (let i = 0; i < includePaths.length; i++) {
-        directoryTryList.push(includePaths[i]);
-    }
-    log.write(`try directories ${directoryTryList}`);
+    const directoryTryList = [workspaceFolder, ".", null];
     for (let i = 0; i < directoryTryList.length; i++) {
-        let tryDir = directoryTryList[i];
-        const fileContent = tryOpenFile(name, tryDir);
+        const fileContent = tryOpenFile(name, directoryTryList[i]);
         if (fileContent !== null) {
             return fileContent;
         }
+        log.write(`read ${name} in ${directoryTryList[i]} failed`);
     }
     return null;
 }, function(e) {

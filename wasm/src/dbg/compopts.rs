@@ -151,7 +151,7 @@ pub fn get_file_content(
 ) -> Result<(String, DocData), String> {
     log.log(&format!("get_file_content {}", name));
     for find_path in include_paths.iter() {
-        let joined_find_to_root = Path::new(r".").to_path_buf();
+        let joined_find_to_root = Path::new(find_path).to_path_buf();
         log.log(&format!(
             "joined_find_to_root {}",
             joined_find_to_root.to_str().unwrap()

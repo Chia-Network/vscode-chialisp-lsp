@@ -21,12 +21,14 @@ use debug_types::{MessageKind, ProtocolMessage};
 use clvmr::allocator::Allocator;
 
 use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
+use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
+use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose
 };
-use clvm_tools_rs::compiler::compiler::{compile_file, DefaultCompilerOpts};
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
@@ -38,7 +40,7 @@ use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::types::MessageHandler;
-use crate::lsp::types::{DocPosition, DocRange};
+use crate::lsp::types::{ConfigJson, DocPosition, DocRange};
 
 // Lifecycle:
 // (a (code... ) (c arg ...))
@@ -251,16 +253,10 @@ impl RunningDebugger {
             .as_ref()
             .and_then(|s| s.name.as_ref())
             .and_then(|n| {
-                PathBuf::from(&self.source_file)
-                    .parent()
-                    .map(|p| (n,p.to_owned()))
-            }).map(|(n,p)| p.join(n)).and_then(|path| {
-                path.to_str().map(|x| x.to_owned())
-            }).and_then(|path_string| {
-                fs.read_content(&path_string).ok()
+                self.opts.read_new_file(self.source_file.to_string(), n.to_string()).ok()
             }).map(|content| {
                 ResponseBody::Source(SourceResponse {
-                    content: content.clone(),
+                    content: content.1.clone(),
                     mime_type: Some("text/plain".to_owned())
                 })
             })
@@ -780,6 +776,12 @@ impl Debugger {
         self.get_source_loc(running, &scope.name).and_then(source_from_loc)
     }
 
+    fn read_chialisp_json(&self) -> Result<ConfigJson, String> {
+        let chialisp_json_content = self.fs.read_content("chialisp.json")?;
+        let decoded_chialisp_json: ConfigJson = serde_json::from_str(&&chialisp_json_content).map_err(|_| format!("error decoding chialisp.json"))?;
+        Ok(decoded_chialisp_json)
+    }
+
     fn read_program_data(
         &self,
         allocator: &mut Allocator,
@@ -794,10 +796,12 @@ impl Debugger {
         let parse_err_map = |e: (Srcloc, String)| format!("{}: {}", e.0, e.1);
         let compile_err_map = |e: CompileErr| format!("{}: {}", e.0, e.1);
         let run_err_map = |e: RunFailure| {
-            match e {
+            let res = match e {
                 RunFailure::RunErr(l,e) => format!("{}: {}", l, e),
                 RunFailure::RunExn(l,v) => format!("{}: exception {}", l, v)
-            }
+            };
+            self.log.log(&format!("runfailure {res}"));
+            res
         };
 
         let mut use_symbol_table = HashMap::new();
@@ -820,10 +824,7 @@ impl Debugger {
             let frontend_compiled = frontend(
                 opts.clone(),
                 &source_parsed
-            ).map_err(|e| {
-                self.log.log(&format!("error {e:?}"));
-                compile_err_map(e)
-            })?;
+            ).map_err(compile_err_map)?;
 
             for h in frontend_compiled.helpers.iter() {
                 self.log.log(&format!("{}", h.loc()));
@@ -867,15 +868,24 @@ impl Debugger {
 
         if is_mod(parsed_program.clone()) {
             // Compile program.
-            let unopt_res = compile_file(
+            let clvm_res = compile_clvm_text(
                 allocator,
-                self.runner.clone(),
                 opts.clone(),
-                &decode_string(&read_in_file),
                 &mut use_symbol_table,
+                &decode_string(&read_in_file),
+                name
             )
-                .map_err(compile_err_map)?;
-            parsed_program = Rc::new(unopt_res);
+                .map_err(|e| {
+                    self.log.log(&format!("error compiling: {}", e.1));
+                    e.1
+                })?;
+            let bin = sexp_as_bin(allocator, clvm_res).hex();
+            parsed_program = hex_to_modern_sexp(
+                allocator,
+                &use_symbol_table,
+                Srcloc::start(name),
+                &bin,
+            ).map_err(run_err_map)?;
         };
 
         let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
@@ -904,12 +914,13 @@ impl Debugger {
     ) -> Result<(i64, State, Vec<ProtocolMessage>), String> {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
+        let config = self.read_chialisp_json()?;
         let read_in_file = self.fs.read_content(program)?;
         let opts = Rc::new(DbgCompilerOpts::new(
             self.log.clone(),
             self.fs.clone(),
             name,
-            &[".".to_string()],
+            &config.include_paths
         ));
         let mut launch_data =
             self.read_program_data(
@@ -1078,7 +1089,6 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                 }
 
                 // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
-
                 // Set breakpoints from source.  Requires advertised capability in
                 // package.json.
                 (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {
@@ -1523,6 +1533,18 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     self.log
                         .log(&format!("Don't know what to do with {:?} in state {}", req, st.state_name()));
                     self.state = st;
+                    self.msg_seq += 1;
+
+                    self.log.log(&format!("unhandled message {:?}", pm));
+                    return Ok(Some(vec![ProtocolMessage {
+                        seq: self.msg_seq,
+                        message: MessageKind::Response(Response {
+                            request_seq: pm.seq,
+                            success: false,
+                            message: Some(format!("unhandled message {:?}", pm)),
+                            body: None
+                        }),
+                    }]));
                 }
             }
         }
