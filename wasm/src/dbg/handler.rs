@@ -54,6 +54,9 @@ use crate::lsp::types::{ConfigJson, DocPosition, DocRange};
 
 const LARGE_COLUMN: u32 = 100000;
 
+/// Things which are in the launch request in practice but are not part of the
+/// documented minimal interface to this data.  Since these fields are ad-hoc
+/// we define a structure here that they'll decode into when tried with serde_json.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ExtraLaunchData {
     #[serde(rename = "stopOnEntry")]
@@ -64,17 +67,29 @@ pub struct ExtraLaunchData {
     program: Option<String>,
 }
 
+/// Used to make some aspects of deserializing easier via serde_json easier.
+/// This container allows {"arguments":{ ... t-like thing ...}} to decode if
+/// t-like thing decodes.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RequestContainer<T> {
     arguments: T,
 }
 
+/// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]
 pub enum TargetDepth {
+    /// Step out to this depth.
     LessThan(usize),
+    /// Stop when the depth is the same as the current depth.
     LessOrEqual(usize),
 }
 
+/// A structure containing what we know about the code as we passed the entry into
+/// this scope.  Since CLVM doesn't model the stack in the same way as a
+/// traditional vm, we synthesize a stack as we go.  cldh_hierarchy will tell us
+/// that the shape of the stack changed, and we'll push and pop frames as needed
+/// to match.  This contains our understanding of the state of execution when
+/// each frame was pushed.
 #[derive(Clone, Debug)]
 pub struct StoredScope {
     scope_id: u32,
