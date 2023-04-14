@@ -108,6 +108,12 @@ struct RecognizedBreakpoint {
     spec: Breakpoint,
 }
 
+/// This is a running debugger.  It's treated as an object with mutability via
+/// its step and set_breakpoints methods.  It is the primary object that implements
+/// tracking the debug state using the transitions emitted by the HierarchialRunner
+/// it holds.
+///
+/// It is created by the launch() method of Debugger.
 pub struct RunningDebugger {
     pub initialized: InitializeRequestArguments,
     pub launch_info: LaunchRequestArguments,
@@ -169,6 +175,10 @@ fn test_resolve_function_1() {
     );
 }
 
+/// Given symbols, possibly a CompileForm and a SourceBreakpoint, try a few tricks
+/// to figure out where we should stop in the source when a breakpoint is set.
+///
+/// This can certainly be improved.
 fn find_location(
     symbols: Rc<HashMap<String, String>>,
     compiled: &Option<CompileForm>,
@@ -272,6 +282,12 @@ fn test_simple_find_location_classic_symbols_1() {
 }
 
 impl RunningDebugger {
+    /// Given a request from the consumer, try to find and vend the requested
+    /// source file.  This can become a lot more sophisticated.  We might consider
+    /// storing the actual input files and other stuff in the symbols.
+    ///
+    /// In its current incarnation, this tries the CompilerOpts in RunningDebugger
+    /// to access the filesystem via the abstraction it carries.
     fn get_source_file(
         &self,
         log: Rc<dyn ILogWriter>,
@@ -295,6 +311,7 @@ impl RunningDebugger {
             })
     }
 
+    /// Set these breakpoints in the source file they're indicated for.
     fn set_breakpoints(
         &mut self,
         log: Rc<dyn ILogWriter>,
@@ -418,6 +435,8 @@ impl RunningDebugger {
         Some(info)
     }
 
+    /// Step the clvm by one tick, resulting in possibly new information and
+    /// possibly a stack change.
     fn step(&mut self, log: Rc<dyn ILogWriter>) -> Option<BTreeMap<String, String>> {
         // Clear breakpoint.
         self.at_breakpoint = None;
