@@ -507,6 +507,26 @@ impl RunningDebugger {
     }
 }
 
+/// State diagram for the debugger.
+///
+/// Starts in PreInitialization until we get an Initialization request.
+/// A few messages are documented to be interpretable in the Initialized state
+/// but we don't know what we're debugging until we get to launched.  I don't
+/// yet know what the expected actions are in every case.
+///
+/// Transitions from Initialized to Launched when we receive a launch request.
+/// The launch request contains information that isn't documented in the official
+/// message docs.  We decode it below as:
+///
+///   launch_extra: Option<RequestContainer<ExtraLaunchData>>
+///
+/// Which puts together the right combination of path and fields to retrieve the
+/// information we use from launch.json.
+///
+/// Given all that info, we try to read the main file, detect whether it's hex,
+/// try to find the chialisp that goes with it and try to find the symbols.
+/// once all that's found we create a RunningDebugger and set our state to
+/// Launched(RunningDebugger) which we mutate throughout the process.
 pub enum State {
     PreInitialization,
     Initialized(InitializeRequestArguments),
@@ -524,6 +544,11 @@ impl State {
     }
 }
 
+/// The main object that controls the debug process.  It contains the state, the
+/// global objects (fs and logger) as well as program to run, clvm runner and
+/// other bits needed.
+///
+/// State contains a mutated RunningDebugger on every state.
 pub struct Debugger {
     // External interface
     pub fs: Rc<dyn IFileReader>,
@@ -715,6 +740,7 @@ struct LaunchArgs<'a> {
     stop_on_entry: bool,
 }
 
+/// A simple parser for srcloc for recovering them from messages and symbols.
 pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
     let parse_one_loc = |skip| {
         let mut parse_state = SrclocParseAction::ReadingFileName;
@@ -824,6 +850,8 @@ impl Debugger {
             .and_then(source_from_loc)
     }
 
+    /// Try to read chialisp.json from the workspace root via the filesystem
+    /// abstraction.
     fn read_chialisp_json(&self) -> Result<ConfigJson, String> {
         let chialisp_json_content = self.fs.read_content("chialisp.json")?;
         let decoded_chialisp_json: ConfigJson = serde_json::from_str(&chialisp_json_content)
@@ -831,6 +859,8 @@ impl Debugger {
         Ok(decoded_chialisp_json)
     }
 
+    /// Try to obtain anything we're able to locate related to the chialisp program
+    /// or clvm hex that was launched.
     fn read_program_data(
         &self,
         allocator: &mut Allocator,
@@ -930,6 +960,13 @@ impl Debugger {
         })
     }
 
+    /// Given a launch command and the extra data it receives from launch.json,
+    /// try to locate enough pieces to run a debug session.
+    ///
+    /// The result is the new message seq number for outgoing messages, the
+    /// state to be transitioned to and a list of initial replies and events
+    /// to be sent to the consumer.  After sending the messages and updating
+    /// the state, we're synchronized to communicate with the consumer.
     fn launch(
         &self,
         launch_args: LaunchArgs,
@@ -1025,6 +1062,10 @@ impl Debugger {
 }
 
 impl MessageHandler<ProtocolMessage> for Debugger {
+    /// Handle a message from the protocol state when one is decoded.  We're given
+    /// the raw json as well so we can fish things out of it that are nonstandard.
+    ///
+    /// This is mutable on Debugger, so it updates the condition of Debugger.
     fn handle_message(
         &mut self,
         raw_json: &serde_json::Value,
@@ -1039,6 +1080,10 @@ impl MessageHandler<ProtocolMessage> for Debugger {
         swap(&mut state, &mut self.state);
 
         if let MessageKind::Request(req) = &pm.message {
+            // This is a big switch for being in some state and receiving a
+            // protocol message.  We match the pair of them to determine what
+            // to do.  If unmatched, we'll not change state, log an error and
+            // return a failure to the consumer.
             match (state, req) {
                 (State::PreInitialization, RequestCommand::Initialize(irq)) => {
                     self.state = State::Initialized(irq.clone());

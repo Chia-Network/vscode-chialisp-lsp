@@ -43,6 +43,10 @@ impl<H> MessageBuffer<H> {
         MessageBuffer { handler }
     }
 
+    /// A generic message adapter which, given a message type M, presents an
+    /// owned handler object of type H with an M each time one is decoded.
+    ///
+    /// For the debugger, dbg::handler::Debugger is the handler.
     pub fn process_message<M>(&mut self, msgdata: &[u8]) -> Result<Option<Vec<M>>, String>
     where
         H: MessageHandler<M>,
