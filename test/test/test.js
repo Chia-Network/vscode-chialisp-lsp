@@ -352,7 +352,6 @@ describe("Basic element tests", function() {
 
 	      await wait(3.0);
 
-        if (0) {
         console.log('Check the content of chialisp.json');
 	      await openFile("chialisp.json");
 
@@ -425,7 +424,6 @@ describe("Basic element tests", function() {
 
         console.log("completion test done, should have no search box");
         await wait(25.0);
-        }
 
         //
         // Test debugger
@@ -439,8 +437,6 @@ describe("Basic element tests", function() {
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
-
-	      await wait(1000.0);
 
         console.log('selecting debug tab');
         let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
@@ -457,8 +453,6 @@ describe("Basic element tests", function() {
 
         let startButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-start")));
         await startButton.click();
-
-        await wait(1000.0);
 
         console.log('Step a few times');
         await clickStepInto();
