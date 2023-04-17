@@ -142,7 +142,6 @@ async function forkToPipe(pipeName: string, modulePath: string, workspaceFolder:
 
 export function debuggerActivate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration(extensionName);
-    //const serializedConfig = JSON.stringify(config);
 
     const selfExtension = vscode.extensions.getExtension(`${publisher}.${extensionName}`);
     const extensionPath = selfExtension?.extensionPath;
@@ -150,7 +149,6 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
         throw new Error("no extension matches our id");
     }
 
-    log.info(`selfExtension path ${extensionPath}`);
     const modulePath = path.join(extensionPath, "debug/build/runner.js");
 
     const debugAdapter: vscode.DebugAdapterDescriptorFactory = {
