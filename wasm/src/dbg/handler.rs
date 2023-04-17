@@ -32,6 +32,8 @@ use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
+#[cfg(test)]
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
@@ -164,7 +166,7 @@ fn resolve_function(symbols: Rc<HashMap<String, String>>, name: &str) -> Option<
 
 #[test]
 fn test_resolve_function_1() {
-    let mut symbols_map = HashMap::from([(
+    let symbols_map = HashMap::from([(
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
         "fact".to_string(),
     )]);
@@ -256,7 +258,7 @@ fn find_location(
 #[test]
 fn test_simple_find_location_classic_symbols_1() {
     let log = Rc::new(EPrintWriter::new());
-    let mut symbols_map = HashMap::from([(
+    let symbols_map = HashMap::from([(
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
         "fact".to_string(),
     )]);
