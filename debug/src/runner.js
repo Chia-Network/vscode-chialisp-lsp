@@ -21,16 +21,14 @@ var log = {
 
 function tryOpenFile(name,tryDir) {
     let nameWithPath = (tryDir === null) ? name : path.join(tryDir,name);
-    log.write(`tryDir ${tryDir} name ${name}`);
     try {
         return fs.readFileSync(nameWithPath, 'utf8');
     } catch(e) {
-        log.write('read file failed: ' + e + '\n');
         return null;
     }
 }
 
-let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
+let dbg_id = clvm_tools_rs.create_dbg_service(function(name) {
     const directoryTryList = [workspaceFolder, ".", null];
     for (let i = 0; i < directoryTryList.length; i++) {
         const fileContent = tryOpenFile(name, directoryTryList[i]);
@@ -44,11 +42,14 @@ let lsp_id = clvm_tools_rs.create_dbg_service(function(name) {
     log.write('stderr> ' + e + '\n');
 });
 
-log.write('loaded');
-
 var stepper_tick = undefined;
 let stdin_reader = {};
 
+// We don't have threads in wasm so we depend on a ticker at this layer to cause
+// the debugger to auto-step, keeping control coming from one consistent source.
+//
+// This also allows us to process pause and stop messages from the consumer
+// without needing complexity at this level.
 function startStepper() {
     if (stepper_tick !== undefined) {
         return;
@@ -64,6 +65,8 @@ function startStepper() {
     }, 0);
 }
 
+// Recognize that we've got a stepper interval set and ensure that it gets removed.
+// Without that interval ticker, the debugger will idle.
 function stopStepper() {
     if (stepper_tick === undefined) {
         return;
@@ -77,11 +80,16 @@ stdin_reader.mode = START_HEADER;
 stdin_reader.message_header = '';
 stdin_reader.message_payload = '';
 stdin_reader.remaining_bytes = 0;
+// When a full message is captured and parsed, it's delivered here.  The API
+// entry point receives the message in json format.
+//
+// We recognize the debug service indicating that it wants the runner to start
+// automatically stepping and events that cause it to stop.
 stdin_reader.deliver_msg = function(m) {
     let messages = [];
     try {
         log.write(`input msg ${m}`);
-        messages = clvm_tools_rs.dbg_service_handle_msg(lsp_id, m);
+        messages = clvm_tools_rs.dbg_service_handle_msg(dbg_id, m);
     } catch (e) {
         log.write('exn: ' + e + '\n');
     }
@@ -121,8 +129,10 @@ function processCommand(cmd) {
     log.write(JSON.stringify(cmd));
 }
 
+// Fairly complicated but the goal here is to implement a state machine that
+// parses the http-header-like message protocol used by the debug adapter and
+// lsp.  Ultimately, the goal is to call processCommand 
 process.stdin.on('data', function(chunk) {
-    log.write(`data`);
     for (var i = 0; i < chunk.length; ) {
         let ch = chunk[i];
         let do_inc = 1;
@@ -187,6 +197,6 @@ process.stdin.on('data', function(chunk) {
 
 process.stdin.on('end', function() {
     log.write('end');
-    clvm_tools_rs.destroy_dbg_service(lsp_id);
+    clvm_tools_rs.destroy_dbg_service(dbg_id);
     process.stdout.write('', () => { process.exit(0); });
 });
