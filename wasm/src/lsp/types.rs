@@ -1,27 +1,29 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::cell::{Ref, RefCell};
-use std::cmp::{PartialOrd, min};
+use std::cmp::{min, PartialOrd};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::default::Default;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 #[cfg(test)]
 use std::str::FromStr;
-use std::rc::Rc;
 
 use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
 use lsp_types::{
-    CodeActionKind, CodeActionProviderCapability, CodeActionOptions, CompletionOptions, Diagnostic, InitializeParams, OneOf, Position, PublishDiagnosticsParams,
-    Range, SemanticTokenModifier, SemanticTokenType, SemanticTokensFullOptions,
-    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions
+    CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, Diagnostic,
+    InitializeParams, OneOf, Position, PublishDiagnosticsParams, Range, SemanticTokenModifier,
+    SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, WorkDoneProgressOptions,
 };
 
 use percent_encoding::percent_decode;
 use url::{Host, Url};
 
+use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
 use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
@@ -33,6 +35,8 @@ use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
+    /// The spec requires us to list the token types we use so we provide them
+    /// here.
     pub static ref TOKEN_TYPES: Vec<SemanticTokenType> = {
         vec![
             SemanticTokenType::PARAMETER,
@@ -45,6 +49,8 @@ lazy_static! {
             SemanticTokenType::NUMBER,
         ]
     };
+    /// The spec requires us to list possible token modifiers so they're listed
+    /// here.
     pub static ref TOKEN_MODIFIERS: Vec<SemanticTokenModifier> = {
         vec![
             SemanticTokenModifier::DEFINITION,
@@ -67,11 +73,15 @@ pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
 pub const HASH_SIZE: usize = 32;
 
+/// An error indicating some failure converting a url to a path.  The protocol
+/// speaks url, but few ways of accessing files allow urls.  We have some
+/// mechansims in here that try to convert but since the url space is much
+/// broader, it may fail.
 pub struct ToFilePathErr;
 
 #[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
 pub struct Hash {
-    data: [u8; HASH_SIZE]
+    data: [u8; HASH_SIZE],
 }
 
 impl Hash {
@@ -93,6 +103,10 @@ pub trait HasFilePath {
     fn our_to_file_path(&self) -> Result<PathBuf, ToFilePathErr>;
 }
 
+// This function is copied from the url library.  It doesn't do anything that's
+// platform specific, but is restricted by platform as exported from the crate.
+// We reproduce what it does here because it's a convenient way of converting
+// to filesystem path from url.
 fn file_url_segments_to_pathbuf(
     host: Option<Vec<u8>>,
     segments: std::str::Split<'_, char>,
@@ -141,57 +155,17 @@ impl HasFilePath for Url {
     }
 }
 
-pub trait IFileReader {
-    fn read_content(&self, name: &str) -> Result<String, String>;
-}
-
-pub trait ILogWriter {
-    fn log(&self, text: &str);
-}
-
-#[derive(Default)]
-pub struct FSFileReader {}
-
-impl IFileReader for FSFileReader {
-    fn read_content(&self, name: &str) -> Result<String, String> {
-        std::fs::read(name).map(|content| {
-            decode_string(&content)
-        }).map_err(|e| format!("{:?}", e))
-    }
-}
-
-impl FSFileReader {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
-#[derive(Default)]
-pub struct EPrintWriter {}
-
-impl ILogWriter for EPrintWriter {
-    fn log(&self, text: &str) {
-        eprintln!("{}", text);
-    }
-}
-
-impl EPrintWriter {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-}
-
 #[cfg(test)]
-fn uniterr<A>(_: A) -> () { () }
+fn uniterr<A>(_: A) -> () {
+    ()
+}
 
 #[test]
 fn test_file_segments_to_pathbuf_1() {
     assert_eq!(
-        Url::parse("fink:::::not/good").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("fink:::::not/good")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         Err(())
     );
 }
@@ -199,9 +173,9 @@ fn test_file_segments_to_pathbuf_1() {
 #[test]
 fn test_file_segments_to_pathbuf_2() {
     assert_eq!(
-        Url::parse("file:///home/person/stuff.txt").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:///home/person/stuff.txt")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/home/person/stuff.txt").map_err(uniterr)
     );
 }
@@ -209,9 +183,9 @@ fn test_file_segments_to_pathbuf_2() {
 #[test]
 fn test_file_segments_to_pathbuf_3() {
     assert_eq!(
-        Url::parse("").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         Err(())
     );
 }
@@ -219,9 +193,9 @@ fn test_file_segments_to_pathbuf_3() {
 #[test]
 fn test_file_segments_to_pathbuf_4() {
     assert_eq!(
-        Url::parse("file:").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/").map_err(uniterr)
     );
 }
@@ -229,9 +203,9 @@ fn test_file_segments_to_pathbuf_4() {
 #[test]
 fn test_file_segments_to_pathbuf_5() {
     assert_eq!(
-        Url::parse("file:///").map_err(uniterr).and_then(|uri| {
-            uri.our_to_file_path().map_err(uniterr)
-        }),
+        Url::parse("file:///")
+            .map_err(uniterr)
+            .and_then(|uri| { uri.our_to_file_path().map_err(uniterr) }),
         PathBuf::from_str("/").map_err(uniterr)
     );
 }
@@ -257,6 +231,155 @@ pub struct DocRange {
     pub end: DocPosition,
 }
 
+#[test]
+fn test_docrange_overlap_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 3,
+                character: 4
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 1,
+                character: 2
+            },
+            end: DocPosition {
+                line: 2,
+                character: 3
+            }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 3,
+                character: 4
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 3,
+                character: 2
+            },
+            end: DocPosition {
+                line: 3,
+                character: 8
+            }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_no() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 2,
+                character: 7
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 1
+            },
+            end: DocPosition {
+                line: 2,
+                character: 4
+            }
+        }),
+        false
+    );
+}
+
+#[test]
+fn test_docrange_overlap_same_line_yes() {
+    assert_eq!(
+        DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 5
+            },
+            end: DocPosition {
+                line: 2,
+                character: 7
+            },
+        }
+        .overlap(&DocRange {
+            start: DocPosition {
+                line: 2,
+                character: 1
+            },
+            end: DocPosition {
+                line: 2,
+                character: 5
+            }
+        }),
+        true
+    );
+}
+
+#[test]
+fn test_invalid_zero_srcloc_leads_to_zero_position() {
+    assert_eq!(
+        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
+        DocRange {
+            start: DocPosition {
+                line: 0,
+                character: 0
+            },
+            end: DocPosition {
+                line: 0,
+                character: 0
+            }
+        }
+    );
+}
+
+#[test]
+fn test_doc_range_overlap_at_zero() {
+    assert!(DocRange {
+        start: DocPosition {
+            line: 0,
+            character: 0
+        },
+        end: DocPosition {
+            line: 0,
+            character: 2
+        }
+    }
+    .overlap(&DocRange {
+        start: DocPosition {
+            line: 0,
+            character: 1
+        },
+        end: DocPosition {
+            line: 0,
+            character: 3
+        }
+    }));
+}
+
 #[derive(Clone, Debug)]
 pub struct DocPatch {
     pub range: DocRange,
@@ -273,7 +396,6 @@ impl DocPosition {
             line: pos.line,
             character: pos.character,
         }
-
     }
 
     pub fn to_position(&self) -> Position {
@@ -348,84 +470,6 @@ impl DocRange {
         // Not overlapping if both points are on the same side of the other 2
         sortable[0].1 != sortable[1].1
     }
-}
-
-#[test]
-fn test_docrange_overlap_no() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 1, character: 2 },
-            end: DocPosition { line: 2, character: 3 }
-        }),
-        false
-    );
-}
-
-#[test]
-fn test_docrange_overlap_yes() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 3, character: 4 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 3, character: 2 },
-            end: DocPosition { line: 3, character: 8 }
-        }),
-        true
-    );
-}
-
-#[test]
-fn test_docrange_overlap_same_line_no() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 4 }
-        }),
-        false
-    );
-}
-
-#[test]
-fn test_docrange_overlap_same_line_yes() {
-    assert_eq!(
-        DocRange {
-            start: DocPosition { line: 2, character: 5 },
-            end: DocPosition { line: 2, character: 7 },
-        }.overlap(&DocRange {
-            start: DocPosition { line: 2, character: 1 },
-            end: DocPosition { line: 2, character: 5 }
-        }),
-        true
-    );
-}
-
-#[test]
-fn test_invalid_zero_srcloc_leads_to_zero_position() {
-    assert_eq!(
-        DocRange::from_srcloc(Srcloc::new(Rc::new("file.txt".to_owned()), 0, 0)),
-        DocRange {
-            start: DocPosition { line: 0, character: 0 },
-            end: DocPosition { line: 0, character: 0 }
-        }
-    );
-}
-
-#[test]
-fn test_doc_range_overlap_at_zero() {
-    assert!(DocRange {
-        start: DocPosition { line: 0, character: 0 },
-        end: DocPosition { line: 0, character: 2 }
-    }.overlap(&DocRange {
-        start: DocPosition { line: 0, character: 1 },
-        end: DocPosition { line: 0, character: 3 }
-    }));
 }
 
 // An object that contains the literal text of a document we're working with in
@@ -547,7 +591,7 @@ impl LSPServiceProvider {
                             version: None,
                             diagnostics: err.preprocessing.clone(),
                         })
-                            .unwrap(),
+                        .unwrap(),
                     }));
                 } else if !err.semantic.is_empty() {
                     all_errors.push(Message::Notification(Notification {
@@ -557,7 +601,7 @@ impl LSPServiceProvider {
                             version: None,
                             diagnostics: err.semantic.clone(),
                         })
-                            .unwrap(),
+                        .unwrap(),
                     }));
                 } else {
                     all_errors.push(Message::Notification(Notification {
@@ -565,9 +609,9 @@ impl LSPServiceProvider {
                         params: serde_json::to_value(PublishDiagnosticsParams {
                             uri: Url::parse(uristring).unwrap(),
                             version: None,
-                            diagnostics: vec![]
+                            diagnostics: vec![],
                         })
-                            .unwrap(),
+                        .unwrap(),
                     }));
                 }
             }
@@ -576,7 +620,12 @@ impl LSPServiceProvider {
     }
 
     // Set errors of a given kind for the indicated source file.
-    pub fn set_error_list(&mut self, uristring: &str, preprocessing: bool, errors: Vec<Diagnostic>) {
+    pub fn set_error_list(
+        &mut self,
+        uristring: &str,
+        preprocessing: bool,
+        errors: Vec<Diagnostic>,
+    ) {
         if preprocessing {
             // Remove semantic errors if errors is not empty, otherwise, clear
             // preprocessing errors.
@@ -588,20 +637,14 @@ impl LSPServiceProvider {
                 eset.preprocessing = errors;
             } else {
                 // no previous entry, so just set it.
-                self.thrown_errors.insert(
-                    uristring.to_owned(),
-                    ErrorSet::from_preprocessing(errors)
-                );
+                self.thrown_errors
+                    .insert(uristring.to_owned(), ErrorSet::from_preprocessing(errors));
             }
+        } else if let Some(eset) = self.thrown_errors.get_mut(uristring) {
+            eset.semantic = errors;
         } else {
-            if let Some(eset) = self.thrown_errors.get_mut(uristring) {
-                eset.semantic = errors;
-            } else {
-                self.thrown_errors.insert(
-                    uristring.to_owned(),
-                    ErrorSet::from_semantic(errors)
-                );
-            }
+            self.thrown_errors
+                .insert(uristring.to_owned(), ErrorSet::from_semantic(errors));
         }
     }
 
@@ -610,19 +653,23 @@ impl LSPServiceProvider {
         self.ensure_parsed_document(uristring);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
-        let errors = missing_includes.iter().map(|i| {
-            Diagnostic {
+        let errors = missing_includes
+            .iter()
+            .map(|i| Diagnostic {
                 range: DocRange::from_srcloc(i.name_loc.clone()).to_range(),
                 severity: None,
                 code: None,
                 code_description: None,
                 source: Some("chialisp".to_string()),
-                message: format!("missing include file {} or path not set", decode_string(&i.filename)),
+                message: format!(
+                    "missing include file {} or path not set",
+                    decode_string(&i.filename)
+                ),
                 tags: None,
                 related_information: None,
                 data: None,
-            }
-        }).collect();
+            })
+            .collect();
 
         self.set_error_list(uristring, true, errors);
     }
@@ -677,7 +724,8 @@ impl LSPServiceProvider {
             uristring,
             &self.config.include_paths,
             self.document_collection.clone(),
-        )).set_frontend_check_live(false);
+        ))
+        .set_frontend_check_live(false);
 
         if let Some(doc) = self.get_doc(uristring) {
             let startloc = Srcloc::start(uristring);
@@ -716,7 +764,13 @@ impl LSPServiceProvider {
                         .get_workspace_root()
                         .and_then(|r| r.join(filename).to_str().map(urlify))
                     {
+                        // Keep the contents.
                         self.save_doc(file_uri.clone(), file_body);
+                        // Do parsing on this document if the content changed
+                        // or it's new.
+                        self.ensure_parsed_document(&file_uri);
+                        // If it parsed, we have the helpers and can populate
+                        // autocomplete/error functionality.
                         if let Some(p) = self.get_parsed(&file_uri) {
                             for (hash, helper) in p.helpers.iter() {
                                 new_helpers.helpers.insert(hash.clone(), helper.clone());
@@ -726,26 +780,28 @@ impl LSPServiceProvider {
                 }
             }
 
-            let new_parse =
-                combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
-            self.set_error_list(uristring, false, new_parse.errors.iter().map(|error| {
-                Diagnostic {
-                    range: DocRange::from_srcloc(error.0.clone()).to_range(),
-                    severity: None,
-                    code: None,
-                    code_description: None,
-                    source: Some("chialisp".to_string()),
-                    message: error.1.clone(),
-                    tags: None,
-                    related_information: None,
-                    data: None,
-                }
-            }).collect());
-
-            self.save_parse(
-                uristring.to_owned(),
-                new_parse,
+            let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+            self.set_error_list(
+                uristring,
+                false,
+                new_parse
+                    .errors
+                    .iter()
+                    .map(|error| Diagnostic {
+                        range: DocRange::from_srcloc(error.0.clone()).to_range(),
+                        severity: None,
+                        code: None,
+                        code_description: None,
+                        source: Some("chialisp".to_string()),
+                        message: error.1.clone(),
+                        tags: None,
+                        related_information: None,
+                        data: None,
+                    })
+                    .collect(),
             );
+
+            self.save_parse(uristring.to_owned(), new_parse);
         }
     }
 
@@ -776,20 +832,18 @@ impl LSPServiceProvider {
                 ..Default::default()
             }),
             code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
-                code_action_kinds: Some(vec![
-                    CodeActionKind::QUICKFIX
-                ]),
+                code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
                 work_done_progress_options: WorkDoneProgressOptions {
-                    work_done_progress: None
+                    work_done_progress: None,
                 },
-                resolve_provider: None
+                resolve_provider: None,
             })),
             ..Default::default()
         }
     }
 
     pub fn new(fs: Rc<dyn IFileReader>, log: Rc<dyn ILogWriter>, configured: bool) -> Self {
-        let clvm_prims = prims().iter().map(|(p,_)| p.clone()).collect();
+        let clvm_prims = prims().iter().map(|(p, _)| p.clone()).collect();
 
         LSPServiceProvider {
             fs,
@@ -809,13 +863,12 @@ impl LSPServiceProvider {
             thrown_errors: HashMap::new(),
 
             workspace_file_extensions_to_resync_for: vec![
-                ".clsp",
-                ".cl",
-                ".clvm",
-                ".clib",
-                ".clinc"
-            ].iter().map(|s| s.to_string()).collect(),
-            prims: clvm_prims
+                ".clsp", ".cl", ".clvm", ".clib", ".clinc",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            prims: clvm_prims,
         }
     }
 
@@ -886,10 +939,7 @@ impl LSPServiceProvider {
 #[cfg(test)]
 fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
     // There is a comment at line 2, column 24 and at line 3, column 8
-    let comment_hashmap = HashMap::from([
-        (1, 23),
-        (2, 7)
-    ]);
+    let comment_hashmap = HashMap::from([(1, 23), (2, 7)]);
     // vr vec Rc
     let vr = |s: &str| {
         let bv: Vec<u8> = s.as_bytes().to_vec();
@@ -906,10 +956,10 @@ fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
             vr("(mod (X)"),
             vr(" (defun F (A) (+ A 1)) ;; A function"),
             vr(" (F X) ;; Call"),
-            vr(" )")
+            vr(" )"),
         ],
         version: 1,
-        comments: comment_hashmap
+        comments: comment_hashmap,
     }
 }
 
@@ -918,7 +968,10 @@ fn make_test_doc_data_object_for_the_subsequent_test_code_1() -> DocData {
 #[test]
 fn test_doc_data_nth_line_ref_1() {
     let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
-    assert_eq!(dd.nth_line_ref(2), Some(&" (F X) ;; Call".as_bytes().to_vec()));
+    assert_eq!(
+        dd.nth_line_ref(2),
+        Some(&" (F X) ;; Call".as_bytes().to_vec())
+    );
 }
 
 #[test]
@@ -931,7 +984,10 @@ fn test_doc_data_nth_line_ref_2() {
 fn test_doc_data_get_prev_position_1() {
     let dd = make_test_doc_data_object_for_the_subsequent_test_code_1();
     // Zero based.
-    let mut position = Some(Position { line: 3, character: 2 });
+    let mut position = Some(Position {
+        line: 3,
+        character: 2,
+    });
     let mut all_expected_characters = Vec::new();
     let mut got_characters = Vec::new();
     let mut have_line_jumps = Vec::new();
@@ -967,12 +1023,24 @@ struct HelperWithDocRange {
 #[test]
 fn test_helper_with_doc_range() {
     let sl1 = DocRange {
-        start: DocPosition { line: 0, character: 1 },
-        end: DocPosition { line: 0, character: 2 },
+        start: DocPosition {
+            line: 0,
+            character: 1,
+        },
+        end: DocPosition {
+            line: 0,
+            character: 2,
+        },
     };
     let sl2 = DocRange {
-        start: DocPosition { line: 0, character: 2 },
-        end: DocPosition { line: 0, character: 4 },
+        start: DocPosition {
+            line: 0,
+            character: 2,
+        },
+        end: DocPosition {
+            line: 0,
+            character: 4,
+        },
     };
     let hw1 = HelperWithDocRange { loc: sl1 };
     let hw2 = HelperWithDocRange { loc: sl2 };
@@ -999,11 +1067,17 @@ pub struct ErrorSet {
 
 impl ErrorSet {
     pub fn from_preprocessing(v: Vec<Diagnostic>) -> Self {
-        ErrorSet { preprocessing: v, semantic: vec![] }
+        ErrorSet {
+            preprocessing: v,
+            semantic: vec![],
+        }
     }
 
     pub fn from_semantic(v: Vec<Diagnostic>) -> Self {
-        ErrorSet { preprocessing: vec![], semantic: v }
+        ErrorSet {
+            preprocessing: vec![],
+            semantic: v,
+        }
     }
 }
 
@@ -1045,7 +1119,7 @@ pub struct IncludeData {
     pub kw_loc: Srcloc,
     pub kind: IncludeKind,
     pub filename: Vec<u8>,
-    pub found: Option<bool>
+    pub found: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

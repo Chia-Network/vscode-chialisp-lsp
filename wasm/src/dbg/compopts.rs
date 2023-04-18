@@ -1,7 +1,5 @@
-use std::borrow::Borrow;
-use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use clvmr::allocator::Allocator;
@@ -18,10 +16,9 @@ use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 #[derive(Clone)]
-pub struct LSPCompilerOpts {
+pub struct DbgCompilerOpts {
     pub log: Rc<dyn ILogWriter>,
     pub fs: Rc<dyn IFileReader>,
-    pub ws_root: Option<PathBuf>,
     pub include_dirs: Vec<String>,
     pub filename: String,
     pub compiler: Option<PrimaryCodegen>,
@@ -33,12 +30,10 @@ pub struct LSPCompilerOpts {
     pub start_env: Option<Rc<SExp>>,
     pub prim_map: Rc<HashMap<Vec<u8>, Rc<SExp>>>,
 
-    lsp: Rc<RefCell<HashMap<String, DocData>>>,
-
     known_dialects: Rc<HashMap<String, String>>,
 }
 
-impl CompilerOpts for LSPCompilerOpts {
+impl CompilerOpts for DbgCompilerOpts {
     fn filename(&self) -> String {
         self.filename.clone()
     }
@@ -125,7 +120,7 @@ impl CompilerOpts for LSPCompilerOpts {
         let (computed_filename, content) = self.get_file(&filename).map_err(|_| {
             CompileErr(
                 Srcloc::start(&inc_from),
-                format!("could not find {} to include", filename),
+                format!("could not find {filename} to include"),
             )
         })?;
 
@@ -149,23 +144,13 @@ impl CompilerOpts for LSPCompilerOpts {
 pub fn get_file_content(
     log: Rc<dyn ILogWriter>,
     reader: Rc<dyn IFileReader>,
-    ws_root: Option<PathBuf>,
     include_paths: &[String],
     name: &str,
 ) -> Result<(String, DocData), String> {
-    log.log(&format!("get_file_content {}", name));
+    log.log(&format!("get_file_content {name}"));
     for find_path in include_paths.iter() {
-        let joined_find_to_root = if let Some(ref r) = ws_root {
-            r.join(find_path).to_path_buf()
-        } else {
-            Path::new(r".").to_path_buf()
-        };
-        log.log(&format!(
-            "joined_find_to_root {}",
-            joined_find_to_root.to_str().unwrap()
-        ));
+        let joined_find_to_root = Path::new(find_path).to_path_buf();
         if let Some(try_path) = joined_find_to_root.join(name).to_str() {
-            log.log(&format!("try path {}", try_path));
             if let Ok(filedata) = reader.read_content(try_path) {
                 let doc_text = split_text(&filedata);
                 let comments = compute_comment_lines(&doc_text);
@@ -182,22 +167,19 @@ pub fn get_file_content(
             }
         }
     }
-    Err(format!("don't have {} to open", name))
+    Err(format!("don't have {name} to open"))
 }
 
-impl LSPCompilerOpts {
+impl DbgCompilerOpts {
     pub fn new(
         log: Rc<dyn ILogWriter>,
         fs: Rc<dyn IFileReader>,
-        ws_root: Option<PathBuf>,
         filename: &str,
         paths: &[String],
-        docs: Rc<RefCell<HashMap<String, DocData>>>,
     ) -> Self {
-        LSPCompilerOpts {
+        DbgCompilerOpts {
             log,
             fs,
-            ws_root,
             include_dirs: paths.to_owned(),
             filename: filename.to_owned(),
             compiler: None,
@@ -208,25 +190,11 @@ impl LSPCompilerOpts {
             frontend_check_live: true,
             start_env: None,
             prim_map: create_prim_map(),
-            lsp: docs,
             known_dialects: Rc::new(KNOWN_DIALECTS.clone()),
         }
     }
 
     fn get_file(&self, name: &str) -> Result<(String, DocData), String> {
-        self.log.log(&format!("get_file {}", name));
-        let cell: &RefCell<HashMap<String, DocData>> = self.lsp.borrow();
-        let coll: Ref<HashMap<String, DocData>> = cell.borrow();
-        coll.get(name)
-            .map(|x| Ok((x.fullname.clone(), x.clone())))
-            .unwrap_or_else(|| {
-                get_file_content(
-                    self.log.clone(),
-                    self.fs.clone(),
-                    self.ws_root.clone(),
-                    &self.include_dirs,
-                    name,
-                )
-            })
+        get_file_content(self.log.clone(), self.fs.clone(), &self.include_dirs, name)
     }
 }

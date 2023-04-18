@@ -3,9 +3,7 @@ use std::rc::Rc;
 use lsp_server::{Message, RequestId, Response};
 use lsp_types::{CompletionItem, CompletionList, CompletionParams, CompletionResponse, Position};
 
-use crate::lsp::parse::{
-    find_scope_stack, get_positional_text, is_first_in_list, is_identifier
-};
+use crate::lsp::parse::{find_scope_stack, get_positional_text, is_first_in_list, is_identifier};
 use crate::lsp::types::{DocData, ParseScope, ScopeKind};
 use crate::lsp::LSPServiceProvider;
 use clvm_tools_rs::compiler::prims::prims;
@@ -171,16 +169,18 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         let log = self.log.clone();
 
         self.with_doc_and_parsed(&uristring, |doc, output| {
-            let on_previous_character =
-                if params.text_document_position.position.character > 0 {
-                    Position {
-                        line: params.text_document_position.position.line,
-                        character: params.text_document_position.position.character - 1
-                    }
-                } else {
-                    params.text_document_position.position
-                };
-            log.log(&format!("doing completion with position {:?}", on_previous_character));
+            let on_previous_character = if params.text_document_position.position.character > 0 {
+                Position {
+                    line: params.text_document_position.position.line,
+                    character: params.text_document_position.position.character - 1,
+                }
+            } else {
+                params.text_document_position.position
+            };
+            log.log(&format!(
+                "doing completion with position {:?}",
+                on_previous_character
+            ));
 
             if let Some(cpl) = get_positional_text(doc, &on_previous_character) {
                 let mut found_scopes = Vec::new();

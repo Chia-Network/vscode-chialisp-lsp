@@ -17,8 +17,8 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-clvm_tools_rs = {version="0.1.27", default-features=false}
-clvmr = "0.1.21"
+clvm_tools_rs = "0.1.31"
+clvmr = "0.1.24"
 wasm-bindgen = "=0.2.83"
 wasm-bindgen-test = "=0.3.25"
 js-sys = "0.3.60"
@@ -31,3 +31,4 @@ regex = "1.6.0"
 url = "2.3.1"
 percent-encoding = "2.2.0"
 indoc = "1.0"
+debug_types = "1.0.0"

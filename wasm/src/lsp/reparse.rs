@@ -2,14 +2,16 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use clvm_tools_rs::compiler::clvm::sha256tree_from_atom;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
-use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{
-    grab_scope_doc_range, recover_scopes, ParsedDoc,
+use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
+use crate::lsp::types::{
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
-use crate::lsp::types::{DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedHelper, ReparsedExp};
+use clvm_tools_rs::compiler::clvm::sha256tree_from_atom;
+use clvm_tools_rs::compiler::comptypes::{
+    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
+};
+use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
 use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -52,7 +54,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                         name_loc: nl,
                         kind: IncludeKind::Include,
                         filename: fname,
-                        found: None
+                        found: None,
                     });
                 }
             }
@@ -67,7 +69,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                         name_loc: nl.clone(),
                         kind: IncludeKind::CompileFile(il.clone()),
                         filename: fname.clone(),
-                        found: None
+                        found: None,
                     });
                 }
             }
@@ -86,7 +88,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                         name_loc: nl.clone(),
                         kind: IncludeKind::EmbedFile(il.clone(), tl.clone()),
                         filename: fname.clone(),
-                        found: None
+                        found: None,
                     });
                 }
             }
@@ -160,9 +162,7 @@ pub fn reparse_subset(
                 have_mod = m == b"mod";
 
                 if !have_mod {
-                    if let Some(_) = prims.iter().position(|prim| {
-                        prim == m
-                    }) {
+                    if let Some(_) = prims.iter().position(|prim| prim == m) {
                         result.ignored = true;
                         return result;
                     }
@@ -394,8 +394,10 @@ fn determine_same_path(uristring: &str, query_file: &str) -> bool {
     let query_file_comps: Vec<String> = query_file.split('/').map(|s| s.to_owned()).collect();
 
     // no match if the queried file has a longer path than the uristring.
-    if uristring_comps.is_empty() || query_file_comps.is_empty() ||
-        query_file_comps.len() > uristring.len() {
+    if uristring_comps.is_empty()
+        || query_file_comps.is_empty()
+        || query_file_comps.len() > uristring.len()
+    {
         return false;
     }
 
@@ -441,10 +443,15 @@ pub fn combine_new_with_old_parse(
     let mut to_remove = HashSet::new();
     let mut remove_names = HashSet::new();
     let mut hash_to_name = parsed.hash_to_name.clone();
-    let mut out_errors: Vec<CompileErr> = reparse.errors.iter().filter(|e| {
-        let borrowed_file: &String = e.0.file.borrow();
-        determine_same_path(uristring, borrowed_file)
-    }).cloned().collect();
+    let mut out_errors: Vec<CompileErr> = reparse
+        .errors
+        .iter()
+        .filter(|e| {
+            let borrowed_file: &String = e.0.file.borrow();
+            determine_same_path(uristring, borrowed_file)
+        })
+        .cloned()
+        .collect();
 
     // Collect to-delete set.
     for (h, _) in new_helpers.iter() {

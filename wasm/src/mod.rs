@@ -6,6 +6,8 @@ extern crate lazy_static;
 extern crate indoc;
 
 pub mod api;
+mod dbg;
+mod interfaces;
 pub mod lsp;
 
 #[cfg(test)]

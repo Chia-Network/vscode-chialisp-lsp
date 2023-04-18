@@ -10,6 +10,7 @@ compiler, but tries to be more lenient and faster to use incrementally.
 - Go to definition (if in the same file)
 - Completion
 - Include files (when the filesystem is accessible)
+- Debug adapter
 
 ## Requirements
 

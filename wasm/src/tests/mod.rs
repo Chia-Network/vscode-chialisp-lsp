@@ -18,14 +18,14 @@ use lsp_types::{
     TextDocumentPositionParams, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
 };
 
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::CompilerOpts;
+use crate::dbg::handler::parse_srcloc;
+use crate::interfaces::{EPrintWriter, FSFileReader};
 use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
-use crate::lsp::types::{
-    ConfigJson, DocData, DocPosition, DocRange, EPrintWriter, FSFileReader, IncludeData
-};
+use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use clvm_tools_rs::compiler::comptypes::CompilerOpts;
 use clvm_tools_rs::compiler::prims;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -305,7 +305,6 @@ fn test_completion_from_argument_single_level_at_end() {
     let completion_result = find_completion_response(&out_msgs).unwrap();
     assert_eq!(completion_result.label, "zoom");
 }
-
 
 #[test]
 fn test_completion_from_argument_let_binding() {
@@ -700,7 +699,7 @@ fn run_reparse_steps(
     text_inputs: &[String],
 ) -> ParsedDoc {
     let mut doc = ParsedDoc::new(loc.clone());
-    let prims: Vec<Vec<u8>> = prims::prims().iter().map(|(k,_)| k.clone()).collect();
+    let prims: Vec<Vec<u8>> = prims::prims().iter().map(|(k, _)| k.clone()).collect();
 
     for content in text_inputs.iter() {
         let text = split_text(&content);
@@ -1535,4 +1534,12 @@ fn test_lsp_heap_exhaustion_1() {
 
     // If we got here, we didn't have the bug.
     assert!(true);
+}
+
+#[test]
+fn test_parse_srcloc() {
+    assert_eq!(
+        parse_srcloc("test.foo(99):1007"),
+        Some(Srcloc::new(Rc::new("test.foo".to_string()), 99, 1007))
+    );
 }
