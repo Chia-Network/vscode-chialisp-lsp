@@ -752,7 +752,13 @@ impl LSPServiceProvider {
                         .get_workspace_root()
                         .and_then(|r| r.join(filename).to_str().map(urlify))
                     {
+                        // Keep the contents.
                         self.save_doc(file_uri.clone(), file_body);
+                        // Do parsing on this document if the content changed
+                        // or it's new.
+                        self.ensure_parsed_document(&file_uri);
+                        // If it parsed, we have the helpers and can populate
+                        // autocomplete/error functionality.
                         if let Some(p) = self.get_parsed(&file_uri) {
                             for (hash, helper) in p.helpers.iter() {
                                 new_helpers.helpers.insert(hash.clone(), helper.clone());
