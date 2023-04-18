@@ -35,6 +35,8 @@ use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
+    /// The spec requires us to list the token types we use so we provide them
+    /// here.
     pub static ref TOKEN_TYPES: Vec<SemanticTokenType> = {
         vec![
             SemanticTokenType::PARAMETER,
@@ -47,6 +49,8 @@ lazy_static! {
             SemanticTokenType::NUMBER,
         ]
     };
+    /// The spec requires us to list possible token modifiers so they're listed
+    /// here.
     pub static ref TOKEN_MODIFIERS: Vec<SemanticTokenModifier> = {
         vec![
             SemanticTokenModifier::DEFINITION,
@@ -69,6 +73,10 @@ pub const TK_DEFINITION_BIT: u32 = 0;
 pub const TK_READONLY_BIT: u32 = 1;
 pub const HASH_SIZE: usize = 32;
 
+/// An error indicating some failure converting a url to a path.  The protocol
+/// speaks url, but few ways of accessing files allow urls.  We have some
+/// mechansims in here that try to convert but since the url space is much
+/// broader, it may fail.
 pub struct ToFilePathErr;
 
 #[derive(Clone, Debug, Hash, PartialOrd, PartialEq, Ord, Eq)]
@@ -95,6 +103,10 @@ pub trait HasFilePath {
     fn our_to_file_path(&self) -> Result<PathBuf, ToFilePathErr>;
 }
 
+// This function is copied from the url library.  It doesn't do anything that's
+// platform specific, but is restricted by platform as exported from the crate.
+// We reproduce what it does here because it's a convenient way of converting
+// to filesystem path from url.
 fn file_url_segments_to_pathbuf(
     host: Option<Vec<u8>>,
     segments: std::str::Split<'_, char>,
