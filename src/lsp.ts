@@ -86,6 +86,18 @@ async function activateServer(context: vscode.ExtensionContext) {
 }
 
 export function languageActivate(context: vscode.ExtensionContext) {
+    // As a way of allowing the extension to be used without editing chialisp.json
+    // which was requested, this flow is used:
+    //
+    // The extension flags missing includes and includes a code action which
+    // invokes chialisp.locateIncludePath when selected from the hotfix list.
+    //
+    // When selected, it brings up a file chooser to find chialisp include files.
+    //
+    // The directory containing the selected file is added to a chialisp.json in
+    // the root of the workspace, where we look for chialisp.json.  When this
+    // file appears in the set of files modified in workspace to the extension,
+    // it's also re-read in there.
     vscode.commands.registerCommand("chialisp.locateIncludePath", function(value) {
         console.log('locateIncludePath', JSON.stringify(value));
         // Open a file selector to find the included file.
