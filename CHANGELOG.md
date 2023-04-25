@@ -14,4 +14,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.2.0]
 
-- Initial functional release
+### Added
+- syntax highlighting
+- go to definition
+- auto-completion
