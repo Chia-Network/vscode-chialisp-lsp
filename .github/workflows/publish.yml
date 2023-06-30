@@ -28,6 +28,7 @@ jobs:
             components: rustfmt
       - name: Install wasm-pack
         run: |
+          sh install-clvm_tools_rs.sh
           cargo install --version 0.8.1 wasm-pack
       - name: Install
         run: npm ci
