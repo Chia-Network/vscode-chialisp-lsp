@@ -173,7 +173,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(adapterRegistration);
 
-    var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider("chialisp", {
+    var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider(extensionName, {
         provideDebugConfigurations: async (folder, token) => {
             return [{
                 name: "chialisp",

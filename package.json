@@ -77,7 +77,7 @@
         ],
         "debuggers":[
             {
-                "type":"chialisp",
+                "type":"dev-chialisp",
                 "label":"chialisp debugger",
                 "languages":["Chialisp", "chialisp"],
                 "configurationAttributes":{

@@ -7,7 +7,7 @@ use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
-use clvm_tools_rs::compiler::clvm::sha256tree_from_atom;
+use clvm_tools_rs::compiler::clvm::{sha256tree_from_atom, sha256tree};
 use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
 };
@@ -311,8 +311,23 @@ pub fn reparse_subset(
                                     matches!(h, HelperForm::Deftype(_))
                                 }).collect();
 
+                                let other_helpers: Vec<HelperForm> = parsed.new_helpers.iter().filter(|h| {
+                                    !matches!(h, HelperForm::Deftype(_))
+                                }).cloned().collect();
+
                                 let use_helper =
                                     if !typedefs.is_empty() {
+                                        for h in other_helpers.into_iter() {
+                                            let new_hash = Hash::new(&sha256tree(h.to_sexp()));
+                                            result.helpers.insert(
+                                                new_hash.clone(),
+                                                ReparsedHelper {
+                                                    hash: new_hash,
+                                                    range: r.clone(),
+                                                    parsed: Ok(h),
+                                                },
+                                            );
+                                        }
                                         Some(typedefs[0])
                                     } else if !parsed.new_helpers.is_empty() {
                                         Some(&parsed.new_helpers[0])
