@@ -301,20 +301,46 @@ pub fn reparse_subset(
                         continue;
                     }
 
+                    let compiled_result =
+                        compile_helperform(opts.clone(), parsed[0].clone());
+
+                    let parsed_result_to_record =
+                        match compiled_result {
+                            Ok(Some(parsed)) => {
+                                let typedefs: Vec<&HelperForm> = parsed.new_helpers.iter().filter(|h| {
+                                    matches!(h, HelperForm::Deftype(_))
+                                }).collect();
+
+                                let use_helper =
+                                    if !typedefs.is_empty() {
+                                        Some(typedefs[0])
+                                    } else if !parsed.new_helpers.is_empty() {
+                                        Some(&parsed.new_helpers[0])
+                                    } else {
+                                        None
+                                    };
+
+                                let new_parsed =
+                                    if let Some(h) = use_helper {
+                                        Ok(h)
+                                    } else {
+                                        Err(CompileErr(loc, "helper form was parsed but it wasn't understood by the LSP".to_string()))
+                                    };
+
+                                new_parsed.cloned()
+                            }
+                            Ok(None) => {
+                                Err(CompileErr(loc, "must be a helper form".to_string()))
+                            }
+                            Err(e) => Err(e)
+                        };
+
                     result.helpers.insert(
                         hash.clone(),
                         ReparsedHelper {
                             hash,
                             range: r.clone(),
-                            parsed: compile_helperform(opts.clone(), parsed[0].clone()).and_then(
-                                |mh| {
-                                    if let Some(h) = mh {
-                                        Ok(h)
-                                    } else {
-                                        Err(CompileErr(loc, "must be a helper form".to_string()))
-                                    }
-                                },
-                            ),
+                            parsed: parsed_result_to_record,
                         },
                     );
                 }

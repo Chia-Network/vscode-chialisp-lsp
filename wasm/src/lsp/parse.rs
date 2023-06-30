@@ -7,7 +7,7 @@ use lsp_types::Position;
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+    BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
@@ -62,6 +62,7 @@ impl ParsedDoc {
                 args: Rc::new(nil.clone()),
                 helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
+                ty: None,
             },
             scopes: ParseScope {
                 region: startloc,
@@ -130,6 +131,9 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             }
             HelperForm::Defconstant(c) => {
                 toplevel_args.insert(SExp::Atom(c.loc.clone(), c.name.clone()));
+            }
+            HelperForm::Deftype(t) => {
+                // XXX
             }
         }
 
@@ -449,7 +453,14 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
 
             let mut variables = HashSet::new();
-            variables.insert(SExp::Atom(binding.nl.clone(), binding.name.clone()));
+            match &binding.pattern {
+                BindingPattern::Name(name) => {
+                    variables.insert(SExp::Atom(binding.nl.clone(), name.clone()));
+                }
+                BindingPattern::Complex(pat) => {
+                    // XXX
+                }
+            }
 
             let mut inner_scopes = Vec::new();
 
@@ -457,12 +468,13 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                 &mut inner_scopes,
                 &BodyForm::Let(
                     LetFormKind::Sequential,
-                    LetData {
+                    Box::new(LetData {
                         loc: new_location.clone(),
                         kw: letdata.kw.clone(),
                         bindings: letdata.bindings.iter().skip(1).cloned().collect(),
                         body: letdata.body.clone(),
-                    },
+                        inline_hint: None,
+                    }),
                 ),
             );
 
@@ -482,8 +494,15 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let mut name_set = HashSet::new();
             for b in letdata.bindings.iter() {
-                let new_name = SExp::Atom(b.nl.clone(), b.name.clone());
-                name_set.insert(new_name);
+                match &b.pattern {
+                    BindingPattern::Name(name) => {
+                        let new_name = SExp::Atom(b.nl.clone(), name.clone());
+                        name_set.insert(new_name);
+                    }
+                    BindingPattern::Complex(pat) => {
+                        // XXX
+                    }
+                }
             }
 
             let mut inner_scopes = Vec::new();

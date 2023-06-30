@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-clvm_tools_rs = "0.1.31"
+clvm_tools_rs = { path = "../../clvm_tools_rs" }
 clvmr = "0.1.24"
 wasm-bindgen = "=0.2.83"
 wasm-bindgen-test = "=0.3.25"

@@ -8,10 +8,13 @@ use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
+use clvm_tools_rs::compiler::CompileContextWrapper;
 use clvm_tools_rs::compiler::compiler::{
-    compile_pre_forms, create_prim_map, KNOWN_DIALECTS, STANDARD_MACROS,
+    compile_pre_forms, create_prim_map, STANDARD_MACROS, ADVANCED_MACROS
 };
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
+use clvm_tools_rs::compiler::dialect::{AcceptedDialect, KNOWN_DIALECTS};
+use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -29,8 +32,7 @@ pub struct DbgCompilerOpts {
     pub frontend_check_live: bool,
     pub start_env: Option<Rc<SExp>>,
     pub prim_map: Rc<HashMap<Vec<u8>, Rc<SExp>>>,
-
-    known_dialects: Rc<HashMap<String, String>>,
+    pub dialect: AcceptedDialect,
 }
 
 impl CompilerOpts for DbgCompilerOpts {
@@ -63,6 +65,9 @@ impl CompilerOpts for DbgCompilerOpts {
     }
     fn get_search_paths(&self) -> Vec<String> {
         self.include_dirs.clone()
+    }
+    fn dialect(&self) -> AcceptedDialect {
+        self.dialect.clone()
     }
 
     fn set_search_paths(&self, dirs: &[String]) -> Rc<dyn CompilerOpts> {
@@ -105,16 +110,30 @@ impl CompilerOpts for DbgCompilerOpts {
         copy.start_env = start_env;
         Rc::new(copy)
     }
+    fn set_dialect(&self, dialect: AcceptedDialect) -> Rc<dyn CompilerOpts> {
+        let mut copy = self.clone();
+        copy.dialect = dialect;
+        Rc::new(copy)
+    }
+    fn set_prim_map(&self, prims: Rc<HashMap<Vec<u8>, Rc<SExp>>>) -> Rc<dyn CompilerOpts> {
+        let mut copy = self.clone();
+        copy.prim_map = prims;
+        Rc::new(copy)
+    }
 
     fn read_new_file(
         &self,
         inc_from: String,
         filename: String,
-    ) -> Result<(String, String), CompileErr> {
+    ) -> Result<(String, Vec<u8>), CompileErr> {
         if filename == "*macros*" {
-            return Ok((filename, STANDARD_MACROS.clone()));
-        } else if let Some(content) = self.known_dialects.get(&filename) {
-            return Ok((filename, content.to_string()));
+            if self.dialect().strict {
+                return Ok((filename, ADVANCED_MACROS.as_bytes().to_vec()));
+            } else {
+                return Ok((filename, STANDARD_MACROS.as_bytes().to_vec()));
+            }
+        } else if let Some(content) = KNOWN_DIALECTS.get(&filename) {
+            return Ok((filename, content.content.as_bytes().to_vec()));
         }
 
         let (computed_filename, content) = self.get_file(&filename).map_err(|_| {
@@ -125,7 +144,7 @@ impl CompilerOpts for DbgCompilerOpts {
         })?;
 
         stringify_doc(&content.text)
-            .map(|r| (computed_filename.clone(), r))
+            .map(|r| (computed_filename.clone(), r.as_bytes().to_vec()))
             .map_err(|x| CompileErr(Srcloc::start(&computed_filename), x))
     }
 
@@ -137,7 +156,13 @@ impl CompilerOpts for DbgCompilerOpts {
         symbol_table: &mut HashMap<String, String>,
     ) -> Result<SExp, CompileErr> {
         let me = Rc::new(self.clone());
-        compile_pre_forms(allocator, runner, me, &[sexp], symbol_table)
+        let mut context_wrapper = CompileContextWrapper::new(
+            allocator,
+            runner,
+            symbol_table,
+            get_optimizer(&sexp.loc(), me.clone())?,
+        );
+        compile_pre_forms(&mut context_wrapper.context, me, &[sexp])
     }
 }
 
@@ -190,7 +215,7 @@ impl DbgCompilerOpts {
             frontend_check_live: true,
             start_env: None,
             prim_map: create_prim_map(),
-            known_dialects: Rc::new(KNOWN_DIALECTS.clone()),
+            dialect: Default::default()
         }
     }
 

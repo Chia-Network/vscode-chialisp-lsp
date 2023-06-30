@@ -18,7 +18,7 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use clvm_tools_rs::compiler::clvm::sha256tree;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
+use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, HelperForm, LetFormKind};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -192,7 +192,14 @@ fn process_body_code(
                         b.body.clone(),
                     )
                 }
-                bindings_vars.insert(b.name.clone(), b.nl.clone());
+                match &b.pattern {
+                    BindingPattern::Name(name) => {
+                        bindings_vars.insert(name.clone(), b.nl.clone());
+                    }
+                    BindingPattern::Complex(pat) => {
+                        // XXX
+                    }
+                }
             }
             process_body_code(
                 env,
@@ -479,6 +486,9 @@ pub fn build_semantic_tokens(
                     &parsed.compiled,
                     mac.program.exp.clone(),
                 );
+            }
+            HelperForm::Deftype(t) => {
+                // XXX
             }
         }
     }
