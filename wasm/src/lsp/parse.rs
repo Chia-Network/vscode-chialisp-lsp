@@ -133,7 +133,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
                 toplevel_args.insert(SExp::Atom(c.loc.clone(), c.name.clone()));
             }
             HelperForm::Deftype(t) => {
-                // XXX
+                toplevel_args.insert(SExp::Atom(t.loc.clone(), t.name.clone()));
             }
         }
 
@@ -437,6 +437,19 @@ fn test_is_not_identifier() {
     assert!(!is_identifier(b"; comment instead"));
 }
 
+fn explore_pattern<F>(f: &mut F, pat: Rc<SExp>) where F: FnMut(SExp) {
+    match pat.borrow() {
+        SExp::Cons(_, l, r) => {
+            explore_pattern(f, l.clone());
+            explore_pattern(f, r.clone());
+        }
+        SExp::Atom(l, a) => {
+            f(SExp::Atom(l.clone(), a.clone()))
+        }
+        _ => { }
+    }
+}
+
 fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
     match body {
         BodyForm::Let(LetFormKind::Sequential, letdata) => {
@@ -458,7 +471,9 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                     variables.insert(SExp::Atom(binding.nl.clone(), name.clone()));
                 }
                 BindingPattern::Complex(pat) => {
-                    // XXX
+                    explore_pattern(&mut |n| {
+                        variables.insert(n.clone());
+                    }, pat.clone());
                 }
             }
 
@@ -500,7 +515,9 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                         name_set.insert(new_name);
                     }
                     BindingPattern::Complex(pat) => {
-                        // XXX
+                        explore_pattern(&mut |n: SExp| {
+                            name_set.insert(n.clone());
+                        }, pat.clone());
                     }
                 }
             }
