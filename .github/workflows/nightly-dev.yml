@@ -38,8 +38,8 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          git fetch
-          CHANGES=$(git diff-tree --name-only HEAD~ HEAD -r)
+          git fetch --all
+          CHANGES=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
           if [ -n "$CHANGES" ]; then
             echo "SKIP=false" >> "$GITHUB_ENV"
           else
