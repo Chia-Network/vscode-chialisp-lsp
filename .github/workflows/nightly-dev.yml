@@ -39,7 +39,7 @@ jobs:
         id: check_changes
         run: |
           git fetch
-          CHANGES=$(git diff --name-only origin/main...origin/dev)
+          CHANGES=$(git diff --name-only HEAD~ HEAD)
           if [ -n "$CHANGES" ]; then
             echo "SKIP=false" >> "$GITHUB_ENV"
           else
