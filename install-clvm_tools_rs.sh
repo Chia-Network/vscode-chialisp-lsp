@@ -1,3 +1,4 @@
+# Version to use
 VER=0.1.50
 
 if [ ! -d clvm_tools_rs-${VER} ] ; then
