@@ -1,6 +1,6 @@
 {
-    "name": "dev-chialisp",
-    "displayName": "Dev Chialisp",
+    "name": "chialisp-dev",
+    "displayName": "Chialisp Dev",
     "icon": "images/chialisp.png",
     "description": "A Rust LSP and client for Chialisp",
     "publisher": "ChiaNetwork",
@@ -14,7 +14,7 @@
     "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
         "onLanguage:chialisp",
-        "onCommand:dev-chialisp.startDebug",
+        "onCommand:chialisp-dev.startDebug",
         "onDebug"
     ],
     "contributes": {
@@ -54,12 +54,12 @@
         ],
         "commands": [
             {
-                "command": "dev-chialisp.locateIncludePath",
+                "command": "chialisp-dev.locateIncludePath",
                 "title": "Locate include file",
                 "category": "Chialisp"
             },
             {
-                "command": "dev-chialisp.startDebug",
+                "command": "chialisp-dev.startDebug",
                 "title": "Start Chialisp Debug"
             }
         ],
@@ -67,7 +67,7 @@
             "explorer/context": [
                 {
                     "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
-                    "command": "dev-chialisp.startDebug"
+                    "command": "chialisp-dev.startDebug"
                 }
             ]
         },
@@ -77,7 +77,7 @@
         ],
         "debuggers":[
             {
-                "type":"dev-chialisp",
+                "type":"chialisp-dev",
                 "label":"chialisp debugger",
                 "languages":["Chialisp", "chialisp"],
                 "configurationAttributes":{

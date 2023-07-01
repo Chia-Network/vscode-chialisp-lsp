@@ -1,3 +1,3 @@
 export const publisher = "ChiaNetwork";
-export const extensionName = "dev-chialisp";
+export const extensionName = "chialisp-dev";
 export const ourExtension = `${publisher}.${extensionName}`;

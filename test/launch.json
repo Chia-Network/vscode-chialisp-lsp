@@ -2,21 +2,21 @@
     "version": "0.2.0",
     "configurations": [
 	    {
-            "type": "dev-chialisp",
+            "type": "chialisp-dev",
             "request": "launch",
             "name": "fact.hex",
             "program": "project/fact.hex",
             "args": ["(5)"]
 	    },
         {
-            "type": "dev-chialisp",
+            "type": "chialisp-dev",
             "request": "launch",
             "name": "fact.clsp - bad args",
             "program": "project/fact.clsp",
             "args": ["()"]
 	    },
         {
-            "type": "dev-chialisp",
+            "type": "chialisp-dev",
             "request": "launch",
             "name": "fact.clsp",
             "program": "project/fact.clsp",

@@ -165,7 +165,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
     };
     var adapterRegistration: vscode.Disposable = new EmptyDisposable();
     try {
-        adapterRegistration = vscode.debug.registerDebugAdapterDescriptorFactory("dev-chialisp", debugAdapter);
+        adapterRegistration = vscode.debug.registerDebugAdapterDescriptorFactory("chialisp-dev", debugAdapter);
     } catch (e) {
         log.info(`adapter registration throws ${e}`);
         throw e;
@@ -173,7 +173,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(adapterRegistration);
 
-    var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider("dev-chialisp", {
+    var configProvider: vscode.Disposable = vscode.debug.registerDebugConfigurationProvider("chialisp-dev", {
         provideDebugConfigurations: async (folder, token) => {
             return [{
                 name: "chialisp",
