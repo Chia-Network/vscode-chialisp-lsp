@@ -14,7 +14,7 @@
     "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
         "onLanguage:chialisp",
-        "onCommand:chialisp.startDebug",
+        "onCommand:dev-chialisp.startDebug",
         "onDebug"
     ],
     "contributes": {
@@ -54,12 +54,12 @@
         ],
         "commands": [
             {
-                "command": "chialisp.locateIncludePath",
+                "command": "dev-chialisp.locateIncludePath",
                 "title": "Locate include file",
                 "category": "Chialisp"
             },
             {
-                "command": "chialisp.startDebug",
+                "command": "dev-chialisp.startDebug",
                 "title": "Start Chialisp Debug"
             }
         ],
@@ -67,7 +67,7 @@
             "explorer/context": [
                 {
                     "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
-                    "command": "chialisp.startDebug"
+                    "command": "dev-chialisp.startDebug"
                 }
             ]
         },
