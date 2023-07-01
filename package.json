@@ -1,6 +1,6 @@
 {
-    "name": "dev-chialisp",
-    "displayName": "Dev Chialisp",
+    "name": "chialisp",
+    "displayName": "Chialisp",
     "icon": "images/chialisp.png",
     "description": "A Rust LSP and client for Chialisp",
     "publisher": "ChiaNetwork",
