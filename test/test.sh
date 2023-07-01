@@ -17,4 +17,6 @@ fi
 docker kill code-server-test
 docker rm code-server-test
 
+git checkout test/collatz.cl
+
 exit ${STATUS}
