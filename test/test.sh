@@ -1,6 +1,6 @@
 rm -rf chialisp.json
 rm -rf ./test/*.vsix
-cp -r chialisp-*.vsix ./test
+cp -r dev-chialisp-*.vsix ./test
 cd test
 npm install
 sh ./run-server.sh &
