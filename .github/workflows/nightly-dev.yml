@@ -56,6 +56,7 @@ jobs:
         if: env.SKIP != 'true'
         id: package_name
         run: |
+          npm version patch --no-git-tag-version
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
       - name: Run headless test
@@ -80,5 +81,4 @@ jobs:
           VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
         run: |
-          npm version patch --no-git-tag-version
           ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
