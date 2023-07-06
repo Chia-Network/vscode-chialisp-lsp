@@ -79,4 +79,6 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish patch --no-yarn
+        run: |
+          npm version patch --no-git-tag-version
+          ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
