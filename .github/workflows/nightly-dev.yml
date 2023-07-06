@@ -1,0 +1,78 @@
+name: Nightly Dev Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # This will run the workflow every day at midnight
+  workflow_dispatch:
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          ref: 'dev'
+      - name: Set Job Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            target: wasm32-unknown-unknown
+            override: true
+            components: rustfmt
+      - name: Install wasm-pack
+        run: |
+          sh install-clvm_tools_rs.sh
+          cargo install --version 0.8.1 wasm-pack
+      - name: Install
+        run: npm ci
+      - name: Check for changes
+        id: check_changes
+        run: |
+          git fetch
+          CHANGES=$(git diff --name-only HEAD~ HEAD)
+          if [ -n "$CHANGES" ]; then
+            echo "SKIP=false" >> "$GITHUB_ENV"
+          else
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+      - name: Compile & lint
+        if: env.SKIP != 'true'
+        run: npm run pretest
+      - name: Build dev extension
+        if: env.SKIP != 'true'
+        id: package_name
+        run: |
+          ./node_modules/.bin/vsce package --no-yarn
+          echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Run headless test
+        if: env.SKIP != 'true'
+        run: |
+          sudo apt update
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          xvfb-run -a ./test/test.sh
+      - name: Cleanup xvfb pidx
+        if: env.SKIP != 'true'
+        run: |
+          xvfb_pids="$(pgrep tmp/xvfb-run | grep -v grep | awk '{print $2}')"
+          if [ "$xvfb_pids" != "" ]; then
+              echo "Killing the following xvfb processes: $xvfb_pids"
+              sudo kill "$xvfb_pids"
+          else
+              echo "No xvfb processes to kill"
+          fi
+      - name: Publish chialisp-dev to Visual Studio Marketplace
+        if: env.SKIP != 'true'
+        env:
+          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
+          VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
+        run: ./node_modules/.bin/vsce publish patch --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
