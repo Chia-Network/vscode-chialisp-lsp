@@ -84,4 +84,10 @@ jobs:
           VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
         run: |
+          # Find files with timestamps in the future
+          future_files=$(find . -type f -newermt "$(date +'%Y%m%d')")
+          # Update the timestamps of the future files
+          for file in $future_files; do
+            touch -a -m -t $(date -d "now - 1 minute" +'%Y%m%d%H%M.%S') "$file"
+          done
           ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
