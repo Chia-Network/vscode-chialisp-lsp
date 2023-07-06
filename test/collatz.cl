@@ -1,4 +1,4 @@
-(mod (A QQEX) ;;; COLLATZ conjecture
+(mod (A) ;;; COLLATZ conjecture
 
   ;; set language standard
   (include *standard-cl-22*)
@@ -6,7 +6,7 @@
 
   ;; Determine if number is odd
   ;; test.
-  (defun-inline odd (X) (logand X 1 QQEX))
+  (defun-inline odd (X) (logand X 1))
   ;; Actual collatz function
   ;; determines number of step til 1
   (defun collatz (N X)
