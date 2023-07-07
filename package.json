@@ -119,7 +119,7 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
-        "vscode-languageclient": "^7.0.0"
+        "vscode-languageclient": "^8.1.0"
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",
