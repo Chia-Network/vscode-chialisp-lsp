@@ -62,6 +62,9 @@ jobs:
           fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Fix dates
+        run: |
+          python datefix.py *.vsix
       - name: Run headless test
         if: env.SKIP != 'true'
         run: |
