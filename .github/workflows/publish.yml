@@ -46,6 +46,9 @@ jobs:
         run: |
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
+      - name: Fix zip file dates
+        run: |
+          python datefilx.py *.vsix
       - name: Run headless test
         run: |
           sudo apt update
