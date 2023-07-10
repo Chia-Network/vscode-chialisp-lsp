@@ -48,7 +48,7 @@ jobs:
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Fix zip file dates
         run: |
-          python datefilx.py *.vsix
+          python datefix.py *.vsix
       - name: Run headless test
         run: |
           sudo apt update
