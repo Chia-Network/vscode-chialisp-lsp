@@ -351,8 +351,7 @@ pub fn check_live_helper_calls(
     exp: &BodyForm,
 ) -> Option<CompileErr> {
     match exp {
-        // @Art what does the 3rd arg of Call do?
-        BodyForm::Call(l, v, _) => {
+        BodyForm::Call(l, v, rest_args) => {
             if v.is_empty() {
                 return Some(CompileErr(l.clone(), "Empty function call".to_string()));
             }
@@ -377,6 +376,13 @@ pub fn check_live_helper_calls(
                     return Some(e);
                 }
             }
+
+            if let Some(tail) = rest_args {
+                if let Some(e) = check_live_helper_calls(prims, scopes, tail) {
+                    return Some(e);
+                }
+            }
+
         }
         BodyForm::Let(_kind, letdata) => {
             return check_live_helper_calls(prims, scopes, letdata.body.borrow());
