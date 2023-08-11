@@ -498,7 +498,8 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
             scopes.push(new_scope);
         }
-        BodyForm::Call(_, v) => {
+        // @Art
+        BodyForm::Call(_, v, _) => {
             for elt in v.iter() {
                 make_inner_function_scopes(scopes, elt);
             }

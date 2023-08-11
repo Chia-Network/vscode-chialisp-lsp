@@ -161,11 +161,9 @@ pub fn reparse_subset(
             if let SExp::Atom(l, m) = prefix_parse[0].borrow() {
                 have_mod = m == b"mod";
 
-                if !have_mod {
-                    if let Some(_) = prims.iter().position(|prim| prim == m) {
-                        result.ignored = true;
-                        return result;
-                    }
+                if !have_mod && prims.iter().any(|prim| prim == m) {
+                    result.ignored = true;
+                    return result;
                 }
 
                 form_error_start = 2;
@@ -353,7 +351,8 @@ pub fn check_live_helper_calls(
     exp: &BodyForm,
 ) -> Option<CompileErr> {
     match exp {
-        BodyForm::Call(l, v) => {
+        // @Art what does the 3rd arg of Call do?
+        BodyForm::Call(l, v, _) => {
             if v.is_empty() {
                 return Some(CompileErr(l.clone(), "Empty function call".to_string()));
             }
@@ -428,7 +427,7 @@ fn determine_same_path(uristring: &str, query_file: &str) -> bool {
     }
 
     // Same, this should do.
-    return true;
+    true
 }
 
 pub fn combine_new_with_old_parse(
@@ -455,7 +454,7 @@ pub fn combine_new_with_old_parse(
 
     // Collect to-delete set.
     for (h, _) in new_helpers.iter() {
-        if !reparse.unparsed.contains_key(&h) && !reparse.helpers.contains_key(h) {
+        if !reparse.unparsed.contains_key(h) && !reparse.helpers.contains_key(h) {
             if let Some(name) = parsed.hash_to_name.get(h) {
                 remove_names.insert(name.clone());
             }

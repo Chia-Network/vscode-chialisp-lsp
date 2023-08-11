@@ -252,7 +252,7 @@ fn process_body_code(
                 token_mod: 0,
             });
         }
-        BodyForm::Call(_, args) => {
+        BodyForm::Call(_, args, _) => {
             if args.is_empty() {
                 return;
             }

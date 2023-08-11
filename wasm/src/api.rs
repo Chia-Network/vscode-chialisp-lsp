@@ -74,13 +74,13 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 thread_local! {
     static NEXT_ID: AtomicUsize = {
-        return AtomicUsize::new(0);
+        AtomicUsize::new(0)
     };
     static LSP_SERVERS: RefCell<HashMap<i32, RefCell<LSPServiceProvider>>> = {
-        return RefCell::new(HashMap::new());
+        RefCell::new(HashMap::new())
     };
     static DBG_SERVERS: RefCell<HashMap<i32, RefCell<MessageBuffer<Debugger>>>> = {
-        return RefCell::new(HashMap::new());
+        RefCell::new(HashMap::new())
     };
 }
 
@@ -193,7 +193,7 @@ pub fn dbg_service_handle_msg(lsp_id: i32, msg: String) -> Vec<JsValue> {
         if let Some(service_cell) = service.get(&lsp_id) {
             let mut s_borrowed = service_cell.borrow_mut();
             let s = s_borrowed.deref_mut();
-            let outmsgs = s.process_message(&msg.as_bytes());
+            let outmsgs = s.process_message(msg.as_bytes());
             for m in outmsgs.iter() {
                 if let Ok(r) = serde_json::to_value(m) {
                     res.push(JsValue::from_str(&r.to_string()));

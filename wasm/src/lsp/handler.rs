@@ -88,7 +88,7 @@ impl LSPServiceProvider {
         if let Some(found) = self.parsed_documents.get_mut(parsed_file) {
             let mut found_hash = None;
             for (h, inc) in found.includes.iter() {
-                if &inc.filename == file_name {
+                if inc.filename == file_name {
                     found_hash = Some(h.clone());
                     break;
                 }
@@ -134,7 +134,7 @@ impl LSPServiceProvider {
                     .to_str()
                     .map(|o| o.to_owned());
                 if let Some(target) = target_name {
-                    if let Ok(_) = self.fs.read_content(&target) {
+                    if self.fs.read_content(&target).is_ok() {
                         found_include = true;
                         self.update_include_state(parsed, &i.filename, true);
                         break;
@@ -326,10 +326,10 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                                     self.parsed_documents.clear();
                                     self.goto_defs.clear();
                                 }
-                            } else if let Some(_) = self
+                            } else if self
                                 .workspace_file_extensions_to_resync_for
                                 .iter()
-                                .position(|e| doc_id.ends_with(e))
+                                .any(|e| doc_id.ends_with(e))
                             {
                                 matching_file_for_resync = true;
                             }
