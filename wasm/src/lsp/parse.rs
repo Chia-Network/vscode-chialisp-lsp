@@ -603,11 +603,11 @@ fn make_scope_stack_simple() {
     let filename_rc = compiled.loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,
-        Srcloc::new(filename_rc.clone(), 2, 3).ext(&Srcloc::new(filename_rc.clone(), 2, 27))
+        Srcloc::new(filename_rc.clone(), 2, 3).ext(&Srcloc::new(filename_rc.clone(), 2, 25))
     );
     assert_eq!(
         program_scope.containing[1].region,
-        Srcloc::new(filename_rc.clone(), 4, 3).ext(&Srcloc::new(filename_rc.clone(), 4, 51))
+        Srcloc::new(filename_rc.clone(), 4, 3).ext(&Srcloc::new(filename_rc.clone(), 4, 50))
     );
     assert_eq!(program_scope.containing[1].containing.len(), 1);
     assert_eq!(
