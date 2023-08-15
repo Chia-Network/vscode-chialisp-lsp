@@ -307,7 +307,7 @@ impl RunningDebugger {
             })
             .map(|content| {
                 ResponseBody::Source(SourceResponse {
-                    content: content.1,
+                    content: String::from_utf8(content.1.clone()).unwrap(),
                     mime_type: Some("text/plain".to_owned()),
                 })
             })

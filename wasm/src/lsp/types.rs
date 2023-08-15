@@ -124,7 +124,7 @@ fn file_url_segments_to_pathbuf(
 
     // A windows drive letter must end with a slash.
     if bytes.len() > 2
-        && matches!(bytes[bytes.len() - 2], b'a'..=b'z' | b'A'..=b'Z')
+        && bytes[bytes.len() - 2].is_ascii_alphabetic()
         && matches!(bytes[bytes.len() - 1], b':' | b'|')
     {
         bytes.push(b'/');

@@ -7,15 +7,18 @@ use std::rc::Rc;
 use clvmr::allocator::Allocator;
 
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
+use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::compiler::compiler::{
     compile_pre_forms, create_prim_map, KNOWN_DIALECTS, STANDARD_MACROS,
 };
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
+use clvm_tools_rs::compiler::dialect::AcceptedDialect;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+
+use super::patch::get_bytes;
 
 #[derive(Clone)]
 pub struct LSPCompilerOpts {
@@ -32,6 +35,8 @@ pub struct LSPCompilerOpts {
     pub frontend_check_live: bool,
     pub start_env: Option<Rc<SExp>>,
     pub prim_map: Rc<HashMap<Vec<u8>, Rc<SExp>>>,
+    pub dialect: AcceptedDialect,
+    pub disassembly_ver: Option<usize>,
 
     lsp: Rc<RefCell<HashMap<String, DocData>>>,
 
@@ -44,6 +49,9 @@ impl CompilerOpts for LSPCompilerOpts {
     }
     fn code_generator(&self) -> Option<PrimaryCodegen> {
         self.compiler.clone()
+    }
+    fn dialect(&self) -> AcceptedDialect {
+        self.dialect.clone()
     }
     fn in_defun(&self) -> bool {
         self.in_defun
@@ -69,10 +77,23 @@ impl CompilerOpts for LSPCompilerOpts {
     fn get_search_paths(&self) -> Vec<String> {
         self.include_dirs.clone()
     }
+    fn disassembly_ver(&self) -> Option<usize> {
+        self.disassembly_ver
+    }
 
+    fn set_dialect(&self, dialect: AcceptedDialect) -> Rc<dyn CompilerOpts> {
+        let mut copy = self.clone();
+        copy.dialect = dialect;
+        Rc::new(copy)
+    }
     fn set_search_paths(&self, dirs: &[String]) -> Rc<dyn CompilerOpts> {
         let mut copy = self.clone();
         copy.include_dirs = dirs.to_owned();
+        Rc::new(copy)
+    }
+    fn set_disassembly_ver(&self, ver: Option<usize>) -> Rc<dyn CompilerOpts> {
+        let mut copy = self.clone();
+        copy.disassembly_ver = ver;
         Rc::new(copy)
     }
     fn set_in_defun(&self, new_in_defun: bool) -> Rc<dyn CompilerOpts> {
@@ -115,11 +136,11 @@ impl CompilerOpts for LSPCompilerOpts {
         &self,
         inc_from: String,
         filename: String,
-    ) -> Result<(String, String), CompileErr> {
+    ) -> Result<(String, Vec<u8>), CompileErr> {
         if filename == "*macros*" {
-            return Ok((filename, STANDARD_MACROS.clone()));
+            return Ok((filename, STANDARD_MACROS.clone().into()));
         } else if let Some(content) = self.known_dialects.get(&filename) {
-            return Ok((filename, content.to_string()));
+            return Ok((filename, content.as_bytes().to_vec()));
         }
 
         let (computed_filename, content) = self.get_file(&filename).map_err(|_| {
@@ -129,9 +150,7 @@ impl CompilerOpts for LSPCompilerOpts {
             )
         })?;
 
-        stringify_doc(&content.text)
-            .map(|r| (computed_filename.clone(), r))
-            .map_err(|x| CompileErr(Srcloc::start(&computed_filename), x))
+        Ok((computed_filename, get_bytes(&content.text)))
     }
 
     fn compile_program(
@@ -208,6 +227,8 @@ impl LSPCompilerOpts {
             frontend_check_live: true,
             start_env: None,
             prim_map: create_prim_map(),
+            dialect: AcceptedDialect::default(),
+            disassembly_ver: None,
             lsp: docs,
             known_dialects: Rc::new(KNOWN_DIALECTS.clone()),
         }

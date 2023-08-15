@@ -252,7 +252,7 @@ fn process_body_code(
                 token_mod: 0,
             });
         }
-        BodyForm::Call(_, args) => {
+        BodyForm::Call(_, args, rest_args) => {
             if args.is_empty() {
                 return;
             }
@@ -274,6 +274,18 @@ fn process_body_code(
                     varcollection,
                     frontend,
                     a.clone(),
+                );
+            }
+            // Handle the rest_args
+            if let Some(tail) = rest_args {
+                process_body_code(
+                    env,
+                    collected_tokens,
+                    gotodef,
+                    argcollection,
+                    varcollection,
+                    frontend,
+                    tail.clone(),
                 );
             }
         }

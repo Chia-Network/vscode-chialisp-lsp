@@ -84,7 +84,7 @@ fn complete_variable_name(
         is_incomplete: false,
         items: result_items,
     });
-    let result = serde_json::to_value(&result).unwrap();
+    let result = serde_json::to_value(result).unwrap();
     let resp = Response {
         id,
         result: Some(result),
@@ -131,7 +131,7 @@ fn complete_function_name(
         is_incomplete: false,
         items: result_items,
     });
-    let result = serde_json::to_value(&result).unwrap();
+    let result = serde_json::to_value(result).unwrap();
     let resp = Response {
         id,
         result: Some(result),
