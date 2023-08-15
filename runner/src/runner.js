@@ -114,7 +114,8 @@ process.stdin.on('data', function(chunk) {
         } else { // MESSAGE_READ
             do_inc = 0;
             if (chunk.length >= stdin_reader.remaining_bytes) {
-                let message = chunk.substr(i, stdin_reader.remaining_bytes);
+                let message = stdin_reader.message_payload + chunk.substr(i, stdin_reader.remaining_bytes);
+                stdin_reader.message_payload = '';
                 i += stdin_reader.remaining_bytes;
                 stdin_reader.remaining_bytes = 0;
                 stdin_reader.mode = START_HEADER;
