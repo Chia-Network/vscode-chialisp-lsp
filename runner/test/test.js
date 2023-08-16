@@ -7,7 +7,7 @@ describe('stdin_parser', () => {
     it('should parse fragmented data', () => {
         let received = 0;
         const reader = new StdinReader((packet) => {
-            let parsed = JSON.parse(packet);
+            const parsed = JSON.parse(packet);
             assert.equal(parsed.test, received);
             received += 1;
         });

@@ -6,12 +6,12 @@ import { StdinReader } from './stdin_reader.js';
 // clean 1:1 8-bit encoding.
 process.stdin.setEncoding('binary');
 
-let emptyWriteLog = (line) => { };
-var log = {
+const emptyWriteLog = (line) => { };
+const log = {
 	write: emptyWriteLog
 };
 
-let lsp_id = clvm_tools_rs.create_lsp_service(function(name) {
+let lspId = clvm_tools_rs.create_lsp_service(function(name) {
     try {
         return fs.readFileSync(name, 'utf8');
     } catch(e) {
@@ -56,14 +56,14 @@ const stdinReader = new StdinReader((m) => {
     // Process the message in text form, sending it to the lsp.
     let messages = [];
     try {
-        messages = clvm_tools_rs.lsp_service_handle_msg(lsp_id, m);
+        messages = clvm_tools_rs.lsp_service_handle_msg(lspId, m);
     } catch (e) {
         log.write('exn: ' + e + '\n' + e.stack + '\n');
     }
 
-    for (var i = 0; i < messages.length; i++) {
+    for (let i = 0; i < messages.length; i++) {
         const innerMs = JSON.parse(messages[i]);
-        for (var j = 0; j < innerMs.length; j++) {
+        for (let j = 0; j < innerMs.length; j++) {
             const message = JSON.stringify(innerMs[j]);
             const messageLength = Buffer.byteLength(message, 'utf8');
             process.stdout.write(`Content-Length: ${messageLength}\r\n\r\n`);
@@ -77,6 +77,6 @@ process.stdin.on('data', function(chunk) {
 });
 
 process.stdin.on('end', function() {
-    clvm_tools_rs.destroy_lsp_service(lsp_id);
+    clvm_tools_rs.destroy_lsp_service(lspId);
     process.stdout.write('', () => { process.exit(0); });
 });
