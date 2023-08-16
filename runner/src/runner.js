@@ -65,7 +65,8 @@ const stdinReader = new StdinReader((m) => {
         let inner_ms = JSON.parse(messages[i]);
         for (var j = 0; j < inner_ms.length; j++) {
             let message = JSON.stringify(inner_ms[j]);
-            process.stdout.write('Content-Length: ' + message.length + '\r\n\r\n');
+            const message_length = Buffer.byteLength(message, 'utf8');
+            process.stdout.write(`Content-Length: ${message_length}\r\n\r\n`);
             process.stdout.write(message);
         }
     }
