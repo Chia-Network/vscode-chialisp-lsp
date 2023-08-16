@@ -62,11 +62,11 @@ const stdinReader = new StdinReader((m) => {
     }
 
     for (var i = 0; i < messages.length; i++) {
-        let inner_ms = JSON.parse(messages[i]);
-        for (var j = 0; j < inner_ms.length; j++) {
-            let message = JSON.stringify(inner_ms[j]);
-            const message_length = Buffer.byteLength(message, 'utf8');
-            process.stdout.write(`Content-Length: ${message_length}\r\n\r\n`);
+        const innerMs = JSON.parse(messages[i]);
+        for (var j = 0; j < innerMs.length; j++) {
+            const message = JSON.stringify(innerMs[j]);
+            const messageLength = Buffer.byteLength(message, 'utf8');
+            process.stdout.write(`Content-Length: ${messageLength}\r\n\r\n`);
             process.stdout.write(message);
         }
     }
