@@ -44,6 +44,12 @@ jobs:
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
+      - name: Runner test
+        run: |
+          cd runner
+          npm install
+          npm run test
+
       - name: Run headless test
         run: |
           sudo apt update
