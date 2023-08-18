@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 16
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
             toolchain: stable
             target: wasm32-unknown-unknown
@@ -39,6 +39,7 @@ jobs:
         run: |
           ./node_modules/.bin/vsce show "ChiaNetwork.chialisp-dev" --json | jq -r '.extensionName' || echo "VSIX_EXISTS=false" >> "$GITHUB_ENV"
       - name: Check for changes
+        if: env.VSIX_EXISTS != 'false'
         id: check_changes
         run: |
           date
@@ -47,6 +48,8 @@ jobs:
           if [ "$commit_date" -gt "$midnight" ]; then
             echo "SKIP=true" >> "$GITHUB_ENV"
           else
+            echo "SKIP=false" >> "$GITHUB_ENV"
+          fi
       - name: Compile & lint
         if: env.SKIP != 'true'
         run: npm run pretest
@@ -59,6 +62,9 @@ jobs:
           fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Fix dates
+        run: |
+          python datefix.py *.vsix
       - name: Run headless test
         if: env.SKIP != 'true'
         run: |
@@ -81,4 +87,10 @@ jobs:
           VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
         run: |
+          # Find files with timestamps in the future
+          future_files=$(find . -type f -newermt "$(date +'%Y%m%d')")
+          # Update the timestamps of the future files
+          for file in $future_files; do
+            touch -a -m -t $(date -d "now - 1 minute" +'%Y%m%d%H%M.%S') "$file"
+          done
           ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
