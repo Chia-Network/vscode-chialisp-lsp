@@ -35,16 +35,18 @@ jobs:
           cargo install --version 0.8.1 wasm-pack
       - name: Install
         run: npm ci
+      - name: Check for published package
+        run: |
+          ./node_modules/.bin/vsce show "ChiaNetwork.chialisp-dev" --json | jq -r '.extensionName' || echo "VSIX_EXISTS=false" >> "$GITHUB_ENV"
       - name: Check for changes
         id: check_changes
         run: |
-          git fetch
-          CHANGES=$(git diff --name-only HEAD~ HEAD)
-          if [ -n "$CHANGES" ]; then
-            echo "SKIP=false" >> "$GITHUB_ENV"
-          else
+          date
+          midnight=$(date -d "today 00:00" +%s)
+          commit_date=$(git log -1 --pretty=format:%ct)
+          if [ "$commit_date" -gt "$midnight" ]; then
             echo "SKIP=true" >> "$GITHUB_ENV"
-          fi
+          else
       - name: Compile & lint
         if: env.SKIP != 'true'
         run: npm run pretest
@@ -52,6 +54,9 @@ jobs:
         if: env.SKIP != 'true'
         id: package_name
         run: |
+          if [ "$VSIX_EXISTS" != 'false' ]; then
+            npm version patch --no-git-tag-version
+          fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
       - name: Run headless test
@@ -75,4 +80,5 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish patch --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+        run: |
+          ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
