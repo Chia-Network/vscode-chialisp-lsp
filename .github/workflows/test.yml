@@ -52,7 +52,7 @@ jobs:
 
       - name: Run headless test
         env:
-          CHROMEDRIVER_SKIP_DOWNLOAD: "true"
+          DETECT_CHROMEDRIVER_VERSION: "true"
         run: |
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
