@@ -269,6 +269,10 @@ describe("Basic element tests", function() {
         console.log('wait for an element indicating that the workspace is up');
         await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
 
+	// Things load more progressively in the current vs code.
+        const actions = driver.actions({async: true});
+        await actions.pause(3000).perform();
+
         // Dismiss trust dialog if it comes up.
         console.log('check for the trust dialog');
         let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
