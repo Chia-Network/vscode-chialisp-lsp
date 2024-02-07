@@ -174,11 +174,10 @@ async function openFile(driver, file) {
 
 async function openFileTheLongWay(driver, file) {
     await sendControlO();
-    await wait(1.0);
+    await wait(2.0);
 
-    let inputBox = await findFileInput(driver);
-    console.log('find input box');
-    await wait(1.0);
+    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    console.log('find input box', inputBox);
     await inputBox.click();
     await inputBox.sendKeys(file);
 
