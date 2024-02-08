@@ -1,8 +1,10 @@
-# chialisp-lsp-client README
+# README
 
-A rust based chialisp language server client delivered with a rust client compiled
-to webassembly.  The rust client uses much of the same code as chia's chialisp
-compiler, but tries to be more lenient and faster to use incrementally.
+A rust based Chialisp language server client delivered with a rust client compiled
+to webassembly (wasm).  This extension uses the modern Chialisp compiler from `clvm_tool_rs` (https://github.com/Chia-Network/clvm_tools_rs).
+
+To use as a Visual Studio Code extension, simply install the extension from the extension marketplace
+https://marketplace.visualstudio.com/items?itemName=ChiaNetwork.chialisp
 
 ## Features
 
@@ -10,7 +12,7 @@ compiler, but tries to be more lenient and faster to use incrementally.
 - Go to definition (if in the same file)
 - Completion
 - Include files (when the filesystem is accessible)
-- Debug adapter
+- Debugging support via the Debug Adapter Protocol
 
 ## Requirements
 
@@ -41,15 +43,13 @@ directories you'll be including other files from.
     "include_paths": ["/home/person/dev/chia-blockchain/chia/wallet/puzzles"]
 }
 
-## Known Issues
+## Manual Building Steps:
 
-Currently, the language server is in beta. There are no specific known bugs at this point, but we expect continued updates as bugs are encountered, leading up to a full release.
+This is not required to use the extension, as it is available fully compiled and ready to use directly from the vscode extension marketplace. However, if you wish to make code changes or want to manually build this extension, you can follow the below steps:
 
-## Release Notes
+    npm install -g vsce
+    cargo install wasm-pack
+    rustup target add wasm32-unknown-unknown
 
-### 0.0.1 (2022/09/28)
-
-- Public beta release
-- Includes syntax highlighting, go to definition, and auto-completion
 
 ---
