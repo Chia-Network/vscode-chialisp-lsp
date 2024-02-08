@@ -26,6 +26,12 @@ compiler, but tries to be more lenient and faster to use incrementally.
     cargo install wasm-pack
     rustup target add wasm32-unknown-unknown
 
+## Testing
+
+From the root directory of the repo, run:
+
+    ./test/test.sh
+
 ## Extension Settings
 
 For best results, put a chialisp.json file in your workspace root that lists the
