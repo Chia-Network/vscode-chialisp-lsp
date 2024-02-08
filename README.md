@@ -22,6 +22,18 @@ https://marketplace.visualstudio.com/items?itemName=ChiaNetwork.chialisp
   - This is the only editor that is currently supported
   - If you would like to add support for your favorite editor or IDE, PRs are welcome!
 
+## Required to build:
+
+    npm install -g vsce
+    cargo install wasm-pack
+    rustup target add wasm32-unknown-unknown
+
+## Testing
+
+From the root directory of the repo, run:
+
+    ./test/test.sh
+
 ## Extension Settings
 
 For best results, put a chialisp.json file in your workspace root that lists the

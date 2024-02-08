@@ -29,8 +29,12 @@ pub fn split_text(td: &str) -> Vec<Rc<Vec<u8>>> {
     result
 }
 
+pub fn get_bytes(d: &[Rc<Vec<u8>>]) -> Vec<u8> {
+    DocVecByteIter::new(d).collect()
+}
+
 pub fn stringify_doc(d: &[Rc<Vec<u8>>]) -> Result<String, String> {
-    let bytes = DocVecByteIter::new(d).collect();
+    let bytes = get_bytes(d);
     String::from_utf8(bytes).map_err(|_| "no conversion from utf8".to_string())
 }
 
