@@ -1,12 +1,12 @@
 {
-    "name": "chialisp-dev",
-    "displayName": "Chialisp Dev",
+    "name": "chialisp",
+    "displayName": "Chialisp",
     "icon": "images/chialisp.png",
-    "description": "A Rust LSP and client for Chialisp",
+    "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "engines": {
-        "vscode": "^1.70.0"
+        "vscode": "^1.85.0"
     },
     "categories": [
         "Programming Languages"
@@ -14,7 +14,7 @@
     "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
         "onLanguage:chialisp",
-        "onCommand:chialisp-dev.startDebug",
+        "onCommand:chialisp.startDebug",
         "onDebug"
     ],
     "contributes": {
@@ -54,12 +54,12 @@
         ],
         "commands": [
             {
-                "command": "chialisp-dev.locateIncludePath",
+                "command": "chialisp.locateIncludePath",
                 "title": "Locate include file",
                 "category": "Chialisp"
             },
             {
-                "command": "chialisp-dev.startDebug",
+                "command": "chialisp.startDebug",
                 "title": "Start Chialisp Debug"
             }
         ],
@@ -67,21 +67,28 @@
             "explorer/context": [
                 {
                     "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
-                    "command": "chialisp-dev.startDebug"
+                    "command": "chialisp.startDebug"
                 }
             ]
         },
-        "breakpoints":[
-            {"language":"Chialisp"},
-            {"language":"chialisp"}
-        ],
-        "debuggers":[
+        "breakpoints": [
             {
-                "type":"chialisp-dev",
-                "label":"chialisp debugger",
-                "languages":["Chialisp", "chialisp"],
-                "configurationAttributes":{
-                    "launch":{
+                "language": "Chialisp"
+            },
+            {
+                "language": "chialisp"
+            }
+        ],
+        "debuggers": [
+            {
+                "type": "chialisp",
+                "label": "chialisp debugger",
+                "languages": [
+                    "Chialisp",
+                    "chialisp"
+                ],
+                "configurationAttributes": {
+                    "launch": {
                         "required": [
                             "program"
                         ]
@@ -112,20 +119,20 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
-        "vscode-languageclient": "^7.0.0"
+        "vscode-languageclient": "^8.1.0"
     },
     "devDependencies": {
-        "@types/glob": "^7.2.0",
+        "@types/glob": "^8.1.0",
         "@types/mocha": "^9.1.1",
-        "@types/node": "16.x",
-        "@types/vscode": "^1.70.0",
-        "@typescript-eslint/eslint-plugin": "^5.31.0",
-        "@typescript-eslint/parser": "^5.31.0",
+        "@types/node": "20.1.3",
+        "@types/vscode": "^1.85.0",
+        "@typescript-eslint/eslint-plugin": "^5.59.5",
+        "@typescript-eslint/parser": "^5.59.5",
         "@vscode/test-electron": "^2.1.5",
-        "eslint": "^8.20.0",
-        "glob": "^8.0.3",
+	"@vscode/vsce": "2.23.0",
+        "eslint": "^8.40.0",
+        "glob": "^10.2.3",
         "mocha": "^10.0.0",
-        "typescript": "^4.7.4",
-        "vsce": "^2.11.0"
+        "typescript": "^5.0.4"
     }
 }

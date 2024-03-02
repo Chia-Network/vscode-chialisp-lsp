@@ -1,3 +1,7 @@
+#!/bin/bash
+
+set -e
+
 rm -rf chialisp.json
 rm -rf ./test/*.vsix
 cp -r chialisp-*.vsix ./test
@@ -16,7 +20,5 @@ fi
 
 docker kill code-server-test
 docker rm code-server-test
-
-git checkout test/collatz.cl
 
 exit ${STATUS}
