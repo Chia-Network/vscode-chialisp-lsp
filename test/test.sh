@@ -6,6 +6,10 @@ rm -rf chialisp.json
 rm -rf ./test/*.vsix
 cp -r chialisp-*.vsix ./test
 cd test
+# Automatically bump chromedriver to keep the downloads
+# synced.  After a few months, old chromedriver binaries
+# cease being available.
+npm install --save chromedriver@latest
 npm install
 sh ./run-server.sh &
 
