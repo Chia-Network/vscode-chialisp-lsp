@@ -1,13 +1,9 @@
-use js_sys;
-use serde_json;
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::swap;
 use std::ops::DerefMut;
 use std::rc::Rc;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

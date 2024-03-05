@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use lsp_server::{Message, RequestId, Response};
@@ -8,7 +8,7 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{recover_scopes, ParsedDoc};
+use crate::lsp::parse::{add_bindings_to_set, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedExp,
     ReparsedHelper,
@@ -192,7 +192,13 @@ fn process_body_code(
                         b.body.clone(),
                     )
                 }
-                bindings_vars.insert(b.name.clone(), b.nl.clone());
+                let mut bset = HashSet::new();
+                add_bindings_to_set(&mut bset, &b);
+                for b in bset.iter() {
+                    if let SExp::Atom(l, n) = b.borrow() {
+                        bindings_vars.insert(n.clone(), l.clone());
+                    }
+                }
             }
             process_body_code(
                 env,
