@@ -437,14 +437,12 @@ pub fn add_sexp_bindings(variables: &mut HashSet<Rc<SExp>>, sexp: Rc<SExp>) {
     let mut stack = Vec::new();
     stack.push(sexp);
     while let Some(obj) = stack.pop() {
-        eprintln!("add sexp bindings {obj}");
         match obj.borrow() {
             SExp::Cons(_, a, b) => {
                 stack.push(a.clone());
                 stack.push(b.clone());
             }
             SExp::Atom(_, _) => {
-                eprintln!("ident {:?}", obj.loc());
                 variables.insert(obj.clone());
             }
             _ => { /* Not allowed */ }
