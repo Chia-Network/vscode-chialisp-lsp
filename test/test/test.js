@@ -384,13 +384,12 @@ describe("Basic element tests", function() {
 
         // Pgup right 7 space QQEX C-f defun-inline C-f logand right 6 Q
         // find a monaco-list-rows with a descendant that contains QQEX.
-        await sendPgUp();
-        await sendRight(7);
+        await findString(driver, 'two three');
+        await sendRight(1);
         await sendString(" QQEX");
 
-        await findString(driver, 'defun-inline');
-        await findString(driver, 'logand');
-        await sendRight(5);
+        await findString(driver, '(odd X');
+        await sendRight(1);
         await sendString(" Q");
 
         let monacoLists = await driver.findElements(By.css(".monaco-list"));

@@ -7,7 +7,7 @@ use lsp_types::Position;
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
@@ -123,13 +123,13 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
     for h in fe.helpers.iter() {
         match h {
             HelperForm::Defun(_, d) => {
-                toplevel_funs.insert(SExp::Atom(d.loc.clone(), d.name.clone()));
+                toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
             HelperForm::Defmacro(m) => {
-                toplevel_funs.insert(SExp::Atom(m.loc.clone(), m.name.clone()));
+                toplevel_funs.insert(Rc::new(SExp::Atom(m.loc.clone(), m.name.clone())));
             }
             HelperForm::Defconstant(c) => {
-                toplevel_args.insert(SExp::Atom(c.loc.clone(), c.name.clone()));
+                toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
             }
         }
 
@@ -433,6 +433,34 @@ fn test_is_not_identifier() {
     assert!(!is_identifier(b"; comment instead"));
 }
 
+pub fn add_sexp_bindings(variables: &mut HashSet<Rc<SExp>>, sexp: Rc<SExp>) {
+    let mut stack = Vec::new();
+    stack.push(sexp);
+    while let Some(obj) = stack.pop() {
+        match obj.borrow() {
+            SExp::Cons(_, a, b) => {
+                stack.push(a.clone());
+                stack.push(b.clone());
+            }
+            SExp::Atom(_, _) => {
+                variables.insert(obj.clone());
+            }
+            _ => { /* Not allowed */ }
+        }
+    }
+}
+
+pub fn add_bindings_to_set(variables: &mut HashSet<Rc<SExp>>, binding: &Binding) {
+    match &binding.pattern {
+        BindingPattern::Name(name) => {
+            variables.insert(Rc::new(SExp::Atom(binding.nl.clone(), name.to_vec())));
+        }
+        BindingPattern::Complex(s) => {
+            add_sexp_bindings(variables, s.clone());
+        }
+    }
+}
+
 fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
     match body {
         BodyForm::Let(LetFormKind::Sequential, letdata) => {
@@ -449,7 +477,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
 
             let mut variables = HashSet::new();
-            variables.insert(SExp::Atom(binding.nl.clone(), binding.name.clone()));
+            add_bindings_to_set(&mut variables, &binding);
 
             let mut inner_scopes = Vec::new();
 
@@ -457,12 +485,13 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                 &mut inner_scopes,
                 &BodyForm::Let(
                     LetFormKind::Sequential,
-                    LetData {
+                    Box::new(LetData {
                         loc: new_location.clone(),
                         kw: letdata.kw.clone(),
                         bindings: letdata.bindings.iter().skip(1).cloned().collect(),
                         body: letdata.body.clone(),
-                    },
+                        inline_hint: None,
+                    }),
                 ),
             );
 
@@ -482,8 +511,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let mut name_set = HashSet::new();
             for b in letdata.bindings.iter() {
-                let new_name = SExp::Atom(b.nl.clone(), b.name.clone());
-                name_set.insert(new_name);
+                add_bindings_to_set(&mut name_set, &b);
             }
 
             let mut inner_scopes = Vec::new();
@@ -563,10 +591,10 @@ fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, Pa
                 .iter()
                 .filter_map(|h| {
                     if let HelperForm::Defun(_, d) = &h {
-                        return Some(SExp::atom_from_string(
+                        return Some(Rc::new(SExp::atom_from_string(
                             d.nl.clone(),
                             &decode_string(h.name()),
-                        ));
+                        )));
                     }
                     None
                 })
@@ -770,10 +798,10 @@ fn test_grab_scope_doc_range_no_spaces() {
     );
 }
 
-pub fn make_arg_set(set: &mut HashSet<SExp>, args: Rc<SExp>) {
+pub fn make_arg_set(set: &mut HashSet<Rc<SExp>>, args: Rc<SExp>) {
     match args.borrow() {
-        SExp::Atom(l, a) => {
-            set.insert(SExp::Atom(l.clone(), a.clone()));
+        SExp::Atom(_, _) => {
+            set.insert(args.clone());
         }
         SExp::Cons(_, a, b) => {
             make_arg_set(set, a.clone());

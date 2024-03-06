@@ -1104,8 +1104,8 @@ pub enum IncludeKind {
 pub struct ParseScope {
     pub region: Srcloc,
     pub kind: ScopeKind,
-    pub variables: HashSet<SExp>,
-    pub functions: HashSet<SExp>,
+    pub variables: HashSet<Rc<SExp>>,
+    pub functions: HashSet<Rc<SExp>>,
     pub containing: Vec<ParseScope>,
 }
 
