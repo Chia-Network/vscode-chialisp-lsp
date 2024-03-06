@@ -165,11 +165,17 @@ fn process_body_code(
                 });
             }
             for b in letdata.bindings.iter() {
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: b.nl.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: 1 << TK_DEFINITION_BIT | 1 << TK_READONLY_BIT,
-                });
+                let mut bindings = HashSet::new();
+                add_bindings_to_set(&mut bindings, &b);
+                for item in bindings.iter() {
+                    if let SExp::Atom(loc, _) = item.borrow() {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: loc.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: 1 << TK_DEFINITION_BIT | 1 << TK_READONLY_BIT,
+                        });
+                    }
+                }
                 if k == &LetFormKind::Sequential {
                     // Bindings above affect code below
                     process_body_code(
