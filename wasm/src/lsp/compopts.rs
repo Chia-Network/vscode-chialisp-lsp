@@ -10,11 +10,13 @@ use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
+use clvm_tools_rs::compiler::CompileContextWrapper;
 use clvm_tools_rs::compiler::compiler::{
-    compile_pre_forms, create_prim_map, KNOWN_DIALECTS, STANDARD_MACROS,
+    compile_pre_forms, create_prim_map, STANDARD_MACROS,
 };
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
-use clvm_tools_rs::compiler::dialect::AcceptedDialect;
+use clvm_tools_rs::compiler::dialect::{AcceptedDialect, DialectDescription, KNOWN_DIALECTS};
+use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -40,7 +42,7 @@ pub struct LSPCompilerOpts {
 
     lsp: Rc<RefCell<HashMap<String, DocData>>>,
 
-    known_dialects: Rc<HashMap<String, String>>,
+    known_dialects: Rc<HashMap<String, DialectDescription>>,
 }
 
 impl CompilerOpts for LSPCompilerOpts {
@@ -140,7 +142,7 @@ impl CompilerOpts for LSPCompilerOpts {
         if filename == "*macros*" {
             return Ok((filename, STANDARD_MACROS.clone().into()));
         } else if let Some(content) = self.known_dialects.get(&filename) {
-            return Ok((filename, content.as_bytes().to_vec()));
+            return Ok((filename, content.content.as_bytes().to_vec()));
         }
 
         let (computed_filename, content) = self.get_file(&filename).map_err(|_| {
@@ -152,6 +154,11 @@ impl CompilerOpts for LSPCompilerOpts {
 
         Ok((computed_filename, get_bytes(&content.text)))
     }
+    fn set_prim_map(&self, new_prim_map: Rc<HashMap<Vec<u8>, Rc<SExp>>>) -> Rc<dyn CompilerOpts> {
+        let mut copy = self.clone();
+        copy.prim_map = new_prim_map;
+        Rc::new(copy)
+    }
 
     fn compile_program(
         &self,
@@ -161,7 +168,8 @@ impl CompilerOpts for LSPCompilerOpts {
         symbol_table: &mut HashMap<String, String>,
     ) -> Result<SExp, CompileErr> {
         let me = Rc::new(self.clone());
-        compile_pre_forms(allocator, runner, me, &[sexp], symbol_table)
+        let mut context_wrapper = CompileContextWrapper::new(allocator, runner, symbol_table, get_optimizer(&Srcloc::start(&self.filename), me.clone())?);
+        compile_pre_forms(&mut context_wrapper.context, me, &[sexp])
     }
 }
 
