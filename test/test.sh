@@ -1,3 +1,7 @@
+#!/bin/bash
+
+set -e
+
 rm -rf chialisp.json
 rm -rf ./test/*.vsix
 cp -r chialisp-*.vsix ./test
