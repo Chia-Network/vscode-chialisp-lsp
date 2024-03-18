@@ -1,5 +1,8 @@
 {
   "name": "chialisp-lsp-test",
+  "overrides": {
+    "follow-redirects": "1.15.6"
+  },
   "dependencies": {
     "chromedriver": "122.0.3",
     "jasmine": "^4.5.0",
