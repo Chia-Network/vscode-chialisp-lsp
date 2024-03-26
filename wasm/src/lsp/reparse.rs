@@ -382,11 +382,15 @@ pub fn check_live_helper_calls(
                     return Some(e);
                 }
             }
-
         }
         BodyForm::Let(_kind, letdata) => {
             return check_live_helper_calls(prims, scopes, letdata.body.borrow());
         }
+
+        BodyForm::Lambda(ldata) => {
+            return check_live_helper_calls(prims, scopes, ldata.body.borrow());
+        }
+
         _ => {}
     }
 
