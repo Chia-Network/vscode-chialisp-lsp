@@ -27,7 +27,9 @@ use clvmr::allocator::Allocator;
 use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
 use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
 use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
+use clvm_tools_rs::classic::clvm_tools::clvmc::CompileError;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
+
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
@@ -940,8 +942,12 @@ impl Debugger {
                 true,
             )
             .map_err(|e| {
-                self.log.log(&format!("error compiling: {}", e.1));
-                e.1
+                let formatted = match e {
+                    CompileError::Classic(x, y) => y,
+                    CompileError::Modern(l, v) => format!("{l}: {v}"),
+                };
+                self.log.log(&format!("error compiling: {formatted}"));
+                formatted
             })?;
             let bin = sexp_as_bin(allocator, clvm_res).hex();
             parsed_program =
@@ -993,8 +999,11 @@ impl Debugger {
         )?;
 
         if !launch_args.args_for_program.is_empty() {
-            let parsed_argv0 = parse_sexp(Srcloc::start("*args*"), launch_args.args_for_program[0].bytes())
-                .map_err(|(l, e)| format!("{l}: {e}"))?;
+            let parsed_argv0 = parse_sexp(
+                Srcloc::start("*args*"),
+                launch_args.args_for_program[0].bytes(),
+            )
+            .map_err(|(l, e)| format!("{l}: {e}"))?;
             if !parsed_argv0.is_empty() {
                 launch_data.arguments = parsed_argv0[0].clone();
             }
@@ -1128,16 +1137,15 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             .and_then(|l| l.arguments.program)
                             .unwrap_or(name.clone());
 
-                        let (new_seq, new_state, out_msgs) =
-                            self.launch(LaunchArgs {
-                                proto_msg: pm,
-                                name,
-                                init_args: &i,
-                                launch_request: l,
-                                program: &program,
-                                args_for_program: &args,
-                                stop_on_entry
-                            })?;
+                        let (new_seq, new_state, out_msgs) = self.launch(LaunchArgs {
+                            proto_msg: pm,
+                            name,
+                            init_args: &i,
+                            launch_request: l,
+                            program: &program,
+                            args_for_program: &args,
+                            stop_on_entry,
+                        })?;
                         self.msg_seq = new_seq;
                         self.state = new_state;
 

@@ -536,6 +536,24 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                 make_inner_function_scopes(scopes, tail)
             }
         }
+
+        BodyForm::Lambda(ldata) => {
+            let mut name_set = HashSet::new();
+            add_sexp_bindings(&mut name_set, ldata.args.clone());
+
+            let mut inner_scopes = Vec::new();
+            make_inner_function_scopes(&mut inner_scopes, ldata.body.borrow());
+
+            let new_scope = ParseScope {
+                region: ldata.body.loc(),
+                kind: ScopeKind::Let,
+                variables: name_set,
+                functions: HashSet::new(),
+                containing: inner_scopes,
+            };
+            scopes.push(new_scope);
+        }
+
         _ => {}
     }
 }
