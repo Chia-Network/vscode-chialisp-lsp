@@ -943,7 +943,7 @@ impl Debugger {
             )
             .map_err(|e| {
                 let formatted = match e {
-                    CompileError::Classic(x, y) => y,
+                    CompileError::Classic(_x, y) => y,
                     CompileError::Modern(l, v) => format!("{l}: {v}"),
                 };
                 self.log.log(&format!("error compiling: {formatted}"));
