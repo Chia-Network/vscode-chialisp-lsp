@@ -11,6 +11,7 @@ const driver = new Builder()
 
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
+const clickTries = 5;
 
 let login = async function() {
     let loginContainer = By.css('.login-form');
@@ -196,8 +197,24 @@ async function performCommand(cmd) {
 }
 
 async function clickStepInto() {
-    let stepIntoButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-step-into")));
-    await stepIntoButton.click();
+    let clicked = false;
+
+    // Try a number of times to click the step into button.  We sometimes get a stale reference here
+    // because the UI is refreshed async.  We'll try a few times before concluding that something
+    // went wrong.
+    for (var i = 0; !clicked && i < clickTries; i++) {
+        let stepIntoButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-step-into")));
+        try {
+            // This reference could be stale due to asynchronous action in the browser.
+            await stepIntoButton.click();
+            clicked = true;
+        } catch (e) {
+            console.log(`Stale reference error clicking step into, trying again ${i}/${clickTries}`);
+        }
+    }
+    if (!clicked) {
+        throw new Exception('Too many tries to click advance without success');
+    }
     await wait(1.0);
 }
 
