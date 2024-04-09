@@ -6,18 +6,16 @@ use clvm_tools_rs::compiler::dialect::{AcceptedDialect, KNOWN_DIALECTS};
 use clvmr::allocator::Allocator;
 
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::patch::{compute_comment_lines, split_text, get_bytes};
+use crate::lsp::patch::{compute_comment_lines, get_bytes, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::compiler::CompileContextWrapper;
-use clvm_tools_rs::compiler::compiler::{
-    compile_pre_forms, create_prim_map, STANDARD_MACROS,
-};
+use clvm_tools_rs::compiler::compiler::{compile_pre_forms, create_prim_map, STANDARD_MACROS};
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
 use clvm_tools_rs::compiler::dialect::DialectDescription;
 use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+use clvm_tools_rs::compiler::CompileContextWrapper;
 
 #[derive(Clone)]
 pub struct DbgCompilerOpts {
@@ -163,7 +161,12 @@ impl CompilerOpts for DbgCompilerOpts {
         symbol_table: &mut HashMap<String, String>,
     ) -> Result<SExp, CompileErr> {
         let me = Rc::new(self.clone());
-        let mut context_wrapper = CompileContextWrapper::new(allocator, runner, symbol_table, get_optimizer(&Srcloc::start(&self.filename), me.clone())?);
+        let mut context_wrapper = CompileContextWrapper::new(
+            allocator,
+            runner,
+            symbol_table,
+            get_optimizer(&Srcloc::start(&self.filename), me.clone())?,
+        );
         compile_pre_forms(&mut context_wrapper.context, me, &[sexp])
     }
 }
