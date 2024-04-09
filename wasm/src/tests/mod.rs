@@ -1687,6 +1687,115 @@ fn test_assign_tokens() {
 }
 
 #[test]
+fn test_defconstant_non_expression() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    lsp.set_workspace_root(PathBuf::from(r"."));
+    lsp.set_config(ConfigJson {
+        include_paths: vec!["./resources/tests".to_string()],
+    });
+    let file = "file://./test.cl".to_string();
+    let open_msg = make_did_open_message(
+        &file,
+        1,
+        indoc! {"
+(mod ()
+  (include *standard-cl-23*)
+  (defconstant ILLEGAL (()))
+  (defconstant ILLEGAL2 (() \"HAHAH\"))
+  (c ILLEGAL ILLEGAL2)
+  )"}
+        .to_string(),
+    );
+    let sem_tok = make_get_semantic_tokens_msg(&file, 2);
+    lsp.handle_message(&open_msg)
+        .expect("should be ok to take open msg");
+    let r2 = lsp
+        .handle_message(&sem_tok)
+        .expect("should be ok to send sem tok");
+    eprintln!("msg {}", get_msg_params(&r2[0]));
+    let decoded_tokens: SemanticTokens = serde_json::from_str(&get_msg_params(&r2[0])).unwrap();
+    assert_eq!(
+        decoded_tokens.data,
+        vec![
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 1,
+                length: 3,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 3,
+                length: 7,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 8,
+                length: 16,
+                token_type: TK_STRING_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 3,
+                length: 11,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 12,
+                length: 7,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 3
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 3,
+                length: 11,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 12,
+                length: 8,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 3
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 3,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 7,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 8,
+                length: 8,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 0
+            }
+        ]
+    );
+}
+
+#[test]
 fn test_lambda_tokens() {
     let mut lsp = LSPServiceProvider::new(
         Rc::new(FSFileReader::new()),
