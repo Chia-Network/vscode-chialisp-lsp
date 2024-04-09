@@ -12,7 +12,8 @@ use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
 };
 use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
-use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
+use clvm_tools_rs::compiler::prims::primquote;
+use clvm_tools_rs::compiler::sexp::{enlist, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -97,6 +98,45 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
         None
     })
 }
+
+fn compile_helperform_with_loose_defconstant(
+    opts: Rc<dyn CompilerOpts>,
+    parsed: Rc<SExp>
+) -> Result<Option<HelperForm>, CompileErr> {
+    let is_defconstant = |sexp: &SExp| {
+        if let SExp::Atom(_, name) = sexp {
+            return name == b"defconstant";
+        }
+
+        false
+    };
+    if let Some(listed) = parsed.proper_list() {
+        // Check for a defconstant keyword.
+        if listed.len() == 3 && is_defconstant(&listed[0]) {
+            let result = compile_helperform(opts.clone(), parsed.clone());
+
+            // We got an error evaluating a defconstant form.  The body might
+            // not be a valid expression.  This is special to defconstant ...
+            // every other body is necesarily a BodyForm.  We can allow this
+            // to be looser because it is in classic chialisp.
+            if matches!(result, Err(_)) {
+                let amended_instr = enlist(parsed.loc(), &[
+                    Rc::new(listed[0].clone()),
+                    Rc::new(listed[1].clone()),
+                    Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone())))
+                ]);
+                // Try by enwrapping the body in quote so it can act as an
+                // expression to the parser.  Other kinds of errors will still
+                // go through.
+                return compile_helperform(opts, Rc::new(amended_instr));
+            }
+        }
+    }
+
+    // Not a proper list so not the kind of thing we're looking for.
+    compile_helperform(opts, parsed)
+}
+
 
 pub fn reparse_subset(
     prims: &[Vec<u8>],
@@ -304,7 +344,7 @@ pub fn reparse_subset(
                         ReparsedHelper {
                             hash,
                             range: r.clone(),
-                            parsed: compile_helperform(opts.clone(), parsed[0].clone()).and_then(
+                            parsed: compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
                                 |mh| {
                                     if let Some(h) = mh {
                                         Ok(h)
