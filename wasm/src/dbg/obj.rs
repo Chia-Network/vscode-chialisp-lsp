@@ -166,9 +166,13 @@ impl RunningDebugger {
                 // Verfified if we overlap at least one location in the symbols
                 // We.ll be simple and set it to the first matching point following
                 // the given location.
-                if let Some((hash, found)) =
-                    find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
-                {
+                if let Some((hash, found)) = find_location(
+                    self.symbols.clone(),
+                    self.compiled.as_ref(),
+                    log.clone(),
+                    &p,
+                    b,
+                ) {
                     log.log(&format!(
                         "breakpoint {p} {b:?} resolved to {hash} {found:?}"
                     ));
@@ -405,7 +409,7 @@ fn test_simple_find_location_classic_symbols_1() {
     };
     let (hash, _) = find_location(
         symbols,
-        &Some(compiled.compileform().clone()),
+        Some(compiled.compileform()),
         log,
         "fact.clsp",
         &breakpoint_spec,

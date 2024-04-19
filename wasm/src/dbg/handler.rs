@@ -40,7 +40,7 @@ use chialisp::compiler::sexp::{decode_string, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::source::parse_srcloc;
+use crate::dbg::source::{find_location, parse_srcloc};
 use crate::dbg::types::MessageHandler;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
@@ -179,84 +179,6 @@ fn test_resolve_function_1() {
     );
 }
 
-/// Given symbols, possibly a CompileForm and a SourceBreakpoint, try a few tricks
-/// to figure out where we should stop in the source when a breakpoint is set.
-///
-/// This can certainly be improved.
-fn find_location(
-    symbols: Rc<HashMap<String, String>>,
-    compiled: &Option<FrontendOutput>,
-    log: Rc<dyn ILogWriter>,
-    file: &str,
-    b: &SourceBreakpoint,
-) -> Option<(String, Srcloc)> {
-    let whole_line = DocRange {
-        start: DocPosition {
-            line: b.line - 1,
-            character: 0,
-        },
-        end: DocPosition {
-            line: b.line - 1,
-            character: LARGE_COLUMN,
-        },
-    };
-    let breakpoint_range = b
-        .column
-        .map(|_col| DocRange {
-            start: DocPosition {
-                line: b.line - 1,
-                character: 0,
-            },
-            end: DocPosition {
-                line: b.line - 1,
-                character: LARGE_COLUMN,
-            },
-        })
-        .unwrap_or_else(|| whole_line.clone());
-
-    let breakpoint_loc = breakpoint_range.to_srcloc(file);
-    for (k, v) in symbols.iter() {
-        if let Some(parsed_srcloc) = parse_srcloc(v) {
-            let borrowed_filename: &String = parsed_srcloc.file.borrow();
-            if !fuzzy_file_match(file, borrowed_filename) {
-                continue;
-            }
-            let normalized_loc = Srcloc::new(
-                breakpoint_loc.file.clone(),
-                parsed_srcloc.line,
-                parsed_srcloc.col,
-            );
-            if normalized_loc.overlap(&breakpoint_loc) {
-                return Some((k.clone(), parsed_srcloc.clone()));
-            }
-        }
-    }
-
-    let whole_line_loc = whole_line.to_srcloc(file);
-    compiled.as_ref().and_then(|c| {
-        for h in c.compileform().helpers.iter() {
-            let original_loc = h.loc();
-            let original_loc_file: &String = original_loc.file.borrow();
-            if !fuzzy_file_match(original_loc_file, file) {
-                continue;
-            }
-            let normalized_loc = Srcloc::new(
-                whole_line_loc.file.clone(),
-                original_loc.line,
-                original_loc.col,
-            );
-            log.log(&format!("{normalized_loc} vs target loc {whole_line_loc}"));
-            if whole_line_loc.overlap(&normalized_loc) {
-                log.log(&format!("found function {}", decode_string(h.name())));
-                return resolve_function(symbols, &decode_string(h.name()))
-                    .map(|funhash| (funhash, original_loc));
-            }
-        }
-
-        None
-    })
-}
-
 #[test]
 fn test_simple_find_location_classic_symbols_1() {
     let log = Rc::new(EPrintWriter::new());
@@ -277,8 +199,14 @@ fn test_simple_find_location_classic_symbols_1() {
         line: 2,
         log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
-        .expect("should be found");
+    let (hash, _) = find_location(
+        symbols,
+        Some(compiled.compileform()),
+        log,
+        "fact.clsp",
+        &breakpoint_spec,
+    )
+    .expect("should be found");
     assert_eq!(
         hash,
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
@@ -358,9 +286,13 @@ impl RunningDebugger {
                 // Verfified if we overlap at least one location in the symbols
                 // We.ll be simple and set it to the first matching point following
                 // the given location.
-                if let Some((hash, found)) =
-                    find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
-                {
+                if let Some((hash, found)) = find_location(
+                    self.symbols.clone(),
+                    self.compiled.as_ref().map(|f| f.compileform()),
+                    log.clone(),
+                    &p,
+                    b,
+                ) {
                     let end_col = found.until.clone().map(|e| e.col as u32);
                     let end_line = found.until.map(|e| e.line as u32);
                     let bp = Breakpoint {

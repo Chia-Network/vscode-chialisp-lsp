@@ -54,7 +54,7 @@ pub struct StoredScope {
 /// This can certainly be improved.
 pub fn find_location(
     symbols: Rc<HashMap<String, String>>,
-    compiled: &Option<CompileForm>,
+    compiled: Option<&CompileForm>,
     log: Rc<dyn ILogWriter>,
     file: &str,
     b: &SourceBreakpoint,
