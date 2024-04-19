@@ -727,8 +727,6 @@ impl Debugger {
         &self,
         allocator: &mut Allocator,
         opts: Rc<dyn CompilerOpts>,
-        _i: &InitializeRequestArguments,
-        _l: &LaunchRequestArguments,
         name: &str,
         read_in_file: &[u8],
     ) -> Result<RunStartData, String> {
@@ -851,8 +849,6 @@ impl Debugger {
         let mut launch_data = self.read_program_data(
             &mut allocator,
             opts.clone(),
-            launch_args.init_args,
-            launch_args.launch_request,
             launch_args.program,
             read_in_file.as_bytes(),
         )?;
