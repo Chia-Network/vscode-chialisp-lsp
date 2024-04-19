@@ -14,7 +14,9 @@ const MESSAGE_READ = 4;
 
 var workspaceFolder = process.env.WORKSPACE_FOLDER ? process.env.WORKSPACE_FOLDER : ".";
 
-let emptyWriteLog = (line) => { };
+let emptyWriteLog = (line) => {
+  fs.appendFileSync("/tmp/debug.log", `${line}\n`);
+};
 var log = {
 	write: emptyWriteLog
 };
