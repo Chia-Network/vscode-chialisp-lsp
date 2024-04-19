@@ -611,6 +611,17 @@ pub fn combine_new_with_old_parse(
         }
     }
 
+    for (h, _) in exports.iter() {
+        // Reparse models helpers and exports together as an enum.
+        if !reparse.unparsed.contains_key(h) && !reparse.helpers.contains_key(h) {
+            // Exports are given synthetic names that can also be removed.
+            if let Some(name) = parsed.hash_to_name.get(h) {
+                remove_names.insert(name.clone());
+            }
+            to_remove.insert(h.clone());
+        }
+    }
+
     // Ensure that we catch when an include form disappeared.
     for (h, _) in new_includes.iter() {
         if !reparse.unparsed.contains_key(h) && !reparse.includes.contains_key(h) {
