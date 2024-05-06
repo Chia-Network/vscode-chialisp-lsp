@@ -69,7 +69,7 @@ impl JSFileReader {
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 thread_local! {
-    static NEXT_ID: AtomicUsize = const {
+    static NEXT_ID: AtomicUsize = {
         AtomicUsize::new(0)
     };
     static LSP_SERVERS: RefCell<HashMap<i32, RefCell<LSPServiceProvider>>> = {
