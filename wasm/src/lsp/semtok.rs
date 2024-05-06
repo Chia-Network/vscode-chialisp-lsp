@@ -39,9 +39,11 @@ impl PartialEq for SemanticTokenSortable {
 
 impl Eq for SemanticTokenSortable {}
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for SemanticTokenSortable {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let cf = self.loc.file.cmp(other.loc.file.borrow());
+
         if cf != Ordering::Equal {
             return Some(cf);
         }
@@ -166,7 +168,7 @@ fn process_body_code(
             }
             for b in letdata.bindings.iter() {
                 let mut bindings = HashSet::new();
-                add_bindings_to_set(&mut bindings, &b);
+                add_bindings_to_set(&mut bindings, b);
                 for item in bindings.iter() {
                     if let SExp::Atom(loc, _) = item.borrow() {
                         collected_tokens.push(SemanticTokenSortable {
@@ -199,7 +201,7 @@ fn process_body_code(
                     )
                 }
                 let mut bset = HashSet::new();
-                add_bindings_to_set(&mut bset, &b);
+                add_bindings_to_set(&mut bset, b);
                 for b in bset.iter() {
                     if let SExp::Atom(l, n) = b.borrow() {
                         bindings_vars.insert(n.clone(), l.clone());

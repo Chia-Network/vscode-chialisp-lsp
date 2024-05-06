@@ -477,7 +477,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
 
             let mut variables = HashSet::new();
-            add_bindings_to_set(&mut variables, &binding);
+            add_bindings_to_set(&mut variables, binding);
 
             let mut inner_scopes = Vec::new();
 
@@ -511,7 +511,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let mut name_set = HashSet::new();
             for b in letdata.bindings.iter() {
-                add_bindings_to_set(&mut name_set, &b);
+                add_bindings_to_set(&mut name_set, b);
             }
 
             let mut inner_scopes = Vec::new();

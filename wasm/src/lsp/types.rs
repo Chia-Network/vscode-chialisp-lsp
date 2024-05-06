@@ -29,8 +29,8 @@ use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -86,7 +86,7 @@ pub struct Hash {
 }
 
 impl Hash {
-    pub fn new(v: &Vec<u8>) -> Self {
+    pub fn new(v: &[u8]) -> Self {
         let len = min(v.len(), HASH_SIZE);
         let mut data: [u8; HASH_SIZE] = [0; 32];
         for i in 0..len {
@@ -460,7 +460,7 @@ impl DocRange {
     // This is likewise used in some of the configurations, but not all.
     #[allow(dead_code)]
     pub fn overlap(&self, other: &DocRange) -> bool {
-        let mut sortable = vec![
+        let mut sortable = [
             (self.start.clone(), 0),
             (self.end.clone(), 0),
             (other.start.clone(), 1),
@@ -864,7 +864,7 @@ impl LSPServiceProvider {
             goto_defs: HashMap::new(),
             thrown_errors: HashMap::new(),
 
-            workspace_file_extensions_to_resync_for: vec![
+            workspace_file_extensions_to_resync_for: [
                 ".clsp", ".cl", ".clvm", ".clib", ".clinc",
             ]
             .iter()

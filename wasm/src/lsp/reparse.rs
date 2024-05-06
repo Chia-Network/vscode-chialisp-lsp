@@ -101,7 +101,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
 
 fn compile_helperform_with_loose_defconstant(
     opts: Rc<dyn CompilerOpts>,
-    parsed: Rc<SExp>
+    parsed: Rc<SExp>,
 ) -> Result<Option<HelperForm>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
@@ -119,12 +119,15 @@ fn compile_helperform_with_loose_defconstant(
             // not be a valid expression.  This is special to defconstant ...
             // every other body is necesarily a BodyForm.  We can allow this
             // to be looser because it is in classic chialisp.
-            if matches!(result, Err(_)) {
-                let amended_instr = enlist(parsed.loc(), &[
-                    Rc::new(listed[0].clone()),
-                    Rc::new(listed[1].clone()),
-                    Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone())))
-                ]);
+            if result.is_err() {
+                let amended_instr = enlist(
+                    parsed.loc(),
+                    &[
+                        Rc::new(listed[0].clone()),
+                        Rc::new(listed[1].clone()),
+                        Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone()))),
+                    ],
+                );
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
@@ -136,7 +139,6 @@ fn compile_helperform_with_loose_defconstant(
     // Not a proper list so not the kind of thing we're looking for.
     compile_helperform(opts, parsed)
 }
-
 
 pub fn reparse_subset(
     prims: &[Vec<u8>],
@@ -344,15 +346,17 @@ pub fn reparse_subset(
                         ReparsedHelper {
                             hash,
                             range: r.clone(),
-                            parsed: compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
-                                |mh| {
-                                    if let Some(h) = mh {
-                                        Ok(h)
-                                    } else {
-                                        Err(CompileErr(loc, "must be a helper form".to_string()))
-                                    }
-                                },
-                            ),
+                            parsed: compile_helperform_with_loose_defconstant(
+                                opts.clone(),
+                                parsed[0].clone(),
+                            )
+                            .and_then(|mh| {
+                                if let Some(h) = mh {
+                                    Ok(h)
+                                } else {
+                                    Err(CompileErr(loc, "must be a helper form".to_string()))
+                                }
+                            }),
                         },
                     );
                 }

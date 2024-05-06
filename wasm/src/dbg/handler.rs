@@ -699,7 +699,7 @@ fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, V
 }
 
 fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
+    for ext in [".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
         }
@@ -982,7 +982,7 @@ impl Debugger {
         let mut seq_nr = self.msg_seq;
         let config = self.read_chialisp_json()?;
         let read_in_file = self.fs.read_content(launch_args.program)?;
-        let def_opts = Rc::new(DefaultCompilerOpts::new(&launch_args.name));
+        let def_opts = Rc::new(DefaultCompilerOpts::new(launch_args.name));
         let opts = Rc::new(DbgCompilerOpts::new(
             def_opts,
             self.log.clone(),
@@ -1131,7 +1131,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     let args = launch_extra
                         .as_ref()
                         .and_then(|l| l.arguments.args.clone())
-                        .unwrap_or(vec![]);
+                        .unwrap_or_default();
                     if let Some(name) = &l.name {
                         let program = launch_extra
                             .and_then(|l| l.arguments.program)
@@ -1303,7 +1303,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
 
                     let mut variables = Vec::new();
 
-                    if let Some(scope) = s.get(0) {
+                    if let Some(scope) = s.first() {
                         let mut function_args = scope
                             .named_args
                             .iter()
