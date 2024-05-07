@@ -34,7 +34,6 @@ use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
-#[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
@@ -983,10 +982,11 @@ impl Debugger {
         let mut seq_nr = self.msg_seq;
         let config = self.read_chialisp_json()?;
         let read_in_file = self.fs.read_content(launch_args.program)?;
+        let def_opts = Rc::new(DefaultCompilerOpts::new(&launch_args.name));
         let opts = Rc::new(DbgCompilerOpts::new(
+            def_opts,
             self.log.clone(),
             self.fs.clone(),
-            launch_args.name,
             &config.include_paths,
         ));
         let mut launch_data = self.read_program_data(

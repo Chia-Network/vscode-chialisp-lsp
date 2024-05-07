@@ -223,9 +223,9 @@ dependencies = [
 
 [[package]]
 name = "clvm_tools_rs"
-version = "0.1.41"
+version = "0.1.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17792ac4dcc77037b1900a4585d5cefa2d353a6c4ece60da8224e05b3a029f0d"
+checksum = "70d38a94362a17c1409b276c5fc97adb46f47bba127f1b245879a61e32e59c8c"
 dependencies = [
  "binascii",
  "bls12_381",
