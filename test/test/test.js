@@ -11,6 +11,7 @@ const driver = new Builder()
 
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
+const clickTries = 5;
 
 let login = async function() {
     let loginContainer = By.css('.login-form');
@@ -72,6 +73,7 @@ async function pressTab() {
 async function sendControlA() { await sendControlChar('a'); }
 async function sendControlF() { await sendControlChar('f'); }
 async function sendControlH() { await sendControlChar('h'); }
+async function sendControlO() { await sendControlChar('o'); }
 async function sendControlP() { await sendControlChar('p'); }
 
 async function shifted(f) {
@@ -141,9 +143,9 @@ async function sendString(s) {
     await actions.perform();
 }
 
-async function findString(s) {
+async function findString(driver, s) {
     await sendControlF();
-    let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+    let inputBox = await findFileInput(driver);
     await inputBox.sendKeys(s);
     await sendEscape();
 }
@@ -160,11 +162,10 @@ function byAttribute(attr,val) {
     return By.xpath(`//*[@${attr}='${val}']`);
 }
 
-async function openFile(file) {
+async function openFile(driver, file) {
     console.log(`Check the content of ${file}`);
     await sendControlP();
-
-    let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+    let inputBox = await findFileInput(driver);
     await inputBox.click();
     await inputBox.sendKeys(file);
 
@@ -172,25 +173,12 @@ async function openFile(file) {
     await sendReturn();
 }
 
-async function openFileTheLongWay(file) {
-    console.log('clicking hamburger');
-    let hamburger = await driver.wait(until.elementLocated(byAttribute("aria-label", "Application Menu")));
-    await hamburger.click();
-    await wait(1.0);
-
-    await sendDown(1);
-    await sendReturn();
-    await wait(1.0);
-
-    await sendDown(3);
-    await sendReturn();
-    await wait(1.0);
-
-    console.log('get input box (long way)');
-
-    await wait(10.0);
+async function openFileTheLongWay(driver, file) {
+    await sendControlO();
+    await wait(2.0);
 
     let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    console.log('find input box', inputBox);
     await inputBox.click();
     await inputBox.sendKeys(file);
 
@@ -209,8 +197,24 @@ async function performCommand(cmd) {
 }
 
 async function clickStepInto() {
-    let stepIntoButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-step-into")));
-    await stepIntoButton.click();
+    let clicked = false;
+
+    // Try a number of times to click the step into button.  We sometimes get a stale reference here
+    // because the UI is refreshed async.  We'll try a few times before concluding that something
+    // went wrong.
+    for (var i = 0; !clicked && i < clickTries; i++) {
+        let stepIntoButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-step-into")));
+        try {
+            // This reference could be stale due to asynchronous action in the browser.
+            await stepIntoButton.click();
+            clicked = true;
+        } catch (e) {
+            console.log(`Stale reference error clicking step into, trying again ${i}/${clickTries}`);
+        }
+    }
+    if (!clicked) {
+        throw new Exception('Too many tries to click advance without success');
+    }
     await wait(1.0);
 }
 
@@ -253,6 +257,13 @@ function simplifyText(t) {
     return res;
 }
 
+async function findFileInput(driver) {
+    let findInput = await driver.wait(until.elementLocated(By.css(".monaco-findInput")));
+    let inputbox = await findInput.findElement(By.css(".monaco-inputbox"));
+    let ibwrapper = await inputbox.findElement(By.css(".ibwrapper"));
+    return await ibwrapper.findElement(By.css(".input"));
+}
+
 // Define a category of tests using test framework, in this case Jasmine
 describe("Basic element tests", function() {
     // After each test, close the browser.
@@ -268,6 +279,10 @@ describe("Basic element tests", function() {
         // Wait for button
         console.log('wait for an element indicating that the workspace is up');
         await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
+
+	// Things load more progressively in the current vs code.
+        const actions = driver.actions({async: true});
+        await actions.pause(3000).perform();
 
         // Dismiss trust dialog if it comes up.
         console.log('check for the trust dialog');
@@ -312,20 +327,20 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running test...');
 
-	      await openFile('collatz.cl');
+	await openFile(driver, 'collatz.cl');
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
-        let keyword_classed_element = await driver.wait(until.elementLocated(By.css(".mtk15")));
+        let keyword_classed_element = await driver.wait(until.elementLocated(By.css(".mtk5")));
 
         console.log('checking mod highlight');
         let mod_keyword = await driver.wait(until.elementLocated(byExactText("mod")));
-        expect(await mod_keyword.getAttribute("class")).toBe("mtk15");
+        expect(await mod_keyword.getAttribute("class")).toBe("mtk16");
 
         console.log('checking comment highlight');
         let comment = await driver.wait(until.elementLocated(byVisibleText("COLLATZ")));
 
-        expect(await comment.getAttribute("class")).toBe("mtk4");
+        expect(await comment.getAttribute("class")).toBe("mtk5");
 
         console.log('we should have an error shown');
         let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-error")));
@@ -342,27 +357,27 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         console.log('find the input box');
-        let inputBox = await driver.wait(until.elementLocated(By.css(".input")));
-        await inputBox.click();
+	let inputBox = await findFileInput(driver);
+	await inputBox.click();
         await inputBox.sendKeys("include/test-inc.clsp");
 
         console.log('accept input');
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
         okBox.click();
 
-	      await wait(3.0);
+	await wait(3.0);
 
         console.log('Check the content of chialisp.json');
-	      await openFile("chialisp.json");
+	await openFile(driver, "chialisp.json");
 
         console.log('Check content');
         let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
 
-	      await openFile("collatz.cl");
+	await openFile(driver, "collatz.cl");
 
         console.log('comments should move');
         let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
-        expect(await otherComment.getAttribute("class")).toBe("mtk15");
+        expect(await otherComment.getAttribute("class")).toBe("mtk16");
 
         console.log('check for squigglies');
         let squigglies = await driver.findElements(By.css('.squiggly-error'));
@@ -386,13 +401,12 @@ describe("Basic element tests", function() {
 
         // Pgup right 7 space QQEX C-f defun-inline C-f logand right 6 Q
         // find a monaco-list-rows with a descendant that contains QQEX.
-        await sendPgUp();
-        await sendRight(7);
+        await findString(driver, 'two three');
+        await sendRight(1);
         await sendString(" QQEX");
 
-        await findString('defun-inline');
-        await findString('logand');
-        await sendRight(5);
+        await findString(driver, '(odd X');
+        await sendRight(1);
         await sendString(" Q");
 
         let monacoLists = await driver.findElements(By.css(".monaco-list"));
@@ -411,7 +425,7 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         await sendControlF();
-        inputBox = await driver.wait(until.elementLocated(By.css(".input")));
+        inputBox = await findFileInput(driver);
         await inputBox.click();
         await sendControlA();
         await inputBox.sendKeys("QQEX");
@@ -433,7 +447,7 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running debug test 1...');
 
-        await openFileTheLongWay('include/fact.clinc');
+        await openFileTheLongWay(driver, 'include/fact.clinc');
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();

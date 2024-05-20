@@ -2,7 +2,8 @@ var path = require('path');
 var webpack = require('webpack');
 
 module.exports = {
-    entry: './src/runner.js',
+    mode: 'production',
+    target: 'node',
     output: {
         path: path.resolve(__dirname, 'build'),
         filename: 'runner.js'
