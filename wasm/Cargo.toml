@@ -1,6 +1,6 @@
 [package]
 name = "clvm_tools_lsp"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2018"
 authors = ["Art Yerkes <art.yerkes@gmail.com>"]
 description = "tools for working with chialisp language; compiler, repl, python and wasm bindings"
@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-clvm_tools_rs = "=0.1.42"
+clvm_tools_rs = "=0.1.44"
 clvmr = "0.3.3"
 wasm-bindgen = "=0.2.83"
 wasm-bindgen-test = "=0.3.25"
