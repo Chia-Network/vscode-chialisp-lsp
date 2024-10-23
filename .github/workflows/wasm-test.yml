@@ -26,11 +26,9 @@ jobs:
         with:
           node-version: 16
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
             target: wasm32-unknown-unknown
-            override: true
             components: rustfmt
       - name: Install wasm-pack
         run: |

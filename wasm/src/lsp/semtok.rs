@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use lsp_server::{Message, RequestId, Response};
@@ -8,7 +8,7 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{recover_scopes, ParsedDoc};
+use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedExp,
     ReparsedHelper,
@@ -165,11 +165,17 @@ fn process_body_code(
                 });
             }
             for b in letdata.bindings.iter() {
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: b.nl.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: 1 << TK_DEFINITION_BIT | 1 << TK_READONLY_BIT,
-                });
+                let mut bindings = HashSet::new();
+                add_bindings_to_set(&mut bindings, &b);
+                for item in bindings.iter() {
+                    if let SExp::Atom(loc, _) = item.borrow() {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: loc.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: 1 << TK_DEFINITION_BIT | 1 << TK_READONLY_BIT,
+                        });
+                    }
+                }
                 if k == &LetFormKind::Sequential {
                     // Bindings above affect code below
                     process_body_code(
@@ -192,12 +198,11 @@ fn process_body_code(
                         b.body.clone(),
                     )
                 }
-                match &b.pattern {
-                    BindingPattern::Name(name) => {
-                        bindings_vars.insert(name.clone(), b.nl.clone());
-                    }
-                    BindingPattern::Complex(pat) => {
-                        // XXX
+                let mut bset = HashSet::new();
+                add_bindings_to_set(&mut bset, &b);
+                for b in bset.iter() {
+                    if let SExp::Atom(l, n) = b.borrow() {
+                        bindings_vars.insert(n.clone(), l.clone());
                     }
                 }
             }
@@ -209,6 +214,39 @@ fn process_body_code(
                 &bindings_vars,
                 frontend,
                 letdata.body.clone(),
+            );
+        }
+        BodyForm::Lambda(ldata) => {
+            let mut bindings_vars = varcollection.clone();
+            if let Some(kw) = ldata.kw.as_ref() {
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: kw.clone(),
+                    token_type: TK_KEYWORD_IDX,
+                    token_mod: 0,
+                });
+            }
+
+            let mut bindings: HashSet<Rc<SExp>> = HashSet::new();
+            add_sexp_bindings(&mut bindings, ldata.args.clone());
+            for item in bindings.iter() {
+                if let SExp::Atom(loc, n) = item.borrow() {
+                    bindings_vars.insert(n.clone(), loc.clone());
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: loc.clone(),
+                        token_type: TK_VARIABLE_IDX,
+                        token_mod: 1 << TK_DEFINITION_BIT | 1 << TK_READONLY_BIT,
+                    });
+                }
+            }
+
+            process_body_code(
+                env,
+                collected_tokens,
+                gotodef,
+                argcollection,
+                &bindings_vars,
+                frontend,
+                ldata.body.clone(),
             );
         }
         BodyForm::Quoted(SExp::Integer(l, _)) => {
@@ -259,7 +297,7 @@ fn process_body_code(
                 token_mod: 0,
             });
         }
-        BodyForm::Call(_, args) => {
+        BodyForm::Call(_, args, rest_args) => {
             if args.is_empty() {
                 return;
             }
@@ -281,6 +319,18 @@ fn process_body_code(
                     varcollection,
                     frontend,
                     a.clone(),
+                );
+            }
+            // Handle the rest_args
+            if let Some(tail) = rest_args {
+                process_body_code(
+                    env,
+                    collected_tokens,
+                    gotodef,
+                    argcollection,
+                    varcollection,
+                    frontend,
+                    tail.clone(),
                 );
             }
         }
@@ -487,9 +537,6 @@ pub fn build_semantic_tokens(
                     mac.program.exp.clone(),
                 );
             }
-            HelperForm::Deftype(t) => {
-                // XXX
-            }
         }
     }
 
@@ -553,8 +600,8 @@ fn do_semantic_tokens(
     let mut last_row = 1;
     let mut last_col = 1;
 
-    for t in collected_tokens.iter() {
-        if t.loc.line < last_row || (t.loc.line == last_row && t.loc.col <= last_col) {
+    for (i,t) in collected_tokens.iter().enumerate() {
+        if i > 0 && (t.loc.line < last_row || (t.loc.line == last_row && t.loc.col <= last_col)) {
             continue;
         }
         if t.loc.line != last_row {

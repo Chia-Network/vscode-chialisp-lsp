@@ -7,137 +7,50 @@ use std::rc::Rc;
 use clvmr::allocator::Allocator;
 
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::patch::{compute_comment_lines, split_text, stringify_doc};
+use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::compiler::CompileContextWrapper;
-use clvm_tools_rs::compiler::compiler::{
-    compile_pre_forms, create_prim_map, STANDARD_MACROS, ADVANCED_MACROS
-};
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, PrimaryCodegen};
-use clvm_tools_rs::compiler::dialect::{AcceptedDialect, KNOWN_DIALECTS};
+use clvm_tools_rs::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
+use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, HasCompilerOptsDelegation};
+use clvm_tools_rs::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
 use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+use clvm_tools_rs::compiler::CompileContextWrapper;
+
+use super::patch::get_bytes;
 
 #[derive(Clone)]
 pub struct LSPCompilerOpts {
+    pub opts: Rc<dyn CompilerOpts>,
     pub log: Rc<dyn ILogWriter>,
     pub fs: Rc<dyn IFileReader>,
     pub ws_root: Option<PathBuf>,
-    pub include_dirs: Vec<String>,
-    pub filename: String,
-    pub compiler: Option<PrimaryCodegen>,
-    pub in_defun: bool,
-    pub stdenv: bool,
-    pub optimize: bool,
-    pub frontend_opt: bool,
-    pub frontend_check_live: bool,
-    pub start_env: Option<Rc<SExp>>,
-    pub prim_map: Rc<HashMap<Vec<u8>, Rc<SExp>>>,
-    pub dialect: AcceptedDialect,
 
-    lsp: Rc<RefCell<HashMap<String, DocData>>>,
+    pub include_dirs: Vec<String>,
+
+    pub lsp: Rc<RefCell<HashMap<String, DocData>>>,
+    pub known_dialects: Rc<HashMap<String, DialectDescription>>,
 }
 
-impl CompilerOpts for LSPCompilerOpts {
-    fn filename(&self) -> String {
-        self.filename.clone()
+impl HasCompilerOptsDelegation for LSPCompilerOpts {
+    fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
+        self.opts.clone()
     }
-    fn code_generator(&self) -> Option<PrimaryCodegen> {
-        self.compiler.clone()
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(&self, f: F) -> Rc<dyn CompilerOpts> {
+        Rc::new(LSPCompilerOpts {
+            opts: f(self.opts.clone()),
+            .. self.clone()
+        })
     }
-    fn in_defun(&self) -> bool {
-        self.in_defun
-    }
-    fn stdenv(&self) -> bool {
-        self.stdenv
-    }
-    fn optimize(&self) -> bool {
-        self.optimize
-    }
-    fn frontend_opt(&self) -> bool {
-        self.frontend_opt
-    }
-    fn frontend_check_live(&self) -> bool {
-        self.frontend_check_live
-    }
-    fn start_env(&self) -> Option<Rc<SExp>> {
-        self.start_env.clone()
-    }
-    fn prim_map(&self) -> Rc<HashMap<Vec<u8>, Rc<SExp>>> {
-        self.prim_map.clone()
-    }
-    fn get_search_paths(&self) -> Vec<String> {
-        self.include_dirs.clone()
-    }
-    fn dialect(&self) -> AcceptedDialect {
-        self.dialect.clone()
-    }
-
-    fn set_search_paths(&self, dirs: &[String]) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.include_dirs = dirs.to_owned();
-        Rc::new(copy)
-    }
-    fn set_in_defun(&self, new_in_defun: bool) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.in_defun = new_in_defun;
-        Rc::new(copy)
-    }
-    fn set_stdenv(&self, new_stdenv: bool) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.stdenv = new_stdenv;
-        Rc::new(copy)
-    }
-    fn set_optimize(&self, optimize: bool) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.optimize = optimize;
-        Rc::new(copy)
-    }
-    fn set_frontend_opt(&self, optimize: bool) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.frontend_opt = optimize;
-        Rc::new(copy)
-    }
-    fn set_frontend_check_live(&self, check: bool) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.frontend_check_live = check;
-        Rc::new(copy)
-    }
-    fn set_code_generator(&self, new_compiler: PrimaryCodegen) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.compiler = Some(new_compiler);
-        Rc::new(copy)
-    }
-    fn set_start_env(&self, start_env: Option<Rc<SExp>>) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.start_env = start_env;
-        Rc::new(copy)
-    }
-    fn set_dialect(&self, dialect: AcceptedDialect) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.dialect = dialect;
-        Rc::new(copy)
-    }
-    fn set_prim_map(&self, prims: Rc<HashMap<Vec<u8>, Rc<SExp>>>) -> Rc<dyn CompilerOpts> {
-        let mut copy = self.clone();
-        copy.prim_map = prims;
-        Rc::new(copy)
-    }
-
-    fn read_new_file(
+    fn override_read_new_file(
         &self,
         inc_from: String,
         filename: String,
     ) -> Result<(String, Vec<u8>), CompileErr> {
         if filename == "*macros*" {
-            if self.dialect().strict {
-                return Ok((filename, ADVANCED_MACROS.as_bytes().to_vec()));
-            } else {
-                return Ok((filename, STANDARD_MACROS.as_bytes().to_vec()));
-            }
-        } else if let Some(content) = KNOWN_DIALECTS.get(&filename) {
+            return Ok((filename, STANDARD_MACROS.clone().into()));
+        } else if let Some(content) = self.known_dialects.get(&filename) {
             return Ok((filename, content.content.as_bytes().to_vec()));
         }
 
@@ -148,12 +61,21 @@ impl CompilerOpts for LSPCompilerOpts {
             )
         })?;
 
-        stringify_doc(&content.text)
-            .map(|r| (computed_filename.clone(), r.as_bytes().to_vec()))
-            .map_err(|x| CompileErr(Srcloc::start(&computed_filename), x))
+        Ok((computed_filename, get_bytes(&content.text)))
+    }
+    fn override_set_search_paths(
+        &self,
+        new_paths: &[String]
+    ) -> Rc<dyn CompilerOpts> {
+        let new_with_includes = self.opts.set_search_paths(new_paths);
+        Rc::new(LSPCompilerOpts {
+            opts: new_with_includes,
+            include_dirs: new_paths.to_owned(),
+            .. self.clone()
+        })
     }
 
-    fn compile_program(
+    fn override_compile_program(
         &self,
         allocator: &mut Allocator,
         runner: Rc<dyn TRunProgram>,
@@ -165,7 +87,7 @@ impl CompilerOpts for LSPCompilerOpts {
             allocator,
             runner,
             symbol_table,
-            get_optimizer(&sexp.loc(), me.clone())?,
+            get_optimizer(&Srcloc::start(&self.filename()), me.clone())?,
         );
         compile_pre_forms(&mut context_wrapper.context, me, &[sexp])
     }
@@ -212,28 +134,19 @@ pub fn get_file_content(
 
 impl LSPCompilerOpts {
     pub fn new(
+        opts: Rc<dyn CompilerOpts>,
         log: Rc<dyn ILogWriter>,
         fs: Rc<dyn IFileReader>,
         ws_root: Option<PathBuf>,
-        filename: &str,
         paths: &[String],
         docs: Rc<RefCell<HashMap<String, DocData>>>,
     ) -> Self {
         LSPCompilerOpts {
+            opts,
             log,
             fs,
             ws_root,
             include_dirs: paths.to_owned(),
-            filename: filename.to_owned(),
-            compiler: None,
-            in_defun: false,
-            stdenv: true,
-            optimize: false,
-            frontend_opt: false,
-            frontend_check_live: true,
-            start_env: None,
-            prim_map: create_prim_map(),
-            dialect: Default::default(),
             lsp: docs,
         }
     }

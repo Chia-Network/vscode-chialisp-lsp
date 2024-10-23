@@ -30,6 +30,7 @@ use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
 use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -124,7 +125,7 @@ fn file_url_segments_to_pathbuf(
 
     // A windows drive letter must end with a slash.
     if bytes.len() > 2
-        && matches!(bytes[bytes.len() - 2], b'a'..=b'z' | b'A'..=b'Z')
+        && bytes[bytes.len() - 2].is_ascii_alphabetic()
         && matches!(bytes[bytes.len() - 1], b':' | b'|')
     {
         bytes.push(b'/');
@@ -717,11 +718,12 @@ impl LSPServiceProvider {
     }
 
     pub fn ensure_parsed_document(&mut self, uristring: &str) {
+        let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
         let opts = Rc::new(LSPCompilerOpts::new(
+            def_opts,
             self.log.clone(),
             self.fs.clone(),
             self.get_workspace_root(),
-            uristring,
             &self.config.include_paths,
             self.document_collection.clone(),
         ))
@@ -1104,8 +1106,8 @@ pub enum IncludeKind {
 pub struct ParseScope {
     pub region: Srcloc,
     pub kind: ScopeKind,
-    pub variables: HashSet<SExp>,
-    pub functions: HashSet<SExp>,
+    pub variables: HashSet<Rc<SExp>>,
+    pub functions: HashSet<Rc<SExp>>,
     pub containing: Vec<ParseScope>,
 }
 

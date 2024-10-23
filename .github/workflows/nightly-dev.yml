@@ -53,12 +53,6 @@ jobs:
       - name: Compile & lint
         if: env.SKIP != 'true'
         run: npm run pretest
-      - name: Configure chia-automation
-        if: env.SKIP != 'true'
-        uses: Chia-Network/actions/commit-sign/gpg@main
-        with:
-          gpg_private_key: ${{ secrets.CHIA_AUTOMATION_PRIVATE_GPG_KEY }}
-          passphrase: ${{ secrets.CHIA_AUTOMATION_PRIVATE_GPG_PASSPHRASE }}
       - name: Build dev extension
         if: env.SKIP != 'true'
         id: package_name
@@ -71,8 +65,13 @@ jobs:
           fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Fix dates
+        run: |
+          python datefix.py *.vsix
       - name: Run headless test
         if: env.SKIP != 'true'
+        env:
+          DETECT_CHROMEDRIVER_VERSION: "true"
         run: |
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2

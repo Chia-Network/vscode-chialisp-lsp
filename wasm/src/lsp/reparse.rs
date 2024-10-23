@@ -12,7 +12,8 @@ use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
 };
 use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
-use clvm_tools_rs::compiler::sexp::{parse_sexp, SExp};
+use clvm_tools_rs::compiler::prims::primquote;
+use clvm_tools_rs::compiler::sexp::{enlist, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -98,6 +99,45 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
     })
 }
 
+fn compile_helperform_with_loose_defconstant(
+    opts: Rc<dyn CompilerOpts>,
+    parsed: Rc<SExp>
+) -> Result<Option<HelperForm>, CompileErr> {
+    let is_defconstant = |sexp: &SExp| {
+        if let SExp::Atom(_, name) = sexp {
+            return name == b"defconstant";
+        }
+
+        false
+    };
+    if let Some(listed) = parsed.proper_list() {
+        // Check for a defconstant keyword.
+        if listed.len() == 3 && is_defconstant(&listed[0]) {
+            let result = compile_helperform(opts.clone(), parsed.clone());
+
+            // We got an error evaluating a defconstant form.  The body might
+            // not be a valid expression.  This is special to defconstant ...
+            // every other body is necesarily a BodyForm.  We can allow this
+            // to be looser because it is in classic chialisp.
+            if matches!(result, Err(_)) {
+                let amended_instr = enlist(parsed.loc(), &[
+                    Rc::new(listed[0].clone()),
+                    Rc::new(listed[1].clone()),
+                    Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone())))
+                ]);
+                // Try by enwrapping the body in quote so it can act as an
+                // expression to the parser.  Other kinds of errors will still
+                // go through.
+                return compile_helperform(opts, Rc::new(amended_instr));
+            }
+        }
+    }
+
+    // Not a proper list so not the kind of thing we're looking for.
+    compile_helperform(opts, parsed)
+}
+
+
 pub fn reparse_subset(
     prims: &[Vec<u8>],
     opts: Rc<dyn CompilerOpts>,
@@ -161,11 +201,9 @@ pub fn reparse_subset(
             if let SExp::Atom(l, m) = prefix_parse[0].borrow() {
                 have_mod = m == b"mod";
 
-                if !have_mod {
-                    if let Some(_) = prims.iter().position(|prim| prim == m) {
-                        result.ignored = true;
-                        return result;
-                    }
+                if !have_mod && prims.iter().any(|prim| prim == m) {
+                    result.ignored = true;
+                    return result;
                 }
 
                 form_error_start = 2;
@@ -307,13 +345,8 @@ pub fn reparse_subset(
                     let parsed_result_to_record =
                         match compiled_result {
                             Ok(Some(parsed)) => {
-                                let typedefs: Vec<&HelperForm> = parsed.new_helpers.iter().filter(|h| {
-                                    matches!(h, HelperForm::Deftype(_))
-                                }).collect();
-
-                                let other_helpers: Vec<HelperForm> = parsed.new_helpers.iter().filter(|h| {
-                                    !matches!(h, HelperForm::Deftype(_))
-                                }).cloned().collect();
+                                let typedefs: Vec<&HelperForm> = vec![];
+                                let other_helpers: &[HelperForm] = &parsed.new_helpers;
 
                                 let use_helper =
                                     if !typedefs.is_empty() {
@@ -355,7 +388,15 @@ pub fn reparse_subset(
                         ReparsedHelper {
                             hash,
                             range: r.clone(),
-                            parsed: parsed_result_to_record,
+                            parsed: compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
+                                |mh| {
+                                    if let Some(h) = mh {
+                                        Ok(h)
+                                    } else {
+                                        Err(CompileErr(loc, "must be a helper form".to_string()))
+                                    }
+                                },
+                            ),
                         },
                     );
                 }
@@ -394,7 +435,7 @@ pub fn check_live_helper_calls(
     exp: &BodyForm,
 ) -> Option<CompileErr> {
     match exp {
-        BodyForm::Call(l, v) => {
+        BodyForm::Call(l, v, rest_args) => {
             if v.is_empty() {
                 return Some(CompileErr(l.clone(), "Empty function call".to_string()));
             }
@@ -419,10 +460,21 @@ pub fn check_live_helper_calls(
                     return Some(e);
                 }
             }
+
+            if let Some(tail) = rest_args {
+                if let Some(e) = check_live_helper_calls(prims, scopes, tail) {
+                    return Some(e);
+                }
+            }
         }
         BodyForm::Let(_kind, letdata) => {
             return check_live_helper_calls(prims, scopes, letdata.body.borrow());
         }
+
+        BodyForm::Lambda(ldata) => {
+            return check_live_helper_calls(prims, scopes, ldata.body.borrow());
+        }
+
         _ => {}
     }
 
@@ -469,7 +521,7 @@ fn determine_same_path(uristring: &str, query_file: &str) -> bool {
     }
 
     // Same, this should do.
-    return true;
+    true
 }
 
 pub fn combine_new_with_old_parse(
@@ -496,7 +548,7 @@ pub fn combine_new_with_old_parse(
 
     // Collect to-delete set.
     for (h, _) in new_helpers.iter() {
-        if !reparse.unparsed.contains_key(&h) && !reparse.helpers.contains_key(h) {
+        if !reparse.unparsed.contains_key(h) && !reparse.helpers.contains_key(h) {
             if let Some(name) = parsed.hash_to_name.get(h) {
                 remove_names.insert(name.clone());
             }
