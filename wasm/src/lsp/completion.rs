@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::rc::Rc;
 
 use lsp_server::{Message, RequestId, Response};
@@ -42,7 +43,7 @@ fn complete_variable_name(
             .variables
             .iter()
             .filter_map(|sym| {
-                if let SExp::Atom(l, n) = sym {
+                if let SExp::Atom(l, n) = sym.borrow() {
                     Some((l, n))
                 } else {
                     None
@@ -84,7 +85,7 @@ fn complete_variable_name(
         is_incomplete: false,
         items: result_items,
     });
-    let result = serde_json::to_value(&result).unwrap();
+    let result = serde_json::to_value(result).unwrap();
     let resp = Response {
         id,
         result: Some(result),
@@ -109,7 +110,7 @@ fn complete_function_name(
         .functions
         .iter()
         .filter_map(|sexp| {
-            if let SExp::Atom(_, name) = sexp {
+            if let SExp::Atom(_, name) = sexp.borrow() {
                 Some(name.clone())
             } else {
                 None
@@ -131,7 +132,7 @@ fn complete_function_name(
         is_incomplete: false,
         items: result_items,
     });
-    let result = serde_json::to_value(&result).unwrap();
+    let result = serde_json::to_value(result).unwrap();
     let resp = Response {
         id,
         result: Some(result),

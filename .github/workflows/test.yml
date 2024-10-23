@@ -26,11 +26,9 @@ jobs:
         with:
           node-version: 16
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
             target: wasm32-unknown-unknown
-            override: true
             components: rustfmt
       - name: Install wasm-pack
         run: |
@@ -52,6 +50,8 @@ jobs:
           npm run test
 
       - name: Run headless test
+        env:
+          DETECT_CHROMEDRIVER_VERSION: "true"
         run: |
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
