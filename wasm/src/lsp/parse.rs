@@ -7,7 +7,7 @@ use lsp_types::Position;
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, FrontendOutput, HelperForm, LetData, LetFormKind,
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
@@ -62,7 +62,6 @@ impl ParsedDoc {
                 args: Rc::new(nil.clone()),
                 helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
-                ty: None,
             },
             scopes: ParseScope {
                 region: startloc,
@@ -123,6 +122,12 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
 
     for h in fe.helpers.iter() {
         match h {
+            HelperForm::Defnamespace(_) => {
+                // XXX
+            }
+            HelperForm::Defnsref(_) => {
+                // XXX
+            }
             HelperForm::Defun(_, d) => {
                 toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
@@ -589,7 +594,7 @@ fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
 }
 
 #[cfg(test)]
-fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> CompileForm {
+fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> FrontendOutput {
     let sl = Srcloc::start(file);
     let parsed = parse_sexp(sl, DocVecByteIter::new(prog)).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new(file));
@@ -597,15 +602,16 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
 }
 
 #[cfg(test)]
-fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, ParseScope) {
+fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (FrontendOutput, ParseScope) {
     let compiled = get_test_program_for_scope_tests(file, prog);
     (
         compiled.clone(),
         ParseScope {
-            region: compiled.loc.clone(),
+            region: compiled.compileform().loc.clone(),
             kind: ScopeKind::Module,
             variables: Default::default(),
             functions: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| {
@@ -619,6 +625,7 @@ fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, Pa
                 })
                 .collect(),
             containing: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| make_helper_scope(&h))
@@ -643,11 +650,11 @@ fn make_scope_stack_simple() {
     assert_eq!(program_scope.containing.len(), 2);
     assert!(program_scope
         .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test1")));
+        .contains(&SExp::atom_from_string(compiled.compileform().loc.clone(), "test1")));
     assert!(program_scope
         .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test2")));
-    let filename_rc = compiled.loc.file.clone();
+        .contains(&SExp::atom_from_string(compiled.compileform().loc.clone(), "test2")));
+    let filename_rc = compiled.compileform().loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,
         Srcloc::new(filename_rc.clone(), 2, 3).ext(&Srcloc::new(filename_rc.clone(), 2, 25))

@@ -35,7 +35,7 @@ use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
+use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, FrontendOutput};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
@@ -124,7 +124,7 @@ pub struct RunningDebugger {
     stopped_reason: Option<StoppedReason>,
 
     source_file: String,
-    compiled: Option<CompileForm>,
+    compiled: Option<FrontendOutput>,
 
     running: bool,
     run: HierarchialRunner,
@@ -184,7 +184,7 @@ fn test_resolve_function_1() {
 /// This can certainly be improved.
 fn find_location(
     symbols: Rc<HashMap<String, String>>,
-    compiled: &Option<CompileForm>,
+    compiled: &Option<FrontendOutput>,
     log: Rc<dyn ILogWriter>,
     file: &str,
     b: &SourceBreakpoint,
@@ -233,7 +233,7 @@ fn find_location(
 
     let whole_line_loc = whole_line.to_srcloc(file);
     compiled.as_ref().and_then(|c| {
-        for h in c.helpers.iter() {
+        for h in c.compileform().helpers.iter() {
             let original_loc = h.loc();
             let original_loc_file: &String = original_loc.file.borrow();
             if !fuzzy_file_match(original_loc_file, file) {
@@ -715,7 +715,7 @@ struct RunStartData {
     arguments: Rc<SExp>,
     symbols: HashMap<String, String>,
     // is_hex: bool, // Future: if tools need to know this. (clippy)
-    compiled: Option<CompileForm>,
+    compiled: Option<FrontendOutput>,
 }
 
 #[derive(Clone, Debug)]
@@ -821,7 +821,7 @@ impl Debugger {
     fn get_source_loc(&self, running: &RunningDebugger, name: &str) -> Option<Srcloc> {
         let get_helper_loc = |name: &str| {
             if let Some(compiled) = running.compiled.as_ref() {
-                for h in compiled.helpers.iter() {
+                for h in compiled.compileform().helpers.iter() {
                     if decode_string(h.name()) == name {
                         return Some(h.loc());
                     }
@@ -931,11 +931,14 @@ impl Debugger {
         };
 
         if is_mod(parsed_program.clone()) {
+            let mut includes = Vec::new();
+
             // Compile program.
             let clvm_res = compile_clvm_text(
                 allocator,
                 opts.clone(),
                 &mut use_symbol_table,
+                &mut includes,
                 &decode_string(read_in_file),
                 name,
                 true,

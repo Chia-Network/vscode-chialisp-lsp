@@ -459,6 +459,10 @@ pub fn build_semantic_tokens(
 
     for form in parsed.compiled.helpers.iter() {
         match form {
+            HelperForm::Defnamespace(_) => {
+            }
+            HelperForm::Defnsref(_) => {
+            }
             HelperForm::Defconstant(defc) => {
                 if let Some(kw) = &defc.kw {
                     collected_tokens.push(SemanticTokenSortable {

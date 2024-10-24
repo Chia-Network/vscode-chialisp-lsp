@@ -11,7 +11,7 @@ use clvm_tools_rs::compiler::clvm::{sha256tree_from_atom, sha256tree};
 use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
 };
-use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
+use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult};
 use clvm_tools_rs::compiler::prims::primquote;
 use clvm_tools_rs::compiler::sexp::{enlist, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -102,7 +102,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
 fn compile_helperform_with_loose_defconstant(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>
-) -> Result<Option<HelperForm>, CompileErr> {
+) -> Result<Option<HelperFormResult>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -357,7 +357,7 @@ pub fn reparse_subset(
                                                 ReparsedHelper {
                                                     hash: new_hash,
                                                     range: r.clone(),
-                                                    parsed: Ok(h),
+                                                    parsed: Ok(h.clone()),
                                                 },
                                             );
                                         }
@@ -372,33 +372,46 @@ pub fn reparse_subset(
                                     if let Some(h) = use_helper {
                                         Ok(h)
                                     } else {
-                                        Err(CompileErr(loc, "helper form was parsed but it wasn't understood by the LSP".to_string()))
+                                        Err(CompileErr(loc.clone(), "helper form was parsed but it wasn't understood by the LSP".to_string()))
                                     };
 
                                 new_parsed.cloned()
                             }
                             Ok(None) => {
-                                Err(CompileErr(loc, "must be a helper form".to_string()))
+                                Err(CompileErr(loc.clone(), "must be a helper form".to_string()))
                             }
                             Err(e) => Err(e)
                         };
 
-                    result.helpers.insert(
-                        hash.clone(),
-                        ReparsedHelper {
-                            hash,
-                            range: r.clone(),
-                            parsed: compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
-                                |mh| {
-                                    if let Some(h) = mh {
-                                        Ok(h)
-                                    } else {
-                                        Err(CompileErr(loc, "must be a helper form".to_string()))
-                                    }
-                                },
-                            ),
+                    let dc_result = compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
+                        |mh| {
+                            if let Some(h) = mh {
+                                Ok(h)
+                            } else {
+                                Err(CompileErr(loc, "must be a helper form".to_string()))
+                            }
                         },
                     );
+                    match dc_result {
+                        Ok(res) => {
+                            if let Some(h) = res.new_helpers.iter().next() {
+                                result.helpers.insert(
+                                    hash.clone(),
+                                    ReparsedHelper {
+                                        hash,
+                                        range: r.clone(),
+                                        parsed: Ok(h.clone()),
+                                    });
+                            }
+                        }
+                        Err(e) => {
+                            result.helpers.insert(hash.clone(), ReparsedHelper {
+                                hash,
+                                range: r.clone(),
+                                parsed: Err(e)
+                            });
+                        }
+                    }
                 }
                 Err((l, s)) => {
                     result.helpers.insert(
