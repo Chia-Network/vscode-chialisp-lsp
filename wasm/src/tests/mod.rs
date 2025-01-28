@@ -554,7 +554,7 @@ fn test_patch_document_3() {
 #[test]
 fn test_simple_ranges() {
     let content = "(mod ()\n  (defun F (X)\n    ()\n    )\n  (F 3)\n  )".to_string();
-    let simple_ranges = make_simple_ranges(&split_text(&content));
+    let simple_ranges = make_simple_ranges(&split_text(&content), 1);
     assert_eq!(
         simple_ranges,
         vec![
@@ -703,15 +703,22 @@ fn run_reparse_steps(
 
     for content in text_inputs.iter() {
         let text = split_text(&content);
-        let ranges = make_simple_ranges(&text);
+        let ranges0 = make_simple_ranges(&text, 0);
+        let (enclosed, ranges) =
+            if ranges0.len() > 1 {
+                (false, ranges0)
+            } else {
+                (true, make_simple_ranges(&text, 1))
+            };
         let reparsed = reparse_subset(
             &prims,
             opts.clone(),
             &text,
             &file,
             &ranges,
-            &doc.compiled,
+            &doc.compiled.compileform(),
             &HashMap::new(),
+            enclosed,
         );
         doc = combine_new_with_old_parse(&file, &text, &doc, &reparsed);
     }
@@ -732,7 +739,7 @@ fn test_reparse_subset_1() {
     );
     assert_eq!(
         "(X (defun F (X) (+ X 1)) (F X))",
-        chop_scopes(&combined.compiled.to_sexp().to_string())
+        chop_scopes(&combined.compiled.compileform().to_sexp().to_string())
     );
 }
 
@@ -749,7 +756,7 @@ fn test_reparse_subset_2() {
     );
     assert_eq!(
         "(X (defun F (X) (+ X 1)) X)",
-        chop_scopes(&combined.compiled.to_sexp().to_string())
+        chop_scopes(&combined.compiled.compileform().to_sexp().to_string())
     );
 }
 
@@ -769,7 +776,7 @@ fn test_reparse_subset_3() {
     );
     assert_eq!(
         "(X (defun G (X) (+ X 1)) X)",
-        chop_scopes(&combined2.compiled.to_sexp().to_string())
+        chop_scopes(&combined2.compiled.compileform().to_sexp().to_string())
     );
 }
 
@@ -786,7 +793,7 @@ fn test_reparse_subset_4() {
     );
     assert_eq!(
         "(X (defun F (X) (+ X 1)) X)",
-        chop_scopes(&combined.compiled.to_sexp().to_string())
+        chop_scopes(&combined.compiled.compileform().to_sexp().to_string())
     );
 }
 
@@ -1934,5 +1941,42 @@ fn test_first_line_comment() {
                 token_modifiers_bitset: 0,
             },
         ]
+    );
+}
+
+#[test]
+fn test_simple_module_style() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    lsp.set_workspace_root(PathBuf::from(r"."));
+    lsp.set_config(ConfigJson {
+        include_paths: vec!["./resources/tests".to_string()],
+    });
+    let file = "file://./test.cl".to_string();
+    let open_msg = make_did_open_message(
+        &file,
+        1,
+        indoc! {"
+(import std.print exposing print)
+
+(defun F (X) (+ X 1))
+(export (X Y) (+ (F X) (F Y)))
+"}
+        .to_string(),
+    );
+    let sem_tok = make_get_semantic_tokens_msg(&file, 2);
+    lsp.handle_message(&open_msg)
+        .expect("should be ok to take open msg");
+    let r2 = lsp
+        .handle_message(&sem_tok)
+        .expect("should be ok to send sem tok");
+    eprintln!("msg {}", get_msg_params(&r2[0]));
+    let decoded_tokens: SemanticTokens = serde_json::from_str(&get_msg_params(&r2[0])).unwrap();
+    assert_eq!(
+        decoded_tokens.data,
+        vec![]
     );
 }

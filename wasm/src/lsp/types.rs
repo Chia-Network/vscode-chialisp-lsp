@@ -29,7 +29,7 @@ use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
@@ -731,26 +731,42 @@ impl LSPServiceProvider {
 
         if let Some(doc) = self.get_doc(uristring) {
             let startloc = Srcloc::start(uristring);
-            let output = self
+            let mut output = self
                 .parsed_documents
                 .get(uristring)
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
-            let ranges = make_simple_ranges(&doc.text);
+            let ranges0 = make_simple_ranges(&doc.text, 0);
+            let (enclosed, ranges) =
+                if ranges0.len() > 1 {
+                    (false, ranges0)
+                } else {
+                    (true, make_simple_ranges(&doc.text, 1))
+                };
+            eprintln!("enclosed {enclosed} ranges {ranges:?}");
+            eprintln!("current doc {:?}", output.compiled);
+            if !enclosed && matches!(output.compiled, FrontendOutput::CompileForm(_)) {
+                output.compiled = FrontendOutput::Module(output.compiled.compileform().clone(), Vec::new());
+            } else if enclosed && matches!(output.compiled, FrontendOutput::Module(_, _)) {
+                output.compiled = FrontendOutput::CompileForm(output.compiled.compileform().clone());
+            }
             let mut new_helpers = reparse_subset(
                 &self.prims,
                 opts,
                 &doc.text,
                 uristring,
                 &ranges,
-                &output.compiled,
+                &output.compiled.compileform(),
                 &output.helpers,
+                enclosed,
             );
 
             for (_, incfile) in new_helpers.includes.iter() {
                 if incfile.kind != IncludeKind::Include
                     || incfile.filename == b"*standard-cl-21*"
                     || incfile.filename == b"*standard-cl-22*"
+                    || incfile.filename.starts_with(b"*standard-cl-23")
+                    || incfile.filename.starts_with(b"*standard-cl-24")
                 {
                     continue;
                 }
@@ -783,6 +799,7 @@ impl LSPServiceProvider {
             }
 
             let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+
             self.set_error_list(
                 uristring,
                 false,
@@ -1138,4 +1155,10 @@ pub struct ReparsedHelper {
 pub struct ReparsedExp {
     pub hash: Hash,
     pub parsed: Result<BodyForm, CompileErr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReparsedExport {
+    pub hash: Hash,
+    pub parsed: Result<Export, CompileErr>,
 }

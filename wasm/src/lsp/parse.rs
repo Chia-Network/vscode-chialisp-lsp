@@ -7,11 +7,11 @@ use lsp_types::Position;
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, FrontendOutput, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm, LetData, LetFormKind,
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::sexp::SExp;
+use clvm_tools_rs::compiler::sexp::{SExp, ToSExp};
 #[cfg(test)]
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -31,7 +31,7 @@ pub struct ParsedDoc {
     // If we were able to run a frontend pass (even partially), compiled contains
     // it.  CompileForm is the result of frontend and is used for analyzing
     // chialisp in many different tools deriving from clvm_tools_rs.
-    pub compiled: CompileForm,
+    pub compiled: FrontendOutput,
     // The scope stack for this file.
     pub scopes: ParseScope,
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
@@ -56,13 +56,13 @@ impl ParsedDoc {
             // CompileForm doesn't have a Default impl, but we start from the
             // assumption of an empty program here so we can build it up
             // incrementally.
-            compiled: CompileForm {
+            compiled: FrontendOutput::CompileForm(CompileForm {
                 loc: startloc.clone(),
                 include_forms: Default::default(),
                 args: Rc::new(nil.clone()),
                 helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
-            },
+            }),
             scopes: ParseScope {
                 region: startloc,
                 kind: ScopeKind::Module,
@@ -113,37 +113,65 @@ impl<'a> DocVecByteIter<'a> {
     }
 }
 
-pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> ParseScope {
-    let mut toplevel_args = HashSet::new();
-    let mut toplevel_funs = HashSet::new();
-    let mut contained = Vec::new();
+struct RecoverScopesState {
+    toplevel_args: HashSet<Rc<SExp>>,
+    toplevel_funs: HashSet<Rc<SExp>>,
+    contained: Vec<ParseScope>,
+}
 
-    make_arg_set(&mut toplevel_args, fe.args.clone());
+impl RecoverScopesState {
+    fn handle_compile_form(&mut self, ourfile: &str, fe: &CompileForm) {
+        make_arg_set(&mut self.toplevel_args, fe.args.clone());
 
-    for h in fe.helpers.iter() {
-        match h {
-            HelperForm::Defnamespace(_) => {
-                // XXX
+        for h in fe.helpers.iter() {
+            match h {
+                HelperForm::Defnamespace(_) => {
+                    // XXX
+                }
+                HelperForm::Defnsref(_) => {
+                    // XXX
+                }
+                HelperForm::Defun(_, d) => {
+                    self.toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
+                }
+                HelperForm::Defmacro(m) => {
+                    self.toplevel_funs.insert(Rc::new(SExp::Atom(m.loc.clone(), m.name.clone())));
+                }
+                HelperForm::Defconstant(c) => {
+                    self.toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
+                }
             }
-            HelperForm::Defnsref(_) => {
-                // XXX
-            }
-            HelperForm::Defun(_, d) => {
-                toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
-            }
-            HelperForm::Defmacro(m) => {
-                toplevel_funs.insert(Rc::new(SExp::Atom(m.loc.clone(), m.name.clone())));
-            }
-            HelperForm::Defconstant(c) => {
-                toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
+
+            let f = h.loc().file.clone();
+            let filename: &String = f.borrow();
+            if filename == ourfile {
+                if let Some(scope) = make_helper_scope(h) {
+                    self.contained.push(scope);
+                }
             }
         }
+    }
 
-        let f = h.loc().file.clone();
-        let filename: &String = f.borrow();
-        if filename == ourfile {
-            if let Some(scope) = make_helper_scope(h) {
-                contained.push(scope);
+    fn handle_export(&mut self, ex: &Export) {
+        todo!();
+    }
+}
+
+pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fo: &FrontendOutput) -> ParseScope {
+    let mut scopes = RecoverScopesState {
+        toplevel_args: HashSet::new(),
+        toplevel_funs: HashSet::new(),
+        contained: Vec::new()
+    };
+
+    match fo {
+        FrontendOutput::CompileForm(cf) => {
+            scopes.handle_compile_form(ourfile, cf);
+        }
+        FrontendOutput::Module(cf, exports) => {
+            scopes.handle_compile_form(ourfile, cf);
+            for ex in exports.iter() {
+                scopes.handle_export(ex);
             }
         }
     }
@@ -155,9 +183,9 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             text.len() + 1,
             0,
         )),
-        variables: toplevel_args,
-        functions: toplevel_funs,
-        containing: contained,
+        variables: scopes.toplevel_args,
+        functions: scopes.toplevel_funs,
+        containing: scopes.contained,
     }
 }
 
@@ -857,8 +885,10 @@ fn test_make_arg_set() {
 // Given a document, give the ranges of the second parenthesis level.
 // Source files in chialisp are for legacy reasons all expected to contain only
 // one toplevel element, so the areas of interest that may move or change are at
-// the second level.
-pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
+// the second level...
+//
+// until module style, which is more typical.
+pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>], want_level: usize) -> Vec<DocRange> {
     let mut ranges = Vec::new();
     let mut in_comment = false;
     let mut start = None;
@@ -876,7 +906,7 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
             in_comment = false;
         } else if i == b'(' {
             if !in_comment {
-                if level == 1 && start.is_none() {
+                if level == want_level && start.is_none() {
                     start = Some(DocPosition { line, character });
                 }
                 level += 1;
@@ -888,7 +918,7 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
             if !in_comment && level > 0 {
                 level -= 1;
 
-                if level == 1 {
+                if level == want_level {
                     if let Some(s) = start.clone() {
                         ranges.push(DocRange {
                             start: s,
@@ -922,7 +952,7 @@ fn test_make_simple_ranges_1() {
         vec_ref(")"),
     ];
     assert_eq!(
-        make_simple_ranges(test_data),
+        make_simple_ranges(test_data, 1),
         vec![
             DocRange {
                 start: DocPosition {

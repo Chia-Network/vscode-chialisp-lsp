@@ -18,7 +18,7 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use clvm_tools_rs::compiler::clvm::sha256tree;
-use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, HelperForm, LetFormKind};
+use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, FrontendOutput};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -91,11 +91,12 @@ fn collect_arg_tokens(
 
 fn find_call_token(
     prims: &[Vec<u8>],
-    frontend: &CompileForm,
+    frontend: &FrontendOutput,
     l: &Srcloc,
     name: &Vec<u8>,
 ) -> Option<(SemanticTokenSortable, Srcloc)> {
-    for f in frontend.helpers.iter() {
+    let cf = frontend.compileform();
+    for f in cf.helpers.iter() {
         match f {
             HelperForm::Defun(_inline, defun) => {
                 if &defun.name == name {
@@ -151,7 +152,7 @@ fn process_body_code(
     gotodef: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
     argcollection: &HashMap<Vec<u8>, Srcloc>,
     varcollection: &HashMap<Vec<u8>, Srcloc>,
-    frontend: &CompileForm,
+    frontend: &FrontendOutput,
     body: Rc<BodyForm>,
 ) {
     match body.borrow() {
@@ -376,11 +377,12 @@ fn process_body_code(
                 );
             }
 
-            let scopes = recover_scopes(env.uristring, env.lines, m);
+            let mod_cf = FrontendOutput::CompileForm(m.clone());
+            let scopes = recover_scopes(env.uristring, env.lines, &mod_cf);
             let synthesized_doc = ParsedDoc {
                 ignored: false,
                 mod_kw: Some(l.clone()),
-                compiled: m.clone(),
+                compiled: mod_cf,
                 scopes,
                 helpers,
                 exp: Some(reparsed_exp),
@@ -412,7 +414,16 @@ pub fn build_semantic_tokens(
     parsed: &ParsedDoc,
 ) -> Vec<SemanticTokenSortable> {
     let mut collected_tokens = Vec::new();
-    let mut varcollection = HashMap::from([(b"@".to_vec(), parsed.compiled.exp.loc())]);
+    let mut varcollection =
+        match &parsed.compiled {
+            FrontendOutput::CompileForm(cf) => {
+                HashMap::from([(b"@".to_vec(), cf.exp.loc())])
+            }
+            FrontendOutput::Module(cf, exports) => {
+                // Handle exports.
+                HashMap::from([(b"@".to_vec(), cf.exp.loc())])
+            }
+        };
     let mut argcollection = HashMap::new();
     if let Some(modloc) = &parsed.mod_kw {
         collected_tokens.push(SemanticTokenSortable {
@@ -457,108 +468,146 @@ pub fn build_semantic_tokens(
         }
     }
 
-    for form in parsed.compiled.helpers.iter() {
-        match form {
-            HelperForm::Defnamespace(_) => {
-            }
-            HelperForm::Defnsref(_) => {
-            }
-            HelperForm::Defconstant(defc) => {
-                if let Some(kw) = &defc.kw {
+    let mut handle_cf_helpers = |cf: &CompileForm| {
+        for form in cf.helpers.iter() {
+            match form {
+                HelperForm::Defnamespace(_) => {
+                }
+                HelperForm::Defnsref(nsref) => {
                     collected_tokens.push(SemanticTokenSortable {
-                        loc: kw.clone(),
+                        loc: nsref.kw.clone(),
                         token_type: TK_KEYWORD_IDX,
                         token_mod: 0,
                     });
                 }
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: defc.nl.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: (1 << TK_READONLY_BIT) | (1 << TK_DEFINITION_BIT),
-                });
-                varcollection.insert(defc.name.clone(), defc.nl.clone());
-                process_body_code(
-                    env,
-                    &mut collected_tokens,
-                    goto_def,
-                    &HashMap::new(),
-                    &varcollection,
-                    &parsed.compiled,
-                    defc.body.clone(),
-                );
-            }
-            HelperForm::Defun(_, defun) => {
-                let mut argcollection = HashMap::new();
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: defun.nl.clone(),
-                    token_type: TK_FUNCTION_IDX,
-                    token_mod: 1 << TK_DEFINITION_BIT,
-                });
-                if let Some(kw) = &defun.kw {
+                HelperForm::Defconstant(defc) => {
+                    if let Some(kw) = &defc.kw {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kw.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
                     collected_tokens.push(SemanticTokenSortable {
-                        loc: kw.clone(),
-                        token_type: TK_KEYWORD_IDX,
-                        token_mod: 0,
+                        loc: defc.nl.clone(),
+                        token_type: TK_VARIABLE_IDX,
+                        token_mod: (1 << TK_READONLY_BIT) | (1 << TK_DEFINITION_BIT),
                     });
+                    varcollection.insert(defc.name.clone(), defc.nl.clone());
+                    process_body_code(
+                        env,
+                        &mut collected_tokens,
+                        goto_def,
+                        &HashMap::new(),
+                        &varcollection,
+                        &parsed.compiled,
+                        defc.body.clone(),
+                    );
                 }
-                collect_arg_tokens(
-                    &mut collected_tokens,
-                    &mut argcollection,
-                    defun.args.clone(),
-                );
-                process_body_code(
-                    env,
-                    &mut collected_tokens,
-                    goto_def,
-                    &argcollection,
-                    &varcollection,
-                    &parsed.compiled,
-                    defun.body.clone(),
-                );
-            }
-            HelperForm::Defmacro(mac) => {
-                let mut argcollection = HashMap::new();
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: mac.nl.clone(),
-                    token_type: TK_FUNCTION_IDX,
-                    token_mod: 1 << TK_DEFINITION_BIT,
-                });
-                if let Some(kwl) = &mac.kw {
+                HelperForm::Defun(_, defun) => {
+                    let mut argcollection = HashMap::new();
                     collected_tokens.push(SemanticTokenSortable {
-                        loc: kwl.clone(),
-                        token_type: TK_KEYWORD_IDX,
-                        token_mod: 0,
+                        loc: defun.nl.clone(),
+                        token_type: TK_FUNCTION_IDX,
+                        token_mod: 1 << TK_DEFINITION_BIT,
                     });
+                    if let Some(kw) = &defun.kw {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kw.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
+                    collect_arg_tokens(
+                        &mut collected_tokens,
+                        &mut argcollection,
+                        defun.args.clone(),
+                    );
+                    process_body_code(
+                        env,
+                        &mut collected_tokens,
+                        goto_def,
+                        &argcollection,
+                        &varcollection,
+                        &parsed.compiled,
+                        defun.body.clone(),
+                    );
                 }
-                collect_arg_tokens(&mut collected_tokens, &mut argcollection, mac.args.clone());
-                process_body_code(
-                    env,
-                    &mut collected_tokens,
-                    goto_def,
-                    &argcollection,
-                    &varcollection,
-                    &parsed.compiled,
-                    mac.program.exp.clone(),
-                );
+                HelperForm::Defmacro(mac) => {
+                    let mut argcollection = HashMap::new();
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: mac.nl.clone(),
+                        token_type: TK_FUNCTION_IDX,
+                        token_mod: 1 << TK_DEFINITION_BIT,
+                    });
+                    if let Some(kwl) = &mac.kw {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kwl.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
+                    collect_arg_tokens(&mut collected_tokens, &mut argcollection, mac.args.clone());
+                    process_body_code(
+                        env,
+                        &mut collected_tokens,
+                        goto_def,
+                        &argcollection,
+                        &varcollection,
+                        &parsed.compiled,
+                        mac.program.exp.clone(),
+                    );
+                }
+            }
+        }
+
+        collect_arg_tokens(
+            &mut collected_tokens,
+            &mut argcollection,
+            cf.args.clone(),
+        );
+
+        process_body_code(
+            env,
+            &mut collected_tokens,
+            goto_def,
+            &argcollection,
+            &varcollection,
+            &parsed.compiled,
+            cf.exp.clone(),
+        );
+    };
+
+    match &parsed.compiled {
+        FrontendOutput::CompileForm(cf) => handle_cf_helpers(cf),
+        FrontendOutput::Module(cf, exports) => {
+            handle_cf_helpers(cf);
+            // Handle exports
+            for ex in exports.iter() {
+                match ex {
+                    Export::MainProgram(args, body) => {
+                        collect_arg_tokens(
+                            &mut collected_tokens,
+                            &mut argcollection,
+                            args.clone(),
+                        );
+                        process_body_code(
+                            env,
+                            &mut collected_tokens,
+                            goto_def,
+                            &argcollection,
+                            &varcollection,
+                            &parsed.compiled,
+                            body.clone(),
+                        );
+                    }
+                    Export::Function(name, alias) => {
+                        todo!();
+                    }
+            }
             }
         }
     }
-
-    collect_arg_tokens(
-        &mut collected_tokens,
-        &mut argcollection,
-        parsed.compiled.args.clone(),
-    );
-
-    process_body_code(
-        env,
-        &mut collected_tokens,
-        goto_def,
-        &argcollection,
-        &varcollection,
-        &parsed.compiled,
-        parsed.compiled.exp.clone(),
-    );
 
     for (l, c) in comments.iter() {
         collected_tokens.push(SemanticTokenSortable {
