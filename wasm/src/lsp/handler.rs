@@ -13,6 +13,7 @@ use lsp_types::{
 use lsp_server::{ErrorCode, Message, RequestId, Response};
 
 use crate::lsp::completion::LSPCompletionRequestHandler;
+use crate::lsp::parse::get_positional_text;
 use crate::lsp::patch::{compute_comment_lines, split_text, LSPServiceProviderApplyDocumentPatch};
 use crate::lsp::semtok::LSPSemtokRequestHandler;
 use crate::lsp::types::{
@@ -32,7 +33,17 @@ fn is_real_include(l: &Srcloc) -> bool {
 }
 
 impl LSPServiceProvider {
-    fn goto_definition(
+    // Adding support for imported modules:
+    //
+    // start with no match to checked name
+    //
+    // for each unread module referenced by an import, read and cache a list of defined names
+    // (can be a quick operation) by module name.
+    //
+    // If the import defines the name, add that fact to the cache.
+    //
+    // If we find a helper defining a specific name, we can also stop.
+    pub fn goto_definition(
         &mut self,
         id: RequestId,
         params: &GotoDefinitionParams,
@@ -71,6 +82,31 @@ impl LSPServiceProvider {
                 }
             }
         }
+        if goto_response.is_none() {
+            if let (Some(doc), Some(parsed)) = (self.get_doc(&docname), self.get_parsed(&docname)) {
+                let on_previous_character = if params.text_document_position_params.position.character > 0 {
+                    Position {
+                        line: params.text_document_position_params.position.line,
+                        character: params.text_document_position_params.position.character - 1,
+                    }
+                } else {
+                    params.text_document_position_params.position
+                };
+                if let Some(cpl) = get_positional_text(&doc, &on_previous_character) {
+                    if let Some(result) = self.find_external_name(&parsed, &cpl) {
+                        let pos = Position {
+                            line: (result.loc.line - 1) as u32,
+                            character: (result.loc.col - 1) as u32,
+                        };
+                        goto_response = Some(Location {
+                            uri: Url::parse(&result.uri).unwrap(),
+                            range: Range { start: pos, end: pos }
+                        });
+                    }
+                }
+            }
+        }
+
         let result = goto_response.map(GotoDefinitionResponse::Scalar);
         let result = serde_json::to_value(result).unwrap();
         let resp = Response {
@@ -182,7 +218,7 @@ impl LSPServiceProvider {
         let mut result_messages = Vec::new();
 
         // Double check parsed state.
-        self.ensure_parsed_document(&uristring);
+        self.ensure_parsed_document(&uristring, None);
 
         if let Some(doc) = self.parsed_documents.get(&uristring) {
             for (_, inc) in doc.includes.iter() {

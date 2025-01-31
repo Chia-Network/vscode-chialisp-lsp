@@ -18,7 +18,7 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use clvm_tools_rs::compiler::clvm::sha256tree;
-use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, FrontendOutput};
+use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, FrontendOutput, ModuleImportListedName, ModuleImportSpec};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -385,6 +385,7 @@ fn process_body_code(
                 compiled: mod_cf,
                 scopes,
                 helpers,
+                exports: HashMap::new(),
                 exp: Some(reparsed_exp),
                 includes,
                 hash_to_name: HashMap::new(),
@@ -479,6 +480,53 @@ pub fn build_semantic_tokens(
                         token_type: TK_KEYWORD_IDX,
                         token_mod: 0,
                     });
+                    eprintln!("nsref nl {:?}", nsref.nl);
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: nsref.nl.clone(),
+                        token_type: TK_VARIABLE_IDX,
+                        token_mod: 0,
+                    });
+                    match &nsref.specification {
+                        ModuleImportSpec::Qualified(as_name) => {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: as_name.kw.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: as_name.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                            if let Some(target) = &as_name.target {
+                                collected_tokens.push(SemanticTokenSortable {
+                                    loc: target.kw.clone(),
+                                    token_type: TK_KEYWORD_IDX,
+                                    token_mod: 0,
+                                });
+                                collected_tokens.push(SemanticTokenSortable {
+                                    loc: target.nl.clone(),
+                                    token_type: TK_VARIABLE_IDX,
+                                    token_mod: 0,
+                                });
+                            }
+                        }
+                        ModuleImportSpec::Exposing(loc, names) => {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: loc.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                            for n in names.iter() {
+                                collected_tokens.push(SemanticTokenSortable {
+                                    loc: n.nl.clone(),
+                                    token_type: TK_VARIABLE_IDX,
+                                    token_mod: 0,
+                                });
+                            }
+                        }
+                        _ => { todo!(); }
+                    }
                 }
                 HelperForm::Defconstant(defc) => {
                     if let Some(kw) = &defc.kw {
@@ -585,11 +633,18 @@ pub fn build_semantic_tokens(
             // Handle exports
             for ex in exports.iter() {
                 match ex {
-                    Export::MainProgram(args, body) => {
+                    Export::MainProgram(desc) => {
+                        if let Some(kw) = &desc.kw_loc {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: kw.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                        }
                         collect_arg_tokens(
                             &mut collected_tokens,
                             &mut argcollection,
-                            args.clone(),
+                            desc.args.clone(),
                         );
                         process_body_code(
                             env,
@@ -598,13 +653,40 @@ pub fn build_semantic_tokens(
                             &argcollection,
                             &varcollection,
                             &parsed.compiled,
-                            body.clone(),
+                            desc.expr.clone(),
                         );
                     }
-                    Export::Function(name, alias) => {
-                        todo!();
+                    Export::Function(desc) => {
+                        if let Some(kw) = &desc.kw_loc {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: kw.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                        if let Some(as_loc) = &desc.as_loc {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: as_loc.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                        if let Some(name_loc) = &desc.name.loc {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: name_loc.clone(),
+                                token_type: TK_FUNCTION_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                        if let Some(name_loc) = desc.as_name.as_ref().and_then(|d| d.loc.as_ref()) {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: name_loc.clone(),
+                                token_type: TK_FUNCTION_IDX,
+                                token_mod: 0,
+                            });
+                        }
                     }
-            }
+                }
             }
         }
     }

@@ -13,7 +13,7 @@ use crate::lsp::{
 use lsp_server::{Message, Notification, Request, RequestId};
 use lsp_types::{
     CompletionItem, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams, PartialResultParams, Position, Range, SemanticToken, SemanticTokens,
+    DidOpenTextDocumentParams, GotoDefinitionResponse, GotoDefinitionParams, PartialResultParams, Position, Range, SemanticToken, SemanticTokens,
     SemanticTokensParams, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
     TextDocumentPositionParams, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
 };
@@ -23,7 +23,7 @@ use crate::interfaces::{EPrintWriter, FSFileReader};
 use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
-use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
+use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData, urlify};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::CompilerOpts;
 use clvm_tools_rs::compiler::prims;
@@ -1977,6 +1977,211 @@ fn test_simple_module_style() {
     let decoded_tokens: SemanticTokens = serde_json::from_str(&get_msg_params(&r2[0])).unwrap();
     assert_eq!(
         decoded_tokens.data,
-        vec![]
+        [
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 1,
+                length: 6,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 7,
+                length: 9,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 10,
+                length: 8,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 9,
+                length: 5,
+                token_type: TK_VARIABLE_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 2,
+                delta_start: 1,
+                length: 5,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 6,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 1
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 3,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 1
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 4,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_NUMBER_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 1,
+                length: 6,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 8,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 1
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 1
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 4,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 3,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 4,
+                length: 1,
+                token_type: TK_FUNCTION_IDX,
+                token_modifiers_bitset: 0
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 0
+            }
+        ]
     );
+}
+
+#[test]
+fn test_reparse_module_style() {
+    let file = "file:///test.cl".to_string();
+    let loc = Srcloc::start(&file);
+    let opts = Rc::new(DefaultCompilerOpts::new(&file));
+    let combined2 = run_reparse_steps(
+        loc,
+        opts,
+        &file,
+        &[
+            "(defun F (X) (+ X 1)) (export F)".to_string(),
+            "(defun G (X) (+ X 1)) (export G)".to_string(),
+        ],
+    );
+    assert_eq!(
+        "(() (defun G (X) (+ X 1)) (q))",
+        chop_scopes(&combined2.compiled.compileform().to_sexp().to_string())
+    );
+}
+
+#[test]
+fn test_goto_definition_in_another_module() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    lsp.set_workspace_root(PathBuf::from(r"."));
+    lsp.set_config(ConfigJson {
+        include_paths: vec!["./resources/tests".to_string()],
+    });
+    let file = "file://./test-module1.clsp".to_string();
+    let file_data = fs::read_to_string("resources/tests/test-module1.clsp").expect("good");
+    let open_msg = make_did_open_message(
+        &file,
+        1,
+        file_data
+    );
+    let complete_msg = make_completion_request_msg(
+        &file,
+        2,
+        Position {
+            line: 2,
+            character: 16,
+        },
+    );
+    let out_msgs = run_lsp(&mut lsp, &vec![open_msg, complete_msg]).unwrap();
+    let completion_response = find_completion_response(&out_msgs).unwrap();
+    assert_eq!(completion_response.label, "append");
+    let def_msgs = lsp.goto_definition(0.into(), &GotoDefinitionParams {
+        partial_result_params: PartialResultParams {
+            partial_result_token: None,
+        },
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::parse("file://./test-module1.clsp").unwrap(),
+            },
+            position: Position {
+                line: 2,
+                character: 25
+            }
+        },
+        work_done_progress_params: WorkDoneProgressParams {
+            work_done_token: None
+        },
+    }).expect("should be able to goto definition");
+    eprintln!("def_msgs {def_msgs:?}");
+    assert_eq!(def_msgs.len(), 1);
+    let def_msg_result: GotoDefinitionResponse =
+        serde_json::from_str(&get_msg_params(&def_msgs[0])).unwrap();
+    if let GotoDefinitionResponse::Scalar(location) = def_msg_result {
+        assert_eq!(location.uri.to_string(), "file://./resources/tests/std/append.clinc");
+        assert_eq!(location.range.start.line, 1);
+    } else {
+        assert!(false);
+    }
 }

@@ -330,26 +330,31 @@ pub fn reparse_subset(
             );
             match parse_sexp(loc.clone(), text.iter().copied()) {
                 Ok(parsed) => {
-                    if i < start_parsing_forms {
-                        result.args = parsed[0].clone();
-                        continue;
-                    } else if i == parse_as_body && enclosed {
-                        result.exp = Some(ReparsedExp {
-                            hash,
-                            parsed: compile_bodyform(opts.clone(), parsed[0].clone()),
-                        });
-                        continue;
-                    } else if let Some(include) = parse_include(parsed[0].clone()) {
-                        result.includes.insert(hash, include.clone());
-                        continue;
-                    } else if let Ok(Some(export)) = match_export_form(
-                        opts.clone(),
-                        parsed[0].clone()
-                    ) {
-                        result.exports.push(ReparsedExport {
-                            hash: hash.clone(),
-                            parsed: Ok(export.clone())
-                        });
+                    if enclosed {
+                        if i < start_parsing_forms {
+                            result.args = parsed[0].clone();
+                            continue;
+                        } else if i == parse_as_body {
+                            result.exp = Some(ReparsedExp {
+                                hash,
+                                parsed: compile_bodyform(opts.clone(), parsed[0].clone()),
+                            });
+                            continue;
+                        } else if let Some(include) = parse_include(parsed[0].clone()) {
+                            result.includes.insert(hash, include.clone());
+                            continue;
+                        }
+                    } else {
+                        if let Ok(Some(export)) = match_export_form(
+                            opts.clone(),
+                            parsed[0].clone()
+                        ) {
+                            result.exports.push(ReparsedExport {
+                                hash: hash.clone(),
+                                parsed: Ok(export.clone())
+                            });
+                            continue;
+                        }
                     }
 
                     let dc_result = compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
@@ -609,6 +614,7 @@ pub fn combine_new_with_old_parse(
         }
     };
 
+    let mut new_exports = HashMap::new();
     if reparse.exports.is_empty() {
         let cf = compile_with_dead_helpers_removed.compileform().clone();
         compile_with_dead_helpers_removed = FrontendOutput::CompileForm(cf);
@@ -617,6 +623,18 @@ pub fn combine_new_with_old_parse(
         let exports = reparse.exports.iter().filter_map(|e| {
             e.parsed.as_ref().map(|e| Some(e.clone())).unwrap_or(None)
         }).collect();
+        for export in reparse.exports.iter() {
+            if let Ok(prog) = &export.parsed {
+                match prog {
+                    Export::MainProgram(desc) => {
+                        new_exports.insert("program".to_string(), export.clone());
+                    }
+                    Export::Function(desc) => {
+                        new_exports.insert(decode_string(&desc.name.value), export.clone());
+                    }
+                }
+            }
+        }
         compile_with_dead_helpers_removed = FrontendOutput::Module(cf, exports);
     }
 
@@ -637,6 +655,7 @@ pub fn combine_new_with_old_parse(
         scopes,
         includes: new_includes,
         helpers: new_helpers,
+        exports: new_exports,
         hash_to_name,
         exp: reparse.exp.clone(),
     }

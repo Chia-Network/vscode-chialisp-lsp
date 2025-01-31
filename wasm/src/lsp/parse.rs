@@ -17,8 +17,8 @@ use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
-    DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedHelper,
-    ScopeKind,
+    DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedExport,
+    ReparsedHelper, ScopeKind,
 };
 
 #[derive(Debug, Clone)]
@@ -37,6 +37,8 @@ pub struct ParsedDoc {
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
     // their ranges in the source.
     pub helpers: HashMap<Hash, ReparsedHelper>,
+    // Exports from this file.
+    pub exports: HashMap<String, ReparsedExport>,
     // If present, the main expression in ReparsedExp form.
     pub exp: Option<ReparsedExp>,
     // Includes in the various files, indexed by included file.
@@ -71,6 +73,7 @@ impl ParsedDoc {
                 containing: Default::default(),
             },
             helpers: Default::default(),
+            exports: Default::default(),
             exp: None,
             includes: Default::default(),
             hash_to_name: Default::default(),
@@ -153,7 +156,15 @@ impl RecoverScopesState {
     }
 
     fn handle_export(&mut self, ex: &Export) {
-        todo!();
+        match ex {
+            Export::MainProgram(desc) => {
+                self.toplevel_funs.insert(Rc::new(SExp::Atom(desc.kw_loc.clone().unwrap_or_else(|| desc.loc.clone()), b"program".to_vec())));
+                self.contained.push(make_export_program_scope(desc.loc.clone(), desc.args.clone(), desc.expr.clone()));
+            }
+            Export::Function(desc) => {
+                // Nothing to do.
+            }
+        }
     }
 }
 
@@ -619,6 +630,22 @@ fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
         functions: HashSet::new(),
         containing: inner_scopes,
     })
+}
+
+fn make_export_program_scope(loc: Srcloc, args: Rc<SExp>, expr: Rc<BodyForm>) -> ParseScope {
+    let mut arg_set = HashSet::new();
+    let mut inner_scopes = Vec::new();
+
+    make_arg_set(&mut arg_set, args.clone());
+    make_inner_function_scopes(&mut inner_scopes, &expr);
+
+    ParseScope {
+        kind: ScopeKind::Function,
+        region: loc,
+        variables: arg_set,
+        functions: HashSet::new(),
+        containing: inner_scopes,
+    }
 }
 
 #[cfg(test)]

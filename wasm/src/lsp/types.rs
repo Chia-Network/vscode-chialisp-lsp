@@ -29,7 +29,7 @@ use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm};
+use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm, ImportLongName};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
@@ -651,7 +651,7 @@ impl LSPServiceProvider {
 
     // For a given document refresh preprocessing errors.
     pub fn parse_document_and_store_errors(&mut self, uristring: &str) {
-        self.ensure_parsed_document(uristring);
+        self.ensure_parsed_document(uristring, None);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
         let errors = missing_includes
@@ -717,7 +717,7 @@ impl LSPServiceProvider {
         self.parsed_documents.insert(uristring, p);
     }
 
-    pub fn ensure_parsed_document(&mut self, uristring: &str) {
+    pub fn ensure_parsed_document(&mut self, uristring: &str, override_enclosed: Option<bool>) -> Option<String> {
         let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
         let opts = Rc::new(LSPCompilerOpts::new(
             def_opts,
@@ -738,7 +738,7 @@ impl LSPServiceProvider {
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
             let ranges0 = make_simple_ranges(&doc.text, 0);
             let (enclosed, ranges) =
-                if ranges0.len() > 1 {
+                if matches!(override_enclosed, Some(false)) || ranges0.len() > 1 {
                     (false, ranges0)
                 } else {
                     (true, make_simple_ranges(&doc.text, 1))
@@ -786,7 +786,7 @@ impl LSPServiceProvider {
                         self.save_doc(file_uri.clone(), file_body);
                         // Do parsing on this document if the content changed
                         // or it's new.
-                        self.ensure_parsed_document(&file_uri);
+                        self.ensure_parsed_document(&file_uri, None);
                         // If it parsed, we have the helpers and can populate
                         // autocomplete/error functionality.
                         if let Some(p) = self.get_parsed(&file_uri) {
@@ -821,7 +821,10 @@ impl LSPServiceProvider {
             );
 
             self.save_parse(uristring.to_owned(), new_parse);
+            return Some(doc.fullname.clone());
         }
+
+        None
     }
 
     pub fn get_capabilities() -> ServerCapabilities {
@@ -942,8 +945,6 @@ impl LSPServiceProvider {
         })
     }
 
-    // Used, but not in all configurations.
-    #[allow(dead_code)]
     pub fn get_file(&self, filename: &str) -> Result<String, String> {
         self.get_doc(filename)
             .map(|d| stringify_doc(&d.text))
