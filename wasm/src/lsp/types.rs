@@ -25,7 +25,7 @@ use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
+use crate::lsp::parse::{grab_scope_doc_range, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
@@ -33,8 +33,9 @@ use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm, ImportLongName,
 };
+use clvm_tools_rs::compiler::frontend::compile_helperform;
 use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
+use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -722,7 +723,7 @@ impl LSPServiceProvider {
     pub fn ensure_parsed_document(
         &mut self,
         uristring: &str,
-        override_enclosed: Option<bool>,
+        mut override_enclosed: Option<bool>,
     ) -> Option<String> {
         let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
         let opts = Rc::new(LSPCompilerOpts::new(
@@ -743,14 +744,27 @@ impl LSPServiceProvider {
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
             let ranges0 = make_simple_ranges(&doc.text, 0);
+            let mut detected_enclosed = false;
+            if !ranges0.is_empty() {
+                let grabbed = grab_scope_doc_range(&doc.text, &ranges0[0], false);
+                if let Ok(parsed) = parse_sexp(Srcloc::start(&uristring), grabbed.iter().copied()) {
+                    if !parsed.is_empty() {
+                        if let Ok(Some(results)) = compile_helperform(opts.clone(), parsed[0].clone()) {
+                            if override_enclosed.is_none() {
+                                override_enclosed = Some(false);
+                            }
+                        }
+                    }
+                }
+            }
             let (enclosed, ranges) =
                 if matches!(override_enclosed, Some(false)) || ranges0.len() > 1 {
                     (false, ranges0)
                 } else {
                     (true, make_simple_ranges(&doc.text, 1))
                 };
-            eprintln!("enclosed {enclosed} ranges {ranges:?}");
-            eprintln!("current doc {:?}", output.compiled);
+            self.log.log(&format!("{uristring} enclosed {enclosed} ranges {ranges:?}"));
+            self.log.log(&format!("current doc {:?}", output.compiled));
             if !enclosed && matches!(output.compiled, FrontendOutput::CompileForm(_)) {
                 output.compiled =
                     FrontendOutput::Module(output.compiled.compileform().clone(), Vec::new());

@@ -438,10 +438,11 @@ pub fn check_live_helper_calls(
             // Try to make sense of the list head
             if let BodyForm::Value(s) = v[0].borrow() {
                 if !find_function_in_scopes(prims, scopes, s) {
-                    return Some(CompileErr(
-                        s.loc(),
-                        format!("No such function found: {}", s),
-                    ));
+                    return None; 
+                    //Some(CompileErr(
+                    //    s.loc(),
+                    //    format!("No such function found: {}", s),
+                    //));
                 }
             } else {
                 return Some(CompileErr(

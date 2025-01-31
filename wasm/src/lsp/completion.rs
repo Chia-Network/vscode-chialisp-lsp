@@ -256,7 +256,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         doc: &ParsedDoc,
         name: &[u8],
     ) -> Option<ModuleCompletionResult> {
-        eprintln!("find_external_completion {}", decode_string(name));
+        self.log.log(&format!("find_external_completion {}", decode_string(name)));
         let (_, long_of_name) = ImportLongName::parse(name);
         let (prefix, short_name) = long_of_name.parent_and_name();
         let mut filename = None;
@@ -265,12 +265,12 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
 
         for helper in doc.helpers.values() {
             if let Ok(HelperForm::Defnsref(nsref)) = &helper.parsed {
-                eprintln!(
+                self.log.log(&format!(
                     "found an import {}",
                     HelperForm::Defnsref(nsref.clone()).to_sexp()
-                );
+                ));
                 filename = self.update_single_completion_cache(&nsref.longname);
-                eprintln!("filename {:?}", filename);
+                self.log.log(&format!("filename {:?}", filename));
 
                 // Try to get the parse of the target.
                 let output =
@@ -301,15 +301,24 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
                         {
                             match_name = mname;
                             output_name = oname;
-                            eprintln!("match name in module: {}", decode_string(&match_name));
+                            self.log.log(&format!("match name in module: {}", decode_string(&match_name)));
                             true
                         } else {
                             false
                         }
                     }
-                    _ => false,
+                    ModuleImportSpec::Hiding(_, names) => {
+                        if let Some((oname, mname)) =
+                            find_match_name_in_exposing(names, &short_name)
+                        {
+                            false
+                        } else {
+                            true
+                        }
+                    }
                 };
 
+                self.log.log(&format!("module completion {} matching_prefix {}", decode_string(&match_name), matching_prefix));
                 if matching_prefix {
                     // Check exports in case it's a module.
                     for export in output.exports.values() {
@@ -328,6 +337,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
 
                     for helper in output.helpers.values() {
                         if let (Some(filename), Ok(h)) = (filename.as_ref(), &helper.parsed) {
+                            self.log.log(&format!("module completion: looking at helper {}", h.to_sexp()));
                             if match_name == *h.name() {
                                 return Some(ModuleCompletionResult {
                                     uri: filename.clone(),
@@ -336,7 +346,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
                                 });
                             }
                         } else {
-                            eprintln!("helper error {helper:?}");
+                            self.log.log(&format!("helper error {helper:?}"));
                         }
                     }
                 }
@@ -369,7 +379,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
             let partial_filename = decode_string(
                 &import_name.as_u8_vec(LongNameTranslation::Filename(ext.to_string())),
             );
-            eprintln!("try import file name {partial_filename:?}");
+            self.log.log(&format!("try import file name {partial_filename:?}"));
 
             let (true_filename, content) = if let Ok((filename, content)) = get_file_content(
                 self.log.clone(),
@@ -380,12 +390,12 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
             ) {
                 (filename, content)
             } else {
-                eprintln!("couldn't find {partial_filename} in path");
+                self.log.log(&format!("couldn't find {partial_filename} in path"));
                 continue;
             };
 
             let url_of_filename = urlify(&true_filename);
-            eprintln!("url_of_filename {url_of_filename}");
+            self.log.log(&format!("url_of_filename {url_of_filename}"));
 
             self.save_doc(url_of_filename.clone(), content);
 

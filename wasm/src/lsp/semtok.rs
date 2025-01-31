@@ -524,8 +524,19 @@ pub fn build_semantic_tokens(
                                 });
                             }
                         }
-                        _ => {
-                            todo!();
+                        ModuleImportSpec::Hiding(loc, names) => {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: loc.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                            for n in names.iter() {
+                                collected_tokens.push(SemanticTokenSortable {
+                                    loc: n.nl.clone(),
+                                    token_type: TK_VARIABLE_IDX,
+                                    token_mod: 0,
+                                });
+                            }
                         }
                     }
                 }

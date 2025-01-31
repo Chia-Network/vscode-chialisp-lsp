@@ -83,6 +83,7 @@ impl LSPServiceProvider {
             }
         }
         if goto_response.is_none() {
+            self.log.log(&format!("trying goto for foreign modules"));
             if let (Some(doc), Some(parsed)) = (self.get_doc(&docname), self.get_parsed(&docname)) {
                 let on_previous_character =
                     if params.text_document_position_params.position.character > 0 {
