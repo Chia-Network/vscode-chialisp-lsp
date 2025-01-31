@@ -25,14 +25,17 @@ use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
+use crate::lsp::parse::{grab_scope_doc_range, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{
+    BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm, ImportLongName,
+};
+use clvm_tools_rs::compiler::frontend::compile_helperform;
 use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
+use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 lazy_static! {
@@ -651,7 +654,7 @@ impl LSPServiceProvider {
 
     // For a given document refresh preprocessing errors.
     pub fn parse_document_and_store_errors(&mut self, uristring: &str) {
-        self.ensure_parsed_document(uristring);
+        self.ensure_parsed_document(uristring, None);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
         let errors = missing_includes
@@ -717,7 +720,11 @@ impl LSPServiceProvider {
         self.parsed_documents.insert(uristring, p);
     }
 
-    pub fn ensure_parsed_document(&mut self, uristring: &str) {
+    pub fn ensure_parsed_document(
+        &mut self,
+        uristring: &str,
+        mut override_enclosed: Option<bool>,
+    ) -> Option<String> {
         let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
         let opts = Rc::new(LSPCompilerOpts::new(
             def_opts,
@@ -731,26 +738,57 @@ impl LSPServiceProvider {
 
         if let Some(doc) = self.get_doc(uristring) {
             let startloc = Srcloc::start(uristring);
-            let output = self
+            let mut output = self
                 .parsed_documents
                 .get(uristring)
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
-            let ranges = make_simple_ranges(&doc.text);
+            let ranges0 = make_simple_ranges(&doc.text, 0);
+            let mut detected_enclosed = false;
+            if !ranges0.is_empty() {
+                let grabbed = grab_scope_doc_range(&doc.text, &ranges0[0], false);
+                if let Ok(parsed) = parse_sexp(Srcloc::start(&uristring), grabbed.iter().copied()) {
+                    if !parsed.is_empty() {
+                        if let Ok(Some(results)) = compile_helperform(opts.clone(), parsed[0].clone()) {
+                            if override_enclosed.is_none() {
+                                override_enclosed = Some(false);
+                            }
+                        }
+                    }
+                }
+            }
+            let (enclosed, ranges) =
+                if matches!(override_enclosed, Some(false)) || ranges0.len() > 1 {
+                    (false, ranges0)
+                } else {
+                    (true, make_simple_ranges(&doc.text, 1))
+                };
+            self.log.log(&format!("{uristring} enclosed {enclosed} ranges {ranges:?}"));
+            self.log.log(&format!("current doc {:?}", output.compiled));
+            if !enclosed && matches!(output.compiled, FrontendOutput::CompileForm(_)) {
+                output.compiled =
+                    FrontendOutput::Module(output.compiled.compileform().clone(), Vec::new());
+            } else if enclosed && matches!(output.compiled, FrontendOutput::Module(_, _)) {
+                output.compiled =
+                    FrontendOutput::CompileForm(output.compiled.compileform().clone());
+            }
             let mut new_helpers = reparse_subset(
                 &self.prims,
                 opts,
                 &doc.text,
                 uristring,
                 &ranges,
-                &output.compiled,
+                &output.compiled.compileform(),
                 &output.helpers,
+                enclosed,
             );
 
             for (_, incfile) in new_helpers.includes.iter() {
                 if incfile.kind != IncludeKind::Include
                     || incfile.filename == b"*standard-cl-21*"
                     || incfile.filename == b"*standard-cl-22*"
+                    || incfile.filename.starts_with(b"*standard-cl-23")
+                    || incfile.filename.starts_with(b"*standard-cl-24")
                 {
                     continue;
                 }
@@ -770,7 +808,7 @@ impl LSPServiceProvider {
                         self.save_doc(file_uri.clone(), file_body);
                         // Do parsing on this document if the content changed
                         // or it's new.
-                        self.ensure_parsed_document(&file_uri);
+                        self.ensure_parsed_document(&file_uri, None);
                         // If it parsed, we have the helpers and can populate
                         // autocomplete/error functionality.
                         if let Some(p) = self.get_parsed(&file_uri) {
@@ -783,6 +821,7 @@ impl LSPServiceProvider {
             }
 
             let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+
             self.set_error_list(
                 uristring,
                 false,
@@ -804,7 +843,10 @@ impl LSPServiceProvider {
             );
 
             self.save_parse(uristring.to_owned(), new_parse);
+            return Some(doc.fullname.clone());
         }
+
+        None
     }
 
     pub fn get_capabilities() -> ServerCapabilities {
@@ -925,8 +967,6 @@ impl LSPServiceProvider {
         })
     }
 
-    // Used, but not in all configurations.
-    #[allow(dead_code)]
     pub fn get_file(&self, filename: &str) -> Result<String, String> {
         self.get_doc(filename)
             .map(|d| stringify_doc(&d.text))
@@ -1138,4 +1178,10 @@ pub struct ReparsedHelper {
 pub struct ReparsedExp {
     pub hash: Hash,
     pub parsed: Result<BodyForm, CompileErr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReparsedExport {
+    pub hash: Hash,
+    pub parsed: Result<Export, CompileErr>,
 }

@@ -26,6 +26,7 @@ jobs:
             components: rustfmt
       - name: Install wasm-pack
         run: |
+          sh install-clvm_tools_rs.sh
           cargo install --version 0.8.1 wasm-pack
       - name: Install
         run: npm ci
@@ -43,6 +44,9 @@ jobs:
         run: |
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
+      - name: Fix zip file dates
+        run: |
+          python datefix.py *.vsix
       - name: Run headless test
         run: |
           sudo apt update

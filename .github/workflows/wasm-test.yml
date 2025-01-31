@@ -32,6 +32,7 @@ jobs:
             components: rustfmt
       - name: Install wasm-pack
         run: |
+          sh ./install-clvm_tools_rs.sh
           cargo install wasm-pack
       - name: Run tests
         run: |

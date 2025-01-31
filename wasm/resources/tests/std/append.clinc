@@ -1,0 +1,4 @@
+;; Append second list to first list
+(defun append (first second)
+  (if first (c (f first) (append (r first) second)) second)
+  )

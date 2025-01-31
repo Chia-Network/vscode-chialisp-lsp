@@ -40,6 +40,7 @@ jobs:
       - name: Build pre-release extension
         id: package_name_pre
         run: |
+          sh ./install-clvm_tools_rs.sh
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Runner test
