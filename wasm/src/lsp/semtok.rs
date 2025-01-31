@@ -18,7 +18,10 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use clvm_tools_rs::compiler::clvm::sha256tree;
-use clvm_tools_rs::compiler::comptypes::{BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, FrontendOutput, ModuleImportListedName, ModuleImportSpec};
+use clvm_tools_rs::compiler::comptypes::{
+    BindingPattern, BodyForm, CompileForm, Export, FrontendOutput, HelperForm, LetFormKind,
+    ModuleImportListedName, ModuleImportSpec,
+};
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
@@ -415,16 +418,13 @@ pub fn build_semantic_tokens(
     parsed: &ParsedDoc,
 ) -> Vec<SemanticTokenSortable> {
     let mut collected_tokens = Vec::new();
-    let mut varcollection =
-        match &parsed.compiled {
-            FrontendOutput::CompileForm(cf) => {
-                HashMap::from([(b"@".to_vec(), cf.exp.loc())])
-            }
-            FrontendOutput::Module(cf, exports) => {
-                // Handle exports.
-                HashMap::from([(b"@".to_vec(), cf.exp.loc())])
-            }
-        };
+    let mut varcollection = match &parsed.compiled {
+        FrontendOutput::CompileForm(cf) => HashMap::from([(b"@".to_vec(), cf.exp.loc())]),
+        FrontendOutput::Module(cf, exports) => {
+            // Handle exports.
+            HashMap::from([(b"@".to_vec(), cf.exp.loc())])
+        }
+    };
     let mut argcollection = HashMap::new();
     if let Some(modloc) = &parsed.mod_kw {
         collected_tokens.push(SemanticTokenSortable {
@@ -472,8 +472,7 @@ pub fn build_semantic_tokens(
     let mut handle_cf_helpers = |cf: &CompileForm| {
         for form in cf.helpers.iter() {
             match form {
-                HelperForm::Defnamespace(_) => {
-                }
+                HelperForm::Defnamespace(_) => {}
                 HelperForm::Defnsref(nsref) => {
                     collected_tokens.push(SemanticTokenSortable {
                         loc: nsref.kw.clone(),
@@ -525,7 +524,9 @@ pub fn build_semantic_tokens(
                                 });
                             }
                         }
-                        _ => { todo!(); }
+                        _ => {
+                            todo!();
+                        }
                     }
                 }
                 HelperForm::Defconstant(defc) => {
@@ -609,11 +610,7 @@ pub fn build_semantic_tokens(
             }
         }
 
-        collect_arg_tokens(
-            &mut collected_tokens,
-            &mut argcollection,
-            cf.args.clone(),
-        );
+        collect_arg_tokens(&mut collected_tokens, &mut argcollection, cf.args.clone());
 
         process_body_code(
             env,
@@ -735,7 +732,7 @@ fn do_semantic_tokens(
     let mut last_row = 1;
     let mut last_col = 1;
 
-    for (i,t) in collected_tokens.iter().enumerate() {
+    for (i, t) in collected_tokens.iter().enumerate() {
         if i > 0 && (t.loc.line < last_row || (t.loc.line == last_row && t.loc.col <= last_col)) {
             continue;
         }

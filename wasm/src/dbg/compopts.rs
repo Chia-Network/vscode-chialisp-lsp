@@ -8,13 +8,15 @@ use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, get_bytes, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::compiler::BasicCompileContext;
 use clvm_tools_rs::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation};
+use clvm_tools_rs::compiler::comptypes::{
+    CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation,
+};
 use clvm_tools_rs::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
 use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+use clvm_tools_rs::compiler::BasicCompileContext;
 use clvm_tools_rs::compiler::CompileContextWrapper;
 
 #[derive(Clone)]
@@ -31,10 +33,13 @@ impl HasCompilerOptsDelegation for DbgCompilerOpts {
     fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
         self.opts.clone()
     }
-    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(&self, f: F) -> Rc<dyn CompilerOpts> {
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(
+        &self,
+        f: F,
+    ) -> Rc<dyn CompilerOpts> {
         Rc::new(DbgCompilerOpts {
             opts: f(self.opts.clone()),
-            .. self.clone()
+            ..self.clone()
         })
     }
     fn override_read_new_file(

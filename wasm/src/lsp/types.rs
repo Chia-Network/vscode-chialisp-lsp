@@ -29,8 +29,10 @@ use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm, ImportLongName};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{
+    BodyForm, CompileErr, CompilerOpts, Export, FrontendOutput, HelperForm, ImportLongName,
+};
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -717,7 +719,11 @@ impl LSPServiceProvider {
         self.parsed_documents.insert(uristring, p);
     }
 
-    pub fn ensure_parsed_document(&mut self, uristring: &str, override_enclosed: Option<bool>) -> Option<String> {
+    pub fn ensure_parsed_document(
+        &mut self,
+        uristring: &str,
+        override_enclosed: Option<bool>,
+    ) -> Option<String> {
         let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
         let opts = Rc::new(LSPCompilerOpts::new(
             def_opts,
@@ -746,9 +752,11 @@ impl LSPServiceProvider {
             eprintln!("enclosed {enclosed} ranges {ranges:?}");
             eprintln!("current doc {:?}", output.compiled);
             if !enclosed && matches!(output.compiled, FrontendOutput::CompileForm(_)) {
-                output.compiled = FrontendOutput::Module(output.compiled.compileform().clone(), Vec::new());
+                output.compiled =
+                    FrontendOutput::Module(output.compiled.compileform().clone(), Vec::new());
             } else if enclosed && matches!(output.compiled, FrontendOutput::Module(_, _)) {
-                output.compiled = FrontendOutput::CompileForm(output.compiled.compileform().clone());
+                output.compiled =
+                    FrontendOutput::CompileForm(output.compiled.compileform().clone());
             }
             let mut new_helpers = reparse_subset(
                 &self.prims,

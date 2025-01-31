@@ -7,13 +7,14 @@ use lsp_types::Position;
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm,
+    LetData, LetFormKind,
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::sexp::{SExp, ToSExp};
 #[cfg(test)]
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
+use clvm_tools_rs::compiler::sexp::{SExp, ToSExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
@@ -135,13 +136,16 @@ impl RecoverScopesState {
                     // XXX
                 }
                 HelperForm::Defun(_, d) => {
-                    self.toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
+                    self.toplevel_funs
+                        .insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
                 }
                 HelperForm::Defmacro(m) => {
-                    self.toplevel_funs.insert(Rc::new(SExp::Atom(m.loc.clone(), m.name.clone())));
+                    self.toplevel_funs
+                        .insert(Rc::new(SExp::Atom(m.loc.clone(), m.name.clone())));
                 }
                 HelperForm::Defconstant(c) => {
-                    self.toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
+                    self.toplevel_args
+                        .insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
                 }
             }
 
@@ -158,8 +162,15 @@ impl RecoverScopesState {
     fn handle_export(&mut self, ex: &Export) {
         match ex {
             Export::MainProgram(desc) => {
-                self.toplevel_funs.insert(Rc::new(SExp::Atom(desc.kw_loc.clone().unwrap_or_else(|| desc.loc.clone()), b"program".to_vec())));
-                self.contained.push(make_export_program_scope(desc.loc.clone(), desc.args.clone(), desc.expr.clone()));
+                self.toplevel_funs.insert(Rc::new(SExp::Atom(
+                    desc.kw_loc.clone().unwrap_or_else(|| desc.loc.clone()),
+                    b"program".to_vec(),
+                )));
+                self.contained.push(make_export_program_scope(
+                    desc.loc.clone(),
+                    desc.args.clone(),
+                    desc.expr.clone(),
+                ));
             }
             Export::Function(desc) => {
                 // Nothing to do.
@@ -172,7 +183,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fo: &FrontendOutput) 
     let mut scopes = RecoverScopesState {
         toplevel_args: HashSet::new(),
         toplevel_funs: HashSet::new(),
-        contained: Vec::new()
+        contained: Vec::new(),
     };
 
     match fo {
@@ -703,12 +714,14 @@ fn make_scope_stack_simple() {
     let (compiled, program_scope) = make_test_program_scope(file, &doc.text);
     assert_eq!(program_scope.functions.len(), 2);
     assert_eq!(program_scope.containing.len(), 2);
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.compileform().loc.clone(), "test1")));
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.compileform().loc.clone(), "test2")));
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test1"
+    )));
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test2"
+    )));
     let filename_rc = compiled.compileform().loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,

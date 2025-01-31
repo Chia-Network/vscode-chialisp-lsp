@@ -10,13 +10,15 @@ use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::compiler::BasicCompileContext;
 use clvm_tools_rs::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation};
+use clvm_tools_rs::compiler::comptypes::{
+    CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation,
+};
 use clvm_tools_rs::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
 use clvm_tools_rs::compiler::optimize::get_optimizer;
 use clvm_tools_rs::compiler::sexp::SExp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
+use clvm_tools_rs::compiler::BasicCompileContext;
 use clvm_tools_rs::compiler::CompileContextWrapper;
 
 use super::patch::get_bytes;
@@ -38,10 +40,13 @@ impl HasCompilerOptsDelegation for LSPCompilerOpts {
     fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
         self.opts.clone()
     }
-    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(&self, f: F) -> Rc<dyn CompilerOpts> {
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(
+        &self,
+        f: F,
+    ) -> Rc<dyn CompilerOpts> {
         Rc::new(LSPCompilerOpts {
             opts: f(self.opts.clone()),
-            .. self.clone()
+            ..self.clone()
         })
     }
     fn override_read_new_file(
@@ -64,15 +69,12 @@ impl HasCompilerOptsDelegation for LSPCompilerOpts {
 
         Ok((computed_filename, get_bytes(&content.text)))
     }
-    fn override_set_search_paths(
-        &self,
-        new_paths: &[String]
-    ) -> Rc<dyn CompilerOpts> {
+    fn override_set_search_paths(&self, new_paths: &[String]) -> Rc<dyn CompilerOpts> {
         let new_with_includes = self.opts.set_search_paths(new_paths);
         Rc::new(LSPCompilerOpts {
             opts: new_with_includes,
             include_dirs: new_paths.to_owned(),
-            .. self.clone()
+            ..self.clone()
         })
     }
 
@@ -141,7 +143,7 @@ impl LSPCompilerOpts {
             ws_root,
             include_dirs: paths.to_owned(),
             lsp: docs,
-            known_dialects: Rc::new(KNOWN_DIALECTS.clone())
+            known_dialects: Rc::new(KNOWN_DIALECTS.clone()),
         }
     }
 

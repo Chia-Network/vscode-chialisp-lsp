@@ -84,14 +84,15 @@ impl LSPServiceProvider {
         }
         if goto_response.is_none() {
             if let (Some(doc), Some(parsed)) = (self.get_doc(&docname), self.get_parsed(&docname)) {
-                let on_previous_character = if params.text_document_position_params.position.character > 0 {
-                    Position {
-                        line: params.text_document_position_params.position.line,
-                        character: params.text_document_position_params.position.character - 1,
-                    }
-                } else {
-                    params.text_document_position_params.position
-                };
+                let on_previous_character =
+                    if params.text_document_position_params.position.character > 0 {
+                        Position {
+                            line: params.text_document_position_params.position.line,
+                            character: params.text_document_position_params.position.character - 1,
+                        }
+                    } else {
+                        params.text_document_position_params.position
+                    };
                 if let Some(cpl) = get_positional_text(&doc, &on_previous_character) {
                     if let Some(result) = self.find_external_name(&parsed, &cpl) {
                         let pos = Position {
@@ -100,7 +101,10 @@ impl LSPServiceProvider {
                         };
                         goto_response = Some(Location {
                             uri: Url::parse(&result.uri).unwrap(),
-                            range: Range { start: pos, end: pos }
+                            range: Range {
+                                start: pos,
+                                end: pos,
+                            },
                         });
                     }
                 }

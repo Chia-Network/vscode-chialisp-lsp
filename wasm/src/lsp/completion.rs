@@ -6,10 +6,15 @@ use lsp_server::{Message, RequestId, Response};
 use lsp_types::{CompletionItem, CompletionList, CompletionParams, CompletionResponse, Position};
 
 use crate::lsp::compopts::get_file_content;
-use crate::lsp::parse::{find_scope_stack, get_positional_text, is_first_in_list, is_identifier, ParsedDoc};
-use crate::lsp::types::{DocData, ParseScope, ReparsedExport, ScopeKind, urlify};
+use crate::lsp::parse::{
+    find_scope_stack, get_positional_text, is_first_in_list, is_identifier, ParsedDoc,
+};
+use crate::lsp::types::{urlify, DocData, ParseScope, ReparsedExport, ScopeKind};
 use crate::lsp::LSPServiceProvider;
-use clvm_tools_rs::compiler::comptypes::{Export, HelperForm, ImportLongName, LongNameTranslation, ModuleImportListedName, ModuleImportSpec};
+use clvm_tools_rs::compiler::comptypes::{
+    Export, HelperForm, ImportLongName, LongNameTranslation, ModuleImportListedName,
+    ModuleImportSpec,
+};
 use clvm_tools_rs::compiler::prims::prims;
 use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -40,20 +45,17 @@ pub trait LSPCompletionRequestHandler {
     fn find_external_name(
         &mut self,
         doc: &ParsedDoc,
-        name: &[u8]
+        name: &[u8],
     ) -> Option<ModuleCompletionResult>;
 
     fn find_external_completion(
         &mut self,
         result: &mut Vec<CompletionItem>,
         doc: &ParsedDoc,
-        name: &[u8]
+        name: &[u8],
     );
 
-    fn update_single_completion_cache(
-        &mut self,
-        import_name: &ImportLongName,
-    ) -> Option<String>;
+    fn update_single_completion_cache(&mut self, import_name: &ImportLongName) -> Option<String>;
 }
 
 fn complete_variable_name(
@@ -142,7 +144,7 @@ fn complete_function_name(
 
 fn find_match_name_in_exposing(
     exposing: &[ModuleImportListedName],
-    short_name: &[u8]
+    short_name: &[u8],
 ) -> Option<(Vec<u8>, Vec<u8>)> {
     for n in exposing.iter() {
         let n_target = n.alias.as_ref().unwrap_or_else(|| &n.name);
@@ -183,26 +185,25 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         let mut completion_items = Vec::new();
         let log = self.log.clone();
 
-        let cpl =
-            self.with_doc_and_parsed(&uristring, |doc, output| {
-                let on_previous_character = if params.text_document_position.position.character > 0 {
-                    Position {
-                        line: params.text_document_position.position.line,
-                        character: params.text_document_position.position.character - 1,
-                    }
-                } else {
-                    params.text_document_position.position
-                };
-                log.log(&format!(
-                    "doing completion with position {:?}",
-                    on_previous_character
-                ));
+        let cpl = self.with_doc_and_parsed(&uristring, |doc, output| {
+            let on_previous_character = if params.text_document_position.position.character > 0 {
+                Position {
+                    line: params.text_document_position.position.line,
+                    character: params.text_document_position.position.character - 1,
+                }
+            } else {
+                params.text_document_position.position
+            };
+            log.log(&format!(
+                "doing completion with position {:?}",
+                on_previous_character
+            ));
 
             if let Some(cpl) = get_positional_text(doc, &on_previous_character) {
                 let mut found_scopes = Vec::new();
                 let want_position = Srcloc::new(
                     Rc::new(uristring.clone()),
-                        (on_previous_character.line + 1) as usize,
+                    (on_previous_character.line + 1) as usize,
                     (on_previous_character.character + 1) as usize,
                 );
                 find_scope_stack(&mut found_scopes, &output.scopes, &want_position);
@@ -211,7 +212,13 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
                 if is_first_in_list(doc, &on_previous_character) {
                     complete_function_name(&mut completion_items, id.clone(), &found_scopes, &cpl);
                 } else {
-                    complete_variable_name(&mut completion_items, id.clone(), doc, &found_scopes, &cpl);
+                    complete_variable_name(
+                        &mut completion_items,
+                        id.clone(),
+                        doc,
+                        &found_scopes,
+                        &cpl,
+                    );
                 }
 
                 return Some(cpl);
@@ -247,7 +254,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
     fn find_external_name(
         &mut self,
         doc: &ParsedDoc,
-        name: &[u8]
+        name: &[u8],
     ) -> Option<ModuleCompletionResult> {
         eprintln!("find_external_completion {}", decode_string(name));
         let (_, long_of_name) = ImportLongName::parse(name);
@@ -258,7 +265,10 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
 
         for helper in doc.helpers.values() {
             if let Ok(HelperForm::Defnsref(nsref)) = &helper.parsed {
-                eprintln!("found an import {}", HelperForm::Defnsref(nsref.clone()).to_sexp());
+                eprintln!(
+                    "found an import {}",
+                    HelperForm::Defnsref(nsref.clone()).to_sexp()
+                );
                 filename = self.update_single_completion_cache(&nsref.longname);
                 eprintln!("filename {:?}", filename);
 
@@ -270,41 +280,42 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
                         continue;
                     };
 
-                let matching_prefix =
-                    match &nsref.specification {
-                        ModuleImportSpec::Qualified(qmi) => {
-                            // The qualification requires that either the full prefix of the
-                            // import or the given override combined with an export name component
-                            // gives the target name.
-                            if let Some(prefix) = &prefix {
-                                if let Some(t) = &qmi.target {
-                                    t.name == *prefix
-                                } else {
-                                    qmi.name == *prefix
-                                }
+                let matching_prefix = match &nsref.specification {
+                    ModuleImportSpec::Qualified(qmi) => {
+                        // The qualification requires that either the full prefix of the
+                        // import or the given override combined with an export name component
+                        // gives the target name.
+                        if let Some(prefix) = &prefix {
+                            if let Some(t) = &qmi.target {
+                                t.name == *prefix
                             } else {
-                                false
+                                qmi.name == *prefix
                             }
+                        } else {
+                            false
                         }
-                        ModuleImportSpec::Exposing(_, names) => {
-                            if let Some((oname, mname)) =
-                                find_match_name_in_exposing(names, &short_name)
-                            {
-                                match_name = mname;
-                                output_name = oname;
-                                eprintln!("match name in module: {}", decode_string(&match_name));
-                                true
-                            } else {
-                                false
-                            }
+                    }
+                    ModuleImportSpec::Exposing(_, names) => {
+                        if let Some((oname, mname)) =
+                            find_match_name_in_exposing(names, &short_name)
+                        {
+                            match_name = mname;
+                            output_name = oname;
+                            eprintln!("match name in module: {}", decode_string(&match_name));
+                            true
+                        } else {
+                            false
                         }
-                        _ => { false }
-                    };
+                    }
+                    _ => false,
+                };
 
                 if matching_prefix {
                     // Check exports in case it's a module.
                     for export in output.exports.values() {
-                        if let (Some(filename), Ok(Export::MainProgram(desc))) = (filename.as_ref(), &export.parsed) {
+                        if let (Some(filename), Ok(Export::MainProgram(desc))) =
+                            (filename.as_ref(), &export.parsed)
+                        {
                             if match_name == b"program" {
                                 return Some(ModuleCompletionResult {
                                     uri: filename.clone(),
@@ -339,42 +350,39 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         &mut self,
         res: &mut Vec<CompletionItem>,
         doc: &ParsedDoc,
-        name: &[u8]
+        name: &[u8],
     ) {
-        let result =
-            if let Some(result) = self.find_external_name(doc, name) {
-                result
-            } else {
-                return;
-            };
+        let result = if let Some(result) = self.find_external_name(doc, name) {
+            result
+        } else {
+            return;
+        };
 
         res.push(CompletionItem {
             label: decode_string(&result.name),
-            .. Default::default()
+            ..Default::default()
         });
     }
 
-    fn update_single_completion_cache(
-        &mut self,
-        import_name: &ImportLongName,
-    ) -> Option<String> {
+    fn update_single_completion_cache(&mut self, import_name: &ImportLongName) -> Option<String> {
         for ext in [".clinc", ".clsp"].iter() {
-            let partial_filename = decode_string(&import_name.as_u8_vec(LongNameTranslation::Filename(ext.to_string())));
+            let partial_filename = decode_string(
+                &import_name.as_u8_vec(LongNameTranslation::Filename(ext.to_string())),
+            );
             eprintln!("try import file name {partial_filename:?}");
 
-            let (true_filename, content) =
-                if let Ok((filename, content)) = get_file_content(
-                    self.log.clone(),
-                    self.fs.clone(),
-                    self.get_workspace_root(),
-                    &self.config.include_paths,
-                    &partial_filename
-                ) {
-                    (filename, content)
-                } else {
-                    eprintln!("couldn't find {partial_filename} in path");
-                    continue;
-                };
+            let (true_filename, content) = if let Ok((filename, content)) = get_file_content(
+                self.log.clone(),
+                self.fs.clone(),
+                self.get_workspace_root(),
+                &self.config.include_paths,
+                &partial_filename,
+            ) {
+                (filename, content)
+            } else {
+                eprintln!("couldn't find {partial_filename} in path");
+                continue;
+            };
 
             let url_of_filename = urlify(&true_filename);
             eprintln!("url_of_filename {url_of_filename}");

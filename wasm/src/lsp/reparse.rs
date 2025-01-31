@@ -5,13 +5,16 @@ use std::rc::Rc;
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedExport, ReparsedHelper,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedExport,
+    ReparsedHelper,
 };
-use clvm_tools_rs::compiler::clvm::{sha256tree_from_atom, sha256tree};
+use clvm_tools_rs::compiler::clvm::{sha256tree, sha256tree_from_atom};
 use clvm_tools_rs::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, Export, FrontendOutput, HelperForm,
 };
-use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult, match_export_form};
+use clvm_tools_rs::compiler::frontend::{
+    compile_bodyform, compile_helperform, match_export_form, HelperFormResult,
+};
 use clvm_tools_rs::compiler::prims::primquote;
 use clvm_tools_rs::compiler::sexp::{decode_string, enlist, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
@@ -102,7 +105,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
 
 fn compile_helperform_with_loose_defconstant(
     opts: Rc<dyn CompilerOpts>,
-    parsed: Rc<SExp>
+    parsed: Rc<SExp>,
 ) -> Result<Option<HelperFormResult>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
@@ -121,11 +124,14 @@ fn compile_helperform_with_loose_defconstant(
             // every other body is necesarily a BodyForm.  We can allow this
             // to be looser because it is in classic chialisp.
             if matches!(result, Err(_)) {
-                let amended_instr = enlist(parsed.loc(), &[
-                    Rc::new(listed[0].clone()),
-                    Rc::new(listed[1].clone()),
-                    Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone())))
-                ]);
+                let amended_instr = enlist(
+                    parsed.loc(),
+                    &[
+                        Rc::new(listed[0].clone()),
+                        Rc::new(listed[1].clone()),
+                        Rc::new(primquote(parsed.loc(), Rc::new(listed[2].clone()))),
+                    ],
+                );
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
@@ -345,27 +351,25 @@ pub fn reparse_subset(
                             continue;
                         }
                     } else {
-                        if let Ok(Some(export)) = match_export_form(
-                            opts.clone(),
-                            parsed[0].clone()
-                        ) {
+                        if let Ok(Some(export)) = match_export_form(opts.clone(), parsed[0].clone())
+                        {
                             result.exports.push(ReparsedExport {
                                 hash: hash.clone(),
-                                parsed: Ok(export.clone())
+                                parsed: Ok(export.clone()),
                             });
                             continue;
                         }
                     }
 
-                    let dc_result = compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone()).and_then(
-                        |mh| {
-                            if let Some(h) = mh {
-                                Ok(h)
-                            } else {
-                                Err(CompileErr(loc, "must be a helper form".to_string()))
-                            }
-                        },
-                    );
+                    let dc_result =
+                        compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone())
+                            .and_then(|mh| {
+                                if let Some(h) = mh {
+                                    Ok(h)
+                                } else {
+                                    Err(CompileErr(loc, "must be a helper form".to_string()))
+                                }
+                            });
                     match dc_result {
                         Ok(res) => {
                             if let Some(h) = res.new_helpers.iter().next() {
@@ -375,15 +379,19 @@ pub fn reparse_subset(
                                         hash,
                                         range: r.clone(),
                                         parsed: Ok(h.clone()),
-                                    });
+                                    },
+                                );
                             }
                         }
                         Err(e) => {
-                            result.helpers.insert(hash.clone(), ReparsedHelper {
-                                hash,
-                                range: r.clone(),
-                                parsed: Err(e)
-                            });
+                            result.helpers.insert(
+                                hash.clone(),
+                                ReparsedHelper {
+                                    hash,
+                                    range: r.clone(),
+                                    parsed: Err(e),
+                                },
+                            );
                         }
                     }
                 }
@@ -579,7 +587,7 @@ pub fn combine_new_with_old_parse(
                     cf.exp = Rc::new(empty_body);
                     out_errors.push(e.clone());
                 }
-            }
+            },
         }
     };
 
@@ -607,9 +615,7 @@ pub fn combine_new_with_old_parse(
         }
 
         // Check whether functions called in exp are live
-        if let Some(error) =
-            check_live_helper_calls(&PRIM_NAMES, &scopes, &df.exp)
-        {
+        if let Some(error) = check_live_helper_calls(&PRIM_NAMES, &scopes, &df.exp) {
             out_errors.push(error);
         }
     };
@@ -620,9 +626,11 @@ pub fn combine_new_with_old_parse(
         compile_with_dead_helpers_removed = FrontendOutput::CompileForm(cf);
     } else {
         let cf = compile_with_dead_helpers_removed.compileform().clone();
-        let exports = reparse.exports.iter().filter_map(|e| {
-            e.parsed.as_ref().map(|e| Some(e.clone())).unwrap_or(None)
-        }).collect();
+        let exports = reparse
+            .exports
+            .iter()
+            .filter_map(|e| e.parsed.as_ref().map(|e| Some(e.clone())).unwrap_or(None))
+            .collect();
         for export in reparse.exports.iter() {
             if let Ok(prog) = &export.parsed {
                 match prog {
