@@ -26,7 +26,7 @@ jobs:
             components: rustfmt
       - name: Install wasm-pack
         run: |
-          cargo install --version 0.8.1 wasm-pack
+          cargo install --version 0.13.1 wasm-pack
       - name: Install
         run: npm ci
       - name: Compile & lint
