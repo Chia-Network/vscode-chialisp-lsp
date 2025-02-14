@@ -109,7 +109,6 @@ export function languageActivate(context: vscode.ExtensionContext) {
         console.log('locateIncludePath', JSON.stringify(value));
         // Open a file selector to find the included file.
         vscode.window.showOpenDialog({
-            title: `Chialisp include file ${value}`,
             filters: {
                 // This is part of the user interface
                 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -191,7 +190,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 } catch (e) {
                     vscode.window.showErrorMessage("Could not update existing chialisp.json");
                 }
-            }, (e) => {
+            }, (e: any) => {
                 try {
                     const oldChialispJson = {include_paths:[]};
                     return treatAndWriteBackChialispJson(oldChialispJson);

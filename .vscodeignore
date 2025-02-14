@@ -11,3 +11,6 @@ vsc-extension-quickstart.md
 runner/node_modules
 wasm/src
 wasm/target
+node_modules
+out/
+webpack.config.js

@@ -196,7 +196,7 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
             }
             return config;
         },
-        resolveDebugConfigurationWithSubstitutedVariables: async (folder, debugConfiguration, token) => {
+        resolveDebugConfigurationWithSubstitutedVariables: async (folder: any, debugConfiguration: vscode.DebugConfiguration, token: any) => {
             // We can do the rest of our checking server side.
             return debugConfiguration;
         }
