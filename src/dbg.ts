@@ -65,9 +65,9 @@ function startSubprocess(
         let options: ForkOptions = {
             stdio: 'pipe',
             env: {
-                ELECTRON_RUN_AS_NODE: '1',
-                ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
-                WORKSPACE_FOLDER: workspaceFolder,
+                ELECTRON_RUN_AS_NODE: '1',              // eslint-disable-line @typescript-eslint/naming-convention
+                ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',   // eslint-disable-line @typescript-eslint/naming-convention
+                WORKSPACE_FOLDER: workspaceFolder,      // eslint-disable-line @typescript-eslint/naming-convention
                 ...process.env
             },
             cwd: workspaceFolder

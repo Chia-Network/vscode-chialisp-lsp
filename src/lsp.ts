@@ -193,7 +193,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
             }, (e) => {
                 try {
-                    const oldChialispJson = {include_paths:[]};
+                    const oldChialispJson = {include_paths:[]}; // eslint-disable-line @typescript-eslint/naming-convention
                     return treatAndWriteBackChialispJson(oldChialispJson);
                 } catch (e) {
                     vscode.window.showErrorMessage("Could not formulate chialisp.json");
