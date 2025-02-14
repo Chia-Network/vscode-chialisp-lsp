@@ -4,7 +4,7 @@
     "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "engines": {
         "vscode": "^1.85.0"
     },
@@ -15,7 +15,10 @@
     "activationEvents": [
         "onLanguage:chialisp",
         "onCommand:chialisp.startDebug",
-        "onDebug"
+        "onDebug",
+        "onDebugResolve:chialisp",
+        "workspaceContains:/.vscode/chialisp_properties.json",
+        "onFileSystem:cpptools-schema"
     ],
     "contributes": {
         "languages": [
@@ -87,6 +90,12 @@
                     "Chialisp",
                     "chialisp"
                 ],
+                "jsonValidation": [
+                    {
+                        "fileMatch": "chialisp_properties.json",
+                        "url": "chialisp-schema:///chialisp_properties.json"
+                    }
+                ],
                 "configurationAttributes": {
                     "launch": {
                         "type": "object",
@@ -99,6 +108,11 @@
                             "program": {
                                 "type": "string",
                                 "description": "The chialisp program to run."
+                            },
+                            "type": {
+                                "type": "string",
+                                "description": "Type of debugging to do.",
+                                "default": "chialisp"
                             },
                             "args": {
                                 "type": "array",
