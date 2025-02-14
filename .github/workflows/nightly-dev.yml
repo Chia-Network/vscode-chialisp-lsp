@@ -32,7 +32,7 @@ jobs:
       - name: Install wasm-pack
         run: |
           sh install-clvm_tools_rs.sh
-          cargo install --version 0.8.1 wasm-pack
+          cargo install --version 0.13.1 wasm-pack
       - name: Install
         run: npm ci
       - name: Check for published package
