@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: 'dev'
       - name: Set Job Env
@@ -19,9 +19,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 18
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,7 +32,7 @@ jobs:
       - name: Install wasm-pack
         run: |
           sh install-clvm_tools_rs.sh
-          cargo install --version 0.8.1 wasm-pack
+          cargo install --version 0.13.1 wasm-pack
       - name: Install
         run: npm ci
       - name: Check for published package
@@ -53,29 +53,25 @@ jobs:
       - name: Compile & lint
         if: env.SKIP != 'true'
         run: npm run pretest
-      - name: Configure chia-automation
-        if: env.SKIP != 'true'
-        uses: Chia-Network/actions/commit-sign/gpg@main
-        with:
-          gpg_private_key: ${{ secrets.CHIA_AUTOMATION_PRIVATE_GPG_KEY }}
-          passphrase: ${{ secrets.CHIA_AUTOMATION_PRIVATE_GPG_PASSPHRASE }}
       - name: Build dev extension
         if: env.SKIP != 'true'
         id: package_name
         run: |
           if [ "$VSIX_EXISTS" != 'false' ]; then
             npm version patch --no-git-tag-version
-            git add package.json
-            git commit -m "nightly version bump"
-            git push origin dev
           fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Fix dates
+        run: |
+          python datefix.py *.vsix
       - name: Run headless test
         if: env.SKIP != 'true'
+        env:
+          DETECT_CHROMEDRIVER_VERSION: "true"
         run: |
           sudo apt update
-          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
       - name: Cleanup xvfb pidx
         if: env.SKIP != 'true'

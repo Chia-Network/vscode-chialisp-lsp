@@ -16,25 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set Job Env
         uses: Chia-Network/actions/setjobenv@main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 18
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
             target: wasm32-unknown-unknown
-            override: true
             components: rustfmt
       - name: Install wasm-pack
         run: |
-          cargo install --version 0.8.1 wasm-pack
+          cargo install --version 0.13.1 wasm-pack
       - name: Install
         run: npm ci
       - name: Compile & lint
@@ -42,7 +40,6 @@ jobs:
       - name: Build pre-release extension
         id: package_name_pre
         run: |
-          sh ./install-clvm_tools_rs.sh
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
       - name: Runner test
@@ -52,9 +49,11 @@ jobs:
           npm run test
 
       - name: Run headless test
+        env:
+          DETECT_CHROMEDRIVER_VERSION: "true"
         run: |
           sudo apt update
-          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
 
       - name: Cleanup xvfb pidx
