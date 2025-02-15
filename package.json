@@ -115,13 +115,14 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
-        "lint": "eslint src --ext ts",
+        "lint": "eslint",
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
         "vscode-languageclient": "^8.1.0"
     },
     "devDependencies": {
+        "@stylistic/eslint-plugin": "^3.1.0",
         "@types/glob": "^8.1.0",
         "@types/mocha": "^9.1.1",
         "@types/node": "22.13.4",
