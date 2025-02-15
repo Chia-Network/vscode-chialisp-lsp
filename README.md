@@ -1,4 +1,8 @@
 # README
+![GitHub](https://img.shields.io/github/license/Chia-Network/vscode-chialisp-lsp?logo=Github)
+![Build](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml/badge.svg)
+![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/ChiaNetwork.chialisp)
+
 
 A rust based Chialisp language server client delivered with a rust client compiled
 to webassembly (wasm).  This extension uses the modern Chialisp compiler from `clvm_tool_rs` (https://github.com/Chia-Network/clvm_tools_rs).
