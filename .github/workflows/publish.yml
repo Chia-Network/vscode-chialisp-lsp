@@ -52,7 +52,7 @@ jobs:
       - name: Run headless test
         run: |
           sudo apt update
-          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2
+          sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
 
       - name: Cleanup xvfb pidx
