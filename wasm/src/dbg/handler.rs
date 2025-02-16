@@ -29,8 +29,6 @@ use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
 use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
 use clvm_tools_rs::classic::clvm_tools::clvmc::CompileError;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
-use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
 
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
@@ -44,7 +42,7 @@ use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, MessageHandler, ProgramKind};
+use crate::dbg::types::MessageHandler;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -70,8 +68,6 @@ pub struct ExtraLaunchData {
     args: Option<Vec<String>>,
     #[serde(rename = "program")]
     program: Option<String>,
-    #[serde(rename = "symbols")]
-    symbols: Option<String>,
 }
 
 /// Used to make some aspects of deserializing easier via serde_json easier.
@@ -744,7 +740,6 @@ struct LaunchArgs<'a> {
     launch_request: &'a LaunchRequestArguments,
     program: &'a str,
     args_for_program: &'a [String],
-    symbols: &'a str,
     stop_on_entry: bool,
 }
 
@@ -891,51 +886,21 @@ impl Debugger {
         };
 
         let mut use_symbol_table = HashMap::new();
-        let mut inputs = DebuggerInputs {
-            is_hex: is_hex_file(read_in_file),
-            source: None,
-            compile_input: None,
-            symbols: None,
-            compiled: Err("no program read yet".to_string()),
-        };
+        let is_hex = is_hex_file(read_in_file);
 
+        let mut compiled = None;
         if let Some((source_file, source_content)) = try_locate_source_file(self.fs.clone(), name) {
             let source_parsed =
                 parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
                     .map_err(parse_err_map)?;
 
-            let source_and_content = DebuggerSourceAndContent {
-                source_file,
-                source_content,
-                source_parsed,
-            };
-
-            let mut compile_input_args = HashMap::new();
-            compile_input_args.insert(
-                "path_or_code".to_string(),
-                ArgumentValue::ArgString(
-                    Some(source_and_content.source_file.clone()),
-                    decode_string(&source_and_content.source_content)
-                )
-            );
-            // We don't get this info explicitly at this point.  We will grab it downstream when
-            // we receive a better view of the launch request.
-            compile_input_args.insert("env".to_string(), ArgumentValue::ArgString(None, "()".to_string()));
-            if !inputs.is_hex {
-                inputs.compile_input = Some(RunAndCompileInputData::new(
-                    allocator,
-                    &compile_input_args
-                )?);
-            };
-
             let frontend_compiled =
-                frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
+                frontend(opts.clone(), &source_parsed).map_err(compile_err_map)?;
 
-            inputs.source = Some(source_and_content);
-            inputs.compiled = Ok(ProgramKind::FromModern(frontend_compiled));
+            compiled = Some(frontend_compiled);
         }
 
-        let mut parsed_program = if inputs.is_hex {
+        let mut parsed_program = if is_hex {
             let prog_srcloc = Srcloc::start(name);
 
             // Synthesize content by disassembling the file.
@@ -997,12 +962,8 @@ impl Debugger {
             program_lines,
             arguments,
             symbols: use_symbol_table,
-            compiled: match &inputs.compiled {
-                Err(_) => None,
-                Ok(ProgramKind::FromHex(sexp)) => { None },
-                Ok(ProgramKind::FromClassic(node)) => { None },
-                Ok(ProgramKind::FromModern(cf)) => { Some(cf.clone()) },
-            }
+            // is_hex,
+            compiled,
         })
     }
 
@@ -1171,10 +1132,6 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         .as_ref()
                         .and_then(|l| l.arguments.args.clone())
                         .unwrap_or(vec![]);
-                    let symbols = launch_extra
-                        .as_ref()
-                        .and_then(|l| l.arguments.symbols.clone())
-                        .unwrap_or("".to_string());
                     if let Some(name) = &l.name {
                         let program = launch_extra
                             .and_then(|l| l.arguments.program)
@@ -1187,7 +1144,6 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             launch_request: l,
                             program: &program,
                             args_for_program: &args,
-                            symbols: &symbols,
                             stop_on_entry,
                         })?;
                         self.msg_seq = new_seq;
