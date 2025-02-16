@@ -17,7 +17,7 @@
         "onCommand:chialisp.startDebug",
         "onDebug",
         "onDebugResolve:chialisp",
-        "workspaceContains:/.vscode/chialisp_properties.json",
+        "workspaceContains:chialisp.json",
         "onFileSystem:cpptools-schema"
     ],
     "contributes": {
