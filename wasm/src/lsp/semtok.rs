@@ -600,7 +600,7 @@ fn do_semantic_tokens(
     let mut last_row = 1;
     let mut last_col = 1;
 
-    for (i,t) in collected_tokens.iter().enumerate() {
+    for (i, t) in collected_tokens.iter().enumerate() {
         if i > 0 && (t.loc.line < last_row || (t.loc.line == last_row && t.loc.col <= last_col)) {
             continue;
         }

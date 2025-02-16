@@ -1,28 +1,26 @@
 /// An object interface to a chialisp debugger which allows better
 /// testing and use apart from the message handler interface.
-
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use debug_types::events::StoppedReason;
-use debug_types::responses::{ResponseBody, SourceResponse};
 use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, SourceArguments};
+use debug_types::responses::{ResponseBody, SourceResponse};
 use debug_types::types::{Breakpoint, Source, SourceBreakpoint};
 
 use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
-use clvm_tools_rs::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
+use clvm_tools_rs::compiler::cldb_hierarchy::{
+    HierarchialRunner, HierarchialStepResult, RunPurpose,
+};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
-use clvm_tools_rs::compiler::sexp::{SExp, decode_string, parse_sexp};
+use clvm_tools_rs::compiler::sexp::parse_sexp;
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
-use crate::dbg::source::{StoredScope, find_location};
+use crate::dbg::source::{find_location, StoredScope};
 use crate::interfaces::{EPrintWriter, ILogWriter};
-use crate::lsp::types::{DocPosition, DocRange};
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]

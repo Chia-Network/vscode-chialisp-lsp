@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::mem::swap;
 use std::path::PathBuf;
@@ -9,33 +9,27 @@ use std::rc::Rc;
 
 use debug_types::events::{ContinuedEvent, Event, EventBody, StoppedEvent, StoppedReason};
 use debug_types::requests::{
-    InitializeRequestArguments, LaunchRequestArguments, RequestCommand, SourceArguments,
-};
+    InitializeRequestArguments, LaunchRequestArguments, RequestCommand};
 use debug_types::responses::{
     InitializeResponse, Response, ResponseBody, ScopesResponse, SetBreakpointsResponse,
-    SetExceptionBreakpointsResponse, SourceResponse, StackTraceResponse, ThreadsResponse,
-    VariablesResponse,
+    SetExceptionBreakpointsResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
 };
 use debug_types::types::{
-    Breakpoint, Capabilities, ChecksumAlgorithm, Scope, Source, SourceBreakpoint, StackFrame,
-    Thread, Variable,
+    Capabilities, ChecksumAlgorithm, Scope, Source, StackFrame, Thread, Variable,
 };
 use debug_types::{MessageKind, ProtocolMessage};
 
 use clvmr::allocator::Allocator;
 
-use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
 use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
 use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
 use clvm_tools_rs::classic::clvm_tools::clvmc::CompileError;
+use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
-use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
 
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
-use clvm_tools_rs::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose,
-};
+use clvm_tools_rs::compiler::cldb_hierarchy::{HierarchialRunner};
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
@@ -45,12 +39,11 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::obj::{RunningDebugger, TargetDepth};
-use crate::dbg::source::{SrclocParseAction, StoredScope, parse_srcloc};
+use crate::dbg::source::{parse_srcloc, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, MessageHandler, ProgramKind};
 #[cfg(test)]
-use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::types::{ConfigJson, DocPosition, DocRange};
+use crate::lsp::types::ConfigJson;
 
 // Lifecycle:
 // (a (code... ) (c arg ...))
@@ -297,6 +290,7 @@ struct LaunchArgs<'a> {
     launch_request: &'a LaunchRequestArguments,
     program: &'a str,
     args_for_program: &'a [String],
+    #[allow(dead_code)]
     symbols: &'a str,
     stop_on_entry: bool,
 }
@@ -394,21 +388,22 @@ impl Debugger {
                 "path_or_code".to_string(),
                 ArgumentValue::ArgString(
                     Some(source_and_content.source_file.clone()),
-                    decode_string(&source_and_content.source_content)
-                )
+                    decode_string(&source_and_content.source_content),
+                ),
             );
             // We don't get this info explicitly at this point.  We will grab it downstream when
             // we receive a better view of the launch request.
-            compile_input_args.insert("env".to_string(), ArgumentValue::ArgString(None, "()".to_string()));
+            compile_input_args.insert(
+                "env".to_string(),
+                ArgumentValue::ArgString(None, "()".to_string()),
+            );
             if !inputs.is_hex {
-                inputs.compile_input = Some(RunAndCompileInputData::new(
-                    allocator,
-                    &compile_input_args
-                )?);
+                inputs.compile_input =
+                    Some(RunAndCompileInputData::new(allocator, &compile_input_args)?);
             };
 
-            let frontend_compiled =
-                frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
+            let frontend_compiled = frontend(opts.clone(), &source_and_content.source_parsed)
+                .map_err(compile_err_map)?;
 
             inputs.source = Some(source_and_content);
             inputs.compiled = Ok(ProgramKind::FromModern(frontend_compiled));
@@ -478,10 +473,10 @@ impl Debugger {
             symbols: use_symbol_table,
             compiled: match &inputs.compiled {
                 Err(_) => None,
-                Ok(ProgramKind::FromHex(sexp)) => { None },
-                Ok(ProgramKind::FromClassic(node)) => { None },
-                Ok(ProgramKind::FromModern(cf)) => { Some(cf.clone()) },
-            }
+                Ok(ProgramKind::FromHex(_sexp)) => None,
+                Ok(ProgramKind::FromClassic(_node)) => None,
+                Ok(ProgramKind::FromModern(cf)) => Some(cf.clone()),
+            },
         })
     }
 

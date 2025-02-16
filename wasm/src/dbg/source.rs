@@ -6,7 +6,7 @@ use std::rc::Rc;
 use debug_types::types::SourceBreakpoint;
 
 use clvm_tools_rs::compiler::comptypes::CompileForm;
-use clvm_tools_rs::compiler::sexp::{SExp, decode_string};
+use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::interfaces::ILogWriter;
@@ -214,7 +214,6 @@ fn fuzzy_file_match(location_filename: &str, want_filename: &str) -> bool {
 fn test_fuzzy_file_match_1() {
     assert!(fuzzy_file_match("test/foo/bar.clsp", "bar/baz/bar.clsp"));
 }
-
 
 fn resolve_function(symbols: Rc<HashMap<String, String>>, name: &str) -> Option<String> {
     for (k, v) in symbols.iter() {

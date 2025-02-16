@@ -18,6 +18,7 @@ pub struct DebuggerSourceAndContent {
     pub source_parsed: Vec<Rc<SExp>>,
 }
 
+#[allow(dead_code)]
 pub enum ProgramKind {
     FromHex(Rc<SExp>),
     FromClassic(NodePtr),
