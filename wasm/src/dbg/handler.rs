@@ -41,7 +41,6 @@ use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::obj::{RunningDebugger, TargetDepth};
 use crate::dbg::source::{parse_srcloc, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, MessageHandler, ProgramKind};
-#[cfg(test)]
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::types::ConfigJson;
 
