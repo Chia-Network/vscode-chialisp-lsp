@@ -92,8 +92,8 @@
                 ],
                 "jsonValidation": [
                     {
-                        "fileMatch": "chialisp_properties.json",
-                        "url": "chialisp-schema:///chialisp_properties.json"
+                        "fileMatch": "schema/chialisp_properties.json",
+                        "url": "chialisp-schema:///schema/chialisp_properties.json"
                     }
                 ],
                 "configurationAttributes": {
