@@ -461,15 +461,16 @@ describe("Basic element tests", function() {
         await closeBox.click();
 
         console.log("completion test done, should have no search box");
+
+        // Check that we apply our schema to the launch json
+        console.log('Check launch json highlighting');
+        await openFileTheLongWay(".vscode/launch.json");
+
         await wait(25.0);
 
         //
         // Test debugger
         //
-
-        // Check that we apply our schema to the launch json
-        console.log('Check launch json highlighting');
-        await openFileTheLongWay(".vscode/launch.json");
 
         // Verify that installing the debugger made the lint warnings disappear in
         // launch.json.
