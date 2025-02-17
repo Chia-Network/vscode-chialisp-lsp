@@ -1,0 +1,36 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "definitions": {
+        "configurations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "program"],
+                "properties": {
+                    "name": {
+                        "description": "Name of the configuration",
+                        "type": "string"
+                    },
+                    "args": {
+                        "description": "Arguments to specify the environment for running the program",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": ["()"]
+                    },
+                    "symbols": {
+                        "description": "Symbol file to use for launching pre-compiled clvm or classic chialisp",
+                        "type": "string",
+                        "default": ""
+                    },
+                    "program": {
+                        "description": "Program to run (hex, clvm or clsp)",
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}

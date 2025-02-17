@@ -4,7 +4,7 @@
     "icon": "images/chialisp.png",
     "description": "A Rust LSP client for Chialisp",
     "publisher": "ChiaNetwork",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "engines": {
         "vscode": "^1.85.0"
     },
@@ -15,7 +15,10 @@
     "activationEvents": [
         "onLanguage:chialisp",
         "onCommand:chialisp.startDebug",
-        "onDebug"
+        "onDebug",
+        "onDebugResolve:chialisp",
+        "workspaceContains:chialisp.json",
+        "onFileSystem:cpptools-schema"
     ],
     "contributes": {
         "languages": [
@@ -87,11 +90,38 @@
                     "Chialisp",
                     "chialisp"
                 ],
+                "jsonValidation": [
+                    {
+                        "fileMatch": "schema/chialisp_properties.json",
+                        "url": "chialisp-schema:///schema/chialisp_properties.json"
+                    }
+                ],
                 "configurationAttributes": {
                     "launch": {
                         "required": [
-                            "program"
-                        ]
+                            "program",
+                            "args",
+                            "type"
+                        ],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "The chialisp program to run."
+                            },
+                            "args": {
+                                "type": "array",
+                                "description": "Environment for program.  Specified as an array of strings for compatibility with other debug style tools.",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "default": ["()"]
+                            },
+                            "symbols": {
+                                "type": "string",
+                                "description": "Symbol file to use.  Can specify additional information for classic chialisp and inputs files.",
+                                "default": ""
+                            }
+                        }
                     }
                 }
             }
