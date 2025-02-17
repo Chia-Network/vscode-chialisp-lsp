@@ -133,6 +133,7 @@ impl RunningDebugger {
 
             let mut inserted_breakpoints = HashMap::new();
             let mut reported_breakpoints = Vec::new();
+            let mut found_breakpoint = false;
 
             for (i, b) in breakpoints.iter().enumerate() {
                 // Verfified if we overlap at least one location in the symbols
@@ -143,6 +144,7 @@ impl RunningDebugger {
                 {
                     let end_col = found.until.clone().map(|e| e.col as u32);
                     let end_line = found.until.map(|e| e.line as u32);
+                    found_breakpoint = true;
                     let bp = Breakpoint {
                         id: Some(i + bp_id_start),
                         line: Some(found.line as u32),
@@ -166,6 +168,13 @@ impl RunningDebugger {
                 } else {
                     reported_breakpoints.push(empty_breakpoint((i, b)));
                 }
+            }
+
+            // We didn't find anything in the symbols to suggest where the breakpoint is.
+            // As a second choice, we can enumerate the forms we have in our documents to
+            // find a function with a compatible name.
+            if !found_breakpoint {
+                log.log("didn't find breakpoint, scanning forms");
             }
 
             self.breakpoints.insert(p, inserted_breakpoints.clone());
