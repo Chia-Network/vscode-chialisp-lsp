@@ -108,7 +108,7 @@ impl RunningDebugger {
             .cloned()
             .map(Some)
             .unwrap_or_else(|| s.name.clone());
-        log.log(&format!("s.path {:?} s.name {:?}", s.path, s.name));
+        log.log(&format!("set_breakpoint s.path {:?} s.name {:?}", s.path, s.name));
         let bp_id_start = self.next_bp_id;
         self.next_bp_id += breakpoints.len();
 
