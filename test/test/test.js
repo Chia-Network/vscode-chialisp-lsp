@@ -521,7 +521,7 @@ describe("Basic element tests", function() {
 
         let expression = await driver.wait(until.elementLocated(By.css(".expression")));
         let text = await expression.getText();
-        while (simplifyText(text) != "X:4") {
+        while (simplifyText(text) != "X=4") {
             await clickStepInto();
             console.log(simplifyText(text));
             expression = await driver.wait(until.elementLocated(By.css(".expression")));
