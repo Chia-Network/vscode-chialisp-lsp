@@ -11,9 +11,9 @@ const options = new chrome.Options();
 options.addArguments('--remote-debugging-pipe');
 
 const driver = new Builder()
-    .forBrowser('chrome')
-    .setChromeOptions(options)
-    .build();
+      .forBrowser('chrome')
+      .setChromeOptions(options)
+      .build();
 
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
@@ -45,6 +45,10 @@ let login = async function() {
     // once the Log in button has gone "stale."
     await enterCredentialsAndLogin();
     console.log('Logged in.');
+
+    console.log('grant clipboard permissions if needed');
+    await driver.setPermission('clipboard-read', 'granted');
+    await driver.setPermission('clipboard-write', 'granted');
 };
 
 // Configure Jasmine's timeout value to account for longer tests.
@@ -330,6 +334,7 @@ describe("Basic element tests", function() {
         await dismissTrustDialogue();
 
         // Will abort if not found.
+        // There should be a squiggly here before the driver is installed.
         let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-warning")));
 
         await dismissTrustDialogue();
@@ -467,7 +472,13 @@ describe("Basic element tests", function() {
 
         // Check that we apply our schema to the launch json
         console.log('Check launch json highlighting');
-        await openFileTheLongWay(driver, ".vscode/launch.json");
+        // This version of vs code opens from the most recent folder.
+        await openFileTheLongWay(driver, "../.vscode/launch.json");
+
+        // Verify that installing the debugger made the lint warnings disappear in
+        // launch.json.
+        squigglies = await driver.findElements(By.css('.squiggly-warning'));
+        expect(squigglies.length).toBe(0);
 
         await wait(25.0);
 
@@ -475,16 +486,12 @@ describe("Basic element tests", function() {
         // Test debugger
         //
 
-        // Verify that installing the debugger made the lint warnings disappear in
-        // launch.json.
-        squigglies = await driver.findElements(By.css('.squiggly-warning'));
-        expect(squigglies.length).toBe(0);
-
         // Provide basic data used to evaluate the test.
         // This test should pass.
         console.log('Running debug test 1...');
 
-        await openFileTheLongWay(driver, 'include/fact.clinc');
+        // Change folder.
+        await openFileTheLongWay(driver, '../include/fact.clinc');
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
