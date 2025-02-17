@@ -462,9 +462,12 @@ describe("Basic element tests", function() {
 
         console.log("completion test done, should have no search box");
 
+        // Wait for the ui to settle.
+        await wait(2.0);
+
         // Check that we apply our schema to the launch json
         console.log('Check launch json highlighting');
-        await openFileTheLongWay(".vscode/launch.json");
+        await openFileTheLongWay(driver, ".vscode/launch.json");
 
         await wait(25.0);
 

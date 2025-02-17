@@ -15,9 +15,9 @@
       N ; Return the number of steps
       (let ((incN (+ N 1))) ; Next N
         (assign
-          (two three) (list 2 3)
+          (two three QQEX) (list 2 3)
 
-          (if (odd X) ; Is it odd?
+          (if (odd X QQEX) ; Is it odd?
             (collatz incN (+ 1 (* three X))) ; Odd? 3 X + 1
             (collatz incN (/ X two)) ; Even? X / 2
             )
