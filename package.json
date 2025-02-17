@@ -98,21 +98,15 @@
                 ],
                 "configurationAttributes": {
                     "launch": {
-                        "type": "object",
                         "required": [
                             "program",
                             "args",
                             "type"
                         ],
-                        "attributes": {
+                        "properties": {
                             "program": {
                                 "type": "string",
                                 "description": "The chialisp program to run."
-                            },
-                            "type": {
-                                "type": "string",
-                                "description": "Type of debugging to do.",
-                                "default": "chialisp"
                             },
                             "args": {
                                 "type": "array",
@@ -126,11 +120,6 @@
                                 "type": "string",
                                 "description": "Symbol file to use.  Can specify additional information for classic chialisp and inputs files.",
                                 "default": ""
-                            },
-                            "type": {
-                                "type": "string",
-                                "description": "specifies chialisp launch type",
-                                "default": "chialisp"
                             }
                         }
                     }
