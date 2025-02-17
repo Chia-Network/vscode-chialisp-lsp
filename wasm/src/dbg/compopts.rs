@@ -30,10 +30,13 @@ impl HasCompilerOptsDelegation for DbgCompilerOpts {
     fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
         self.opts.clone()
     }
-    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(&self, f: F) -> Rc<dyn CompilerOpts> {
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(
+        &self,
+        f: F,
+    ) -> Rc<dyn CompilerOpts> {
         Rc::new(DbgCompilerOpts {
             opts: f(self.opts.clone()),
-            .. self.clone()
+            ..self.clone()
         })
     }
     fn override_read_new_file(
