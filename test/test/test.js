@@ -491,7 +491,7 @@ describe("Basic element tests", function() {
         console.log('Running debug test 1...');
 
         // Change folder.
-        await openFileTheLongWay(driver, '../include/fact.clinc');
+        await openFileTheLongWay(driver, '../project/include/fact.clinc');
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
