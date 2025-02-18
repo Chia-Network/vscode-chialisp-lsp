@@ -154,7 +154,7 @@
     "devDependencies": {
         "@stylistic/eslint-plugin": "^3.1.0",
         "@types/glob": "^8.1.0",
-        "@types/mocha": "^9.1.1",
+        "@types/mocha": "^10.0.10",
         "@types/node": "22.13.4",
         "@types/vscode": "^1.85.0",
         "@typescript-eslint/eslint-plugin": "^8.24.0",
