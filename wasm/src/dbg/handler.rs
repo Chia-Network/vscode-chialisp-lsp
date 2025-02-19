@@ -2,9 +2,7 @@ use serde::Deserialize;
 
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::io::BufRead;
 use std::mem::swap;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use debug_types::events::{ContinuedEvent, Event, EventBody, StoppedEvent, StoppedReason};
@@ -20,26 +18,17 @@ use debug_types::{MessageKind, ProtocolMessage};
 
 use clvmr::allocator::Allocator;
 
-use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
-use clvm_tools_rs::classic::clvm_tools::clvmc::compile_clvm_text;
-use clvm_tools_rs::classic::clvm_tools::clvmc::CompileError;
-use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
 
-use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::HierarchialRunner;
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
-use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::obj::{read_program_data, RunningDebugger, TargetDepth};
 use crate::dbg::source::{parse_srcloc, StoredScope};
-use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, MessageHandler, ProgramKind};
+use crate::dbg::types::MessageHandler;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::types::ConfigJson;
 

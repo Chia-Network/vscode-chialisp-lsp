@@ -1,7 +1,7 @@
 /// An object interface to a chialisp debugger which allows better
 /// testing and use apart from the message handler interface.
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -20,7 +20,6 @@ use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
@@ -31,7 +30,7 @@ use clvmr::Allocator;
 
 use crate::dbg::source::{find_location, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
-use crate::interfaces::{EPrintWriter, IFileReader, ILogWriter};
+use crate::interfaces::{IFileReader, ILogWriter};
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]
