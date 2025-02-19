@@ -25,7 +25,7 @@ use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
-use crate::dbg::source::{StoredScope, find_location};
+use crate::dbg::source::{find_location, StoredScope};
 use crate::interfaces::{IFileReader, ILogWriter};
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
