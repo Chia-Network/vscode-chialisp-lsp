@@ -3,6 +3,7 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
 use std::io::BufRead;
+use std::mem::swap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -22,7 +23,7 @@ use clvm_tools_rs::compiler::cldb_hierarchy::{
 };
 #[cfg(test)]
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
+use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
@@ -32,6 +33,8 @@ use clvmr::Allocator;
 
 use crate::dbg::source::{find_location, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
+use crate::lsp::parse::get_positional_text;
+use crate::lsp::types::DocRange;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -427,6 +430,99 @@ fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(Strin
     None
 }
 
+fn lines_from_bytes<I>(iter: I) -> Vec<Rc<Vec<u8>>>
+where I: Iterator<Item = u8>
+{
+    let mut lines = vec![];
+    let mut current_line = vec![];
+    for by in iter {
+        if by == 0xa {
+            let mut new_line = vec![];
+            swap(&mut new_line, &mut current_line);
+            lines.push(Rc::new(new_line));
+        } else {
+            current_line.push(by);
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(Rc::new(current_line));
+    }
+
+    lines
+}
+
+fn translate_argument_names(
+    lines: &[Rc<Vec<u8>>],
+    sexp: Rc<SExp>
+) -> Rc<SExp> {
+    match sexp.borrow() {
+        SExp::Cons(l, a, b) => {
+            Rc::new(SExp::Cons(
+                l.clone(),
+                translate_argument_names(lines, a.clone()),
+                translate_argument_names(lines, b.clone())
+            ))
+        }
+        SExp::Atom(l, _) => {
+            let vrange = DocRange::from_srcloc(l.clone()).to_range();
+            if let Some(replacement) = get_positional_text(lines, &vrange.start) {
+                Rc::new(SExp::Atom(l.clone(), replacement.to_vec()))
+            } else {
+                sexp.clone()
+            }
+        }
+        _ => sexp.clone()
+    }
+}
+
+fn populate_arguments(
+    fs: Rc<dyn IFileReader>,
+    use_symbol_table: &mut HashMap<String, String>,
+    cf: &CompileForm
+) {
+    let mut name_to_hash = HashMap::new();
+    let mut files: HashMap<String, Vec<Rc<Vec<u8>>>> = HashMap::new();
+
+    for (k,v) in use_symbol_table.iter() {
+        name_to_hash.insert(v.clone(), k.clone());
+    }
+    // Populate arguments if they aren't in the symbols.
+    for helper in cf.helpers.iter() {
+        let helper_file = helper.loc().file.clone();
+        let borrowed_file: &String = helper_file.borrow();
+        let content: &[Rc<Vec<u8>>] =
+            if let Some(content) = files.get(borrowed_file) {
+                let ct: &[Rc<Vec<u8>>] = &content;
+                ct
+            } else if let Ok(content) = fs.read_content(borrowed_file) {
+                let lines = lines_from_bytes(content.bytes());
+                files.insert(helper.loc().file.to_string(), lines);
+                if let Some(lines) = files.get(borrowed_file) {
+                    let ct: &[Rc<Vec<u8>>] = lines;
+                    ct
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            };
+
+        if let Some(hash) = name_to_hash.get(&decode_string(helper.name())) {
+            let arguments_name = format!("{hash}_arguments");
+            if !use_symbol_table.contains_key(&arguments_name) {
+                if let HelperForm::Defun(_, d) = helper {
+                    use_symbol_table.insert(
+                        arguments_name,
+                        format!("{}", translate_argument_names(content, d.args.clone()))
+                    );
+                    use_symbol_table.insert(format!("{hash}_left_env"), "1".to_string());
+                }
+            }
+        }
+    }
+}
+
 /// Try to obtain anything we're able to locate related to the chialisp program
 /// or clvm hex that was launched.
 pub fn read_program_data(
@@ -560,6 +656,16 @@ pub fn read_program_data(
         };
     }
 
+    let compiled = match &inputs.compiled {
+        Err(_) => None,
+        Ok(ProgramKind::FromHex(_sexp)) => None,
+        Ok(ProgramKind::FromClassic(_node)) => None,
+        Ok(ProgramKind::FromModern(cf)) => {
+            populate_arguments(fs.clone(), &mut use_symbol_table, cf);
+            Some(cf.clone())
+        }
+    };
+
     let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
 
     Ok(RunStartData {
@@ -568,11 +674,6 @@ pub fn read_program_data(
         program_lines,
         arguments,
         symbols: use_symbol_table,
-        compiled: match &inputs.compiled {
-            Err(_) => None,
-            Ok(ProgramKind::FromHex(_sexp)) => None,
-            Ok(ProgramKind::FromClassic(_node)) => None,
-            Ok(ProgramKind::FromModern(cf)) => Some(cf.clone()),
-        },
+        compiled,
     })
 }
