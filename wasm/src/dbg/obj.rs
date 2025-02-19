@@ -20,6 +20,8 @@ use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
+#[cfg(test)]
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
@@ -30,6 +32,8 @@ use clvmr::Allocator;
 
 use crate::dbg::source::{find_location, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
+#[cfg(test)]
+use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
