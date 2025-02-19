@@ -33,11 +33,11 @@ use clvmr::Allocator;
 
 use crate::dbg::source::{find_location, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
-use crate::lsp::parse::get_positional_text;
-use crate::lsp::types::DocRange;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
+use crate::lsp::parse::get_positional_text;
+use crate::lsp::types::DocRange;
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]
@@ -431,7 +431,8 @@ fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(Strin
 }
 
 fn lines_from_bytes<I>(iter: I) -> Vec<Rc<Vec<u8>>>
-where I: Iterator<Item = u8>
+where
+    I: Iterator<Item = u8>,
 {
     let mut lines = vec![];
     let mut current_line = vec![];
@@ -452,18 +453,13 @@ where I: Iterator<Item = u8>
     lines
 }
 
-fn translate_argument_names(
-    lines: &[Rc<Vec<u8>>],
-    sexp: Rc<SExp>
-) -> Rc<SExp> {
+fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
     match sexp.borrow() {
-        SExp::Cons(l, a, b) => {
-            Rc::new(SExp::Cons(
-                l.clone(),
-                translate_argument_names(lines, a.clone()),
-                translate_argument_names(lines, b.clone())
-            ))
-        }
+        SExp::Cons(l, a, b) => Rc::new(SExp::Cons(
+            l.clone(),
+            translate_argument_names(lines, a.clone()),
+            translate_argument_names(lines, b.clone()),
+        )),
         SExp::Atom(l, _) => {
             let vrange = DocRange::from_srcloc(l.clone()).to_range();
             if let Some(replacement) = get_positional_text(lines, &vrange.start) {
@@ -472,41 +468,40 @@ fn translate_argument_names(
                 sexp.clone()
             }
         }
-        _ => sexp.clone()
+        _ => sexp.clone(),
     }
 }
 
 fn populate_arguments(
     fs: Rc<dyn IFileReader>,
     use_symbol_table: &mut HashMap<String, String>,
-    cf: &CompileForm
+    cf: &CompileForm,
 ) {
     let mut name_to_hash = HashMap::new();
     let mut files: HashMap<String, Vec<Rc<Vec<u8>>>> = HashMap::new();
 
-    for (k,v) in use_symbol_table.iter() {
+    for (k, v) in use_symbol_table.iter() {
         name_to_hash.insert(v.clone(), k.clone());
     }
     // Populate arguments if they aren't in the symbols.
     for helper in cf.helpers.iter() {
         let helper_file = helper.loc().file.clone();
         let borrowed_file: &String = helper_file.borrow();
-        let content: &[Rc<Vec<u8>>] =
-            if let Some(content) = files.get(borrowed_file) {
-                let ct: &[Rc<Vec<u8>>] = &content;
+        let content: &[Rc<Vec<u8>>] = if let Some(content) = files.get(borrowed_file) {
+            let ct: &[Rc<Vec<u8>>] = &content;
+            ct
+        } else if let Ok(content) = fs.read_content(borrowed_file) {
+            let lines = lines_from_bytes(content.bytes());
+            files.insert(helper.loc().file.to_string(), lines);
+            if let Some(lines) = files.get(borrowed_file) {
+                let ct: &[Rc<Vec<u8>>] = lines;
                 ct
-            } else if let Ok(content) = fs.read_content(borrowed_file) {
-                let lines = lines_from_bytes(content.bytes());
-                files.insert(helper.loc().file.to_string(), lines);
-                if let Some(lines) = files.get(borrowed_file) {
-                    let ct: &[Rc<Vec<u8>>] = lines;
-                    ct
-                } else {
-                    continue;
-                }
             } else {
                 continue;
-            };
+            }
+        } else {
+            continue;
+        };
 
         if let Some(hash) = name_to_hash.get(&decode_string(helper.name())) {
             let arguments_name = format!("{hash}_arguments");
@@ -514,7 +509,7 @@ fn populate_arguments(
                 if let HelperForm::Defun(_, d) = helper {
                     use_symbol_table.insert(
                         arguments_name,
-                        format!("{}", translate_argument_names(content, d.args.clone()))
+                        format!("{}", translate_argument_names(content, d.args.clone())),
                     );
                     use_symbol_table.insert(format!("{hash}_left_env"), "1".to_string());
                 }
