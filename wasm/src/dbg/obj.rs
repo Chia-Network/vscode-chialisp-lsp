@@ -3,7 +3,6 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
 use std::io::BufRead;
-use std::mem::swap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -31,7 +30,7 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use clvmr::Allocator;
 
-use crate::dbg::source::{find_location, StoredScope};
+use crate::dbg::source::{find_location, StoredScope, lines_from_bytes};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
@@ -418,29 +417,6 @@ fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(Strin
     }
 
     None
-}
-
-fn lines_from_bytes<I>(iter: I) -> Vec<Rc<Vec<u8>>>
-where
-    I: Iterator<Item = u8>,
-{
-    let mut lines = vec![];
-    let mut current_line = vec![];
-    for by in iter {
-        if by == 0xa {
-            let mut new_line = vec![];
-            swap(&mut new_line, &mut current_line);
-            lines.push(Rc::new(new_line));
-        } else {
-            current_line.push(by);
-        }
-    }
-
-    if !current_line.is_empty() {
-        lines.push(Rc::new(current_line));
-    }
-
-    lines
 }
 
 fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
