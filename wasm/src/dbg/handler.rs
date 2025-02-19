@@ -27,7 +27,7 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::obj::{read_program_data, RunningDebugger, TargetDepth};
-use crate::dbg::source::{parse_srcloc, StoredScope};
+use crate::dbg::source::{StoredScope, parse_srcloc};
 use crate::dbg::types::MessageHandler;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::types::ConfigJson;

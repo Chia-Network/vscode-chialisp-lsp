@@ -518,6 +518,16 @@ fn populate_arguments(
     }
 }
 
+pub struct RunStartData {
+    pub source_file: String,
+    pub program: Rc<SExp>,
+    pub program_lines: Vec<String>,
+    pub arguments: Rc<SExp>,
+    pub symbols: HashMap<String, String>,
+    // is_hex: bool, // Future: if tools need to know this. (clippy)
+    pub compiled: Option<CompileForm>,
+}
+
 /// Try to obtain anything we're able to locate related to the chialisp program
 /// or clvm hex that was launched.
 pub fn read_program_data(
