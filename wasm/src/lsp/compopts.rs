@@ -37,10 +37,13 @@ impl HasCompilerOptsDelegation for LSPCompilerOpts {
     fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
         self.opts.clone()
     }
-    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(&self, f: F) -> Rc<dyn CompilerOpts> {
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(
+        &self,
+        f: F,
+    ) -> Rc<dyn CompilerOpts> {
         Rc::new(LSPCompilerOpts {
             opts: f(self.opts.clone()),
-            .. self.clone()
+            ..self.clone()
         })
     }
     fn override_read_new_file(
@@ -63,15 +66,12 @@ impl HasCompilerOptsDelegation for LSPCompilerOpts {
 
         Ok((computed_filename, get_bytes(&content.text)))
     }
-    fn override_set_search_paths(
-        &self,
-        new_paths: &[String]
-    ) -> Rc<dyn CompilerOpts> {
+    fn override_set_search_paths(&self, new_paths: &[String]) -> Rc<dyn CompilerOpts> {
         let new_with_includes = self.opts.set_search_paths(new_paths);
         Rc::new(LSPCompilerOpts {
             opts: new_with_includes,
             include_dirs: new_paths.to_owned(),
-            .. self.clone()
+            ..self.clone()
         })
     }
 

@@ -18,7 +18,7 @@ use lsp_types::{
     TextDocumentPositionParams, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
 };
 
-use crate::dbg::handler::parse_srcloc;
+use crate::dbg::obj::parse_srcloc;
 use crate::interfaces::{EPrintWriter, FSFileReader};
 use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
