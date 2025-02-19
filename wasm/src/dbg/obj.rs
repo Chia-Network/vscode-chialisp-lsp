@@ -54,16 +54,6 @@ pub struct RecognizedBreakpoint {
     spec: Breakpoint,
 }
 
-pub struct RunStartData {
-    pub source_file: String,
-    pub program: Rc<SExp>,
-    pub program_lines: Vec<String>,
-    pub arguments: Rc<SExp>,
-    pub symbols: HashMap<String, String>,
-    // is_hex: bool, // Future: if tools need to know this. (clippy)
-    pub compiled: Option<CompileForm>,
-}
-
 /// This is a running debugger.  It's treated as an object with mutability via
 /// its step and set_breakpoints methods.  It is the primary object that implements
 /// tracking the debug state using the transitions emitted by the HierarchialRunner
