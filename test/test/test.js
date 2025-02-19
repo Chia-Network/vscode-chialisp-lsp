@@ -1,13 +1,19 @@
 // Require modules used in the logic below
 const jasmine = require('jasmine');
 const os = require('os');
-const {Builder, By, Key, until} = require('selenium-webdriver');
+const {Builder, Options, By, Key, until} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
 require('chromedriver');
+
+const chrome = require('selenium-webdriver/chrome');
+const options = new chrome.Options();
+options.addArguments('--remote-debugging-pipe');
+
 const driver = new Builder()
-    .forBrowser('chrome')
-    .build();
+      .forBrowser('chrome')
+      .setChromeOptions(options)
+      .build();
 
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
@@ -39,6 +45,10 @@ let login = async function() {
     // once the Log in button has gone "stale."
     await enterCredentialsAndLogin();
     console.log('Logged in.');
+
+    console.log('grant clipboard permissions if needed');
+    await driver.setPermission('clipboard-read', 'granted');
+    await driver.setPermission('clipboard-write', 'granted');
 };
 
 // Configure Jasmine's timeout value to account for longer tests.
@@ -264,6 +274,16 @@ async function findFileInput(driver) {
     return await ibwrapper.findElement(By.css(".input"));
 }
 
+async function dismissTrustDialogue() {
+        // Dismiss trust dialog if it comes up.
+        console.log('check for the trust dialog');
+        let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
+        if (trustDialog.length !== 0) {
+            let trustButton = await driver.wait(until.elementLocated(byVisibleText("Yes, I trust the authors")));
+            trustButton.click();
+	}
+}
+
 // Define a category of tests using test framework, in this case Jasmine
 describe("Basic element tests", function() {
     // After each test, close the browser.
@@ -280,17 +300,11 @@ describe("Basic element tests", function() {
         console.log('wait for an element indicating that the workspace is up');
         await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
 
-	// Things load more progressively in the current vs code.
+        // Things load more progressively in the current vs code.
         const actions = driver.actions({async: true});
         await actions.pause(3000).perform();
 
-        // Dismiss trust dialog if it comes up.
-        console.log('check for the trust dialog');
-        let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
-        if (trustDialog.length !== 0) {
-            let trustButton = await driver.wait(until.elementLocated(byVisibleText("Yes, I trust the authors")));
-            trustButton.click();
-        }
+        await dismissTrustDialogue();
     }
 
     async function installVsix() {
@@ -313,10 +327,25 @@ describe("Basic element tests", function() {
         console.log('install done');
     }
 
+    // The launch json we have should have squiggles until the extension is installed.
+    async function checkSquiggleInLaunchJson() {
+        await openFileTheLongWay(driver, ".vscode/launch.json");
+
+        await dismissTrustDialogue();
+
+        // Will abort if not found.
+        // There should be a squiggly here before the driver is installed.
+        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-warning")));
+
+        await dismissTrustDialogue();
+    }
+
     it("starts", async function() {
         await login();
 
         await enterTheEditor();
+
+        await checkSquiggleInLaunchJson();
 
         await installVsix();
     });
@@ -327,7 +356,7 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running test...');
 
-	await openFile(driver, 'collatz.cl');
+        await openFile(driver, 'collatz.cl');
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
@@ -357,23 +386,23 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         console.log('find the input box');
-	let inputBox = await findFileInput(driver);
-	await inputBox.click();
+        let inputBox = await findFileInput(driver);
+        await inputBox.click();
         await inputBox.sendKeys("include/test-inc.clsp");
 
         console.log('accept input');
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
         okBox.click();
 
-	await wait(3.0);
+        await wait(3.0);
 
         console.log('Check the content of chialisp.json');
-	await openFile(driver, "chialisp.json");
+        await openFile(driver, "chialisp.json");
 
         console.log('Check content');
         let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
 
-	await openFile(driver, "collatz.cl");
+        await openFile(driver, "collatz.cl");
 
         console.log('comments should move');
         let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
@@ -437,6 +466,20 @@ describe("Basic element tests", function() {
         await closeBox.click();
 
         console.log("completion test done, should have no search box");
+
+        // Wait for the ui to settle.
+        await wait(2.0);
+
+        // Check that we apply our schema to the launch json
+        console.log('Check launch json highlighting');
+        // This version of vs code opens from the most recent folder.
+        await openFileTheLongWay(driver, "../.vscode/launch.json");
+
+        // Verify that installing the debugger made the lint warnings disappear in
+        // launch.json.
+        squigglies = await driver.findElements(By.css('.squiggly-warning'));
+        expect(squigglies.length).toBe(0);
+
         await wait(25.0);
 
         //
@@ -447,7 +490,8 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running debug test 1...');
 
-        await openFileTheLongWay(driver, 'include/fact.clinc');
+        // Change folder.
+        await openFileTheLongWay(driver, '../project/include/fact.clinc');
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
@@ -477,7 +521,7 @@ describe("Basic element tests", function() {
 
         let expression = await driver.wait(until.elementLocated(By.css(".expression")));
         let text = await expression.getText();
-        while (simplifyText(text) != "X:4") {
+        while (simplifyText(text) != "X=4") {
             await clickStepInto();
             console.log(simplifyText(text));
             expression = await driver.wait(until.elementLocated(By.css(".expression")));
