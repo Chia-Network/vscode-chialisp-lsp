@@ -13,7 +13,7 @@ use debug_types::types::{Breakpoint, Source, SourceBreakpoint};
 
 use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
 use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
-use clvm_tools_rs::classic::clvm_tools::clvmc::{CompileError, compile_clvm_text};
+use clvm_tools_rs::classic::clvm_tools::clvmc::{compile_clvm_text, CompileError};
 use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
@@ -24,7 +24,7 @@ use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
 use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
-use clvm_tools_rs::compiler::sexp::{SExp, decode_string, parse_sexp};
+use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use clvmr::Allocator;
@@ -129,7 +129,10 @@ impl RunningDebugger {
             .cloned()
             .map(Some)
             .unwrap_or_else(|| s.name.clone());
-        log.log(&format!("set_breakpoint s.path {:?} s.name {:?}", s.path, s.name));
+        log.log(&format!(
+            "set_breakpoint s.path {:?} s.name {:?}",
+            s.path, s.name
+        ));
         let bp_id_start = self.next_bp_id;
         self.next_bp_id += breakpoints.len();
 
@@ -163,7 +166,9 @@ impl RunningDebugger {
                 if let Some((hash, found)) =
                     find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
                 {
-                    log.log(&format!("breakpoint {p} {b:?} resolved to {hash} {found:?}"));
+                    log.log(&format!(
+                        "breakpoint {p} {b:?} resolved to {hash} {found:?}"
+                    ));
                     let end_col = found.until.clone().map(|e| e.col as u32);
                     let end_line = found.until.map(|e| e.line as u32);
                     let bp = Breakpoint {
@@ -454,8 +459,7 @@ pub fn read_program_data(
     };
 
     if let Some((source_file, source_content)) = try_locate_source_file(fs.clone(), name) {
-        let source_parsed =
-            parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
+        let source_parsed = parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
             .map_err(parse_err_map)?;
 
         let source_and_content = DebuggerSourceAndContent {
@@ -483,8 +487,8 @@ pub fn read_program_data(
                 Some(RunAndCompileInputData::new(allocator, &compile_input_args)?);
         };
 
-        let frontend_compiled = frontend(opts.clone(), &source_and_content.source_parsed)
-            .map_err(compile_err_map)?;
+        let frontend_compiled =
+            frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
         inputs.compiled = Ok(ProgramKind::FromModern(frontend_compiled));
@@ -494,14 +498,13 @@ pub fn read_program_data(
         let prog_srcloc = Srcloc::start(name);
 
         // Synthesize content by disassembling the file.
-        use_symbol_table =
-            if let Some((symfile, symdata)) = try_locate_symbols(fs.clone(), name) {
-                log.log(&format!("symfile {symfile}"));
-                serde_json::from_str(&decode_string(&symdata))
-                    .map_err(|_| format!("Failure decoding symbols from {symfile}"))?
-            } else {
-                HashMap::new()
-            };
+        use_symbol_table = if let Some((symfile, symdata)) = try_locate_symbols(fs.clone(), name) {
+            log.log(&format!("symfile {symfile}"));
+            serde_json::from_str(&decode_string(&symdata))
+                .map_err(|_| format!("Failure decoding symbols from {symfile}"))?
+        } else {
+            HashMap::new()
+        };
 
         hex_to_modern_sexp(
             allocator,
@@ -509,10 +512,10 @@ pub fn read_program_data(
             prog_srcloc,
             &decode_string(read_in_file),
         )
-            .map_err(run_err_map)?
+        .map_err(run_err_map)?
     } else {
-        let parsed = parse_sexp(Srcloc::start(name), read_in_file.iter().copied())
-            .map_err(parse_err_map)?;
+        let parsed =
+            parse_sexp(Srcloc::start(name), read_in_file.iter().copied()).map_err(parse_err_map)?;
 
         if parsed.is_empty() {
             return Err(format!("Empty program file {name}"));
@@ -531,18 +534,18 @@ pub fn read_program_data(
             name,
             true,
         )
-            .map_err(|e| {
-                let formatted = match e {
-                    CompileError::Classic(_x, y) => y,
-                    CompileError::Modern(l, v) => format!("{l}: {v}"),
-                };
-                log.log(&format!("error compiling: {formatted}"));
-                formatted
-            })?;
+        .map_err(|e| {
+            let formatted = match e {
+                CompileError::Classic(_x, y) => y,
+                CompileError::Modern(l, v) => format!("{l}: {v}"),
+            };
+            log.log(&format!("error compiling: {formatted}"));
+            formatted
+        })?;
         let bin = sexp_as_bin(allocator, clvm_res).hex();
         parsed_program =
             hex_to_modern_sexp(allocator, &use_symbol_table, Srcloc::start(name), &bin)
-            .map_err(run_err_map)?;
+                .map_err(run_err_map)?;
     };
 
     // If a symbol file was specified, it overrides everything else.
@@ -570,4 +573,3 @@ pub fn read_program_data(
         },
     })
 }
-
