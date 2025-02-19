@@ -108,16 +108,27 @@ pub fn find_location(
             if !fuzzy_file_match(original_loc_file, file) {
                 continue;
             }
-            let normalized_loc = Srcloc::new(
+            let normalized_begin = Srcloc::new(
                 whole_line_loc.file.clone(),
                 original_loc.line,
                 original_loc.col,
             );
+            let ending = original_loc.ending();
+            let normalized_ending = Srcloc::new(
+                whole_line_loc.file.clone(),
+                ending.line,
+                ending.col,
+            );
+            let normalized_loc = normalized_begin.ext(&normalized_ending);
             log.log(&format!("{normalized_loc} vs target loc {whole_line_loc}"));
             if whole_line_loc.overlap(&normalized_loc) {
                 log.log(&format!("found function {}", decode_string(h.name())));
+                log.log(&format!("symbols {symbols:?}"));
                 return resolve_function(symbols, &decode_string(h.name()))
-                    .map(|funhash| (funhash, original_loc));
+                    .map(|funhash| {
+                        log.log(&format!("matching function in symbols {funhash}"));
+                        (funhash, h.loc())
+                    });
             }
         }
 
@@ -215,8 +226,11 @@ fn test_fuzzy_file_match_1() {
     assert!(fuzzy_file_match("test/foo/bar.clsp", "bar/baz/bar.clsp"));
 }
 
-fn resolve_function(symbols: Rc<HashMap<String, String>>, name: &str) -> Option<String> {
-    for (k, v) in symbols.iter() {
+fn resolve_function(
+    symbols: Rc<HashMap<String, String>>,
+    name: &str
+) -> Option<String> {
+    for (k,v) in symbols.iter() {
         if v == name {
             return Some(k.clone());
         }

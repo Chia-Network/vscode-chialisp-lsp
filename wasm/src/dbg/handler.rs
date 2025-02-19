@@ -38,7 +38,7 @@ use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::obj::{RunningDebugger, TargetDepth};
+use crate::dbg::obj::{RunningDebugger, TargetDepth, read_program_data};
 use crate::dbg::source::{parse_srcloc, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, MessageHandler, ProgramKind};
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -195,93 +195,6 @@ fn get_initialize_response() -> InitializeResponse {
     }
 }
 
-fn is_mod(sexp: Rc<SExp>) -> bool {
-    if let SExp::Cons(_, a, _) = sexp.borrow() {
-        if let SExp::Atom(_, n) = a.borrow() {
-            n == b"mod"
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}
-
-fn is_hex_file(filedata: &[u8]) -> bool {
-    filedata.iter().all(|b| {
-        b.is_ascii_whitespace()
-            || (*b >= b'0' && *b <= b'9')
-            || (*b >= b'a' && *b <= b'f')
-            || (*b >= b'A' && *b <= b'F')
-    })
-}
-
-// Try to cut the filename up at dots and find a matching .sym file to some
-// prefix of the components.
-// fact.clvm.hex -> fact.clvm.hex.sym, fact.clvm.sym, fact.sym
-// Stop at the proper file name.
-// Return the name of the located file and the content.
-fn try_locate_related_file(
-    fs: Rc<dyn IFileReader>,
-    fname: &str,
-    new_ext: &str,
-) -> Option<(String, Vec<u8>)> {
-    let path_components = PathBuf::from(fname);
-    if let (Some(directory), Some(only_filename)) =
-        (path_components.parent(), path_components.file_name())
-    {
-        if let Some(rust_str_filename) = only_filename.to_str() {
-            let filename_bytes = rust_str_filename.as_bytes().to_vec();
-            let mut dots: Vec<usize> = filename_bytes
-                .iter()
-                .copied()
-                .enumerate()
-                .filter(|(_, ch)| *ch == b'.')
-                .map(|(i, _)| i)
-                .collect();
-            dots.push(only_filename.len());
-            for d in dots.iter() {
-                let mut synthesized_filename: Vec<u8> =
-                    filename_bytes.iter().copied().take(*d).collect();
-                synthesized_filename.append(&mut new_ext.as_bytes().to_vec());
-                let synth_fname = PathBuf::from(&decode_string(&synthesized_filename));
-
-                if let Some(total_filename) = directory.join(synth_fname).to_str() {
-                    if let Ok(content) = fs.read_content(total_filename) {
-                        return Some((total_filename.to_owned(), content.as_bytes().to_vec()));
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    try_locate_related_file(fs, fname, ".sym")
-}
-
-fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
-        if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
-            return Some(res);
-        }
-    }
-
-    None
-}
-
-struct RunStartData {
-    source_file: String,
-    program: Rc<SExp>,
-    program_lines: Vec<String>,
-    arguments: Rc<SExp>,
-    symbols: HashMap<String, String>,
-    // is_hex: bool, // Future: if tools need to know this. (clippy)
-    compiled: Option<CompileForm>,
-}
-
 struct LaunchArgs<'a> {
     proto_msg: &'a ProtocolMessage,
     name: &'a str,
@@ -339,146 +252,6 @@ impl Debugger {
         Ok(decoded_chialisp_json)
     }
 
-    /// Try to obtain anything we're able to locate related to the chialisp program
-    /// or clvm hex that was launched.
-    fn read_program_data(
-        &self,
-        allocator: &mut Allocator,
-        opts: Rc<dyn CompilerOpts>,
-        _i: &InitializeRequestArguments,
-        _l: &LaunchRequestArguments,
-        name: &str,
-        read_in_file: &[u8],
-    ) -> Result<RunStartData, String> {
-        let program_lines: Vec<String> = read_in_file.lines().map(|x| x.unwrap()).collect();
-        let parse_err_map = |e: (Srcloc, String)| format!("{}: {}", e.0, e.1);
-        let compile_err_map = |e: CompileErr| format!("{}: {}", e.0, e.1);
-        let run_err_map = |e: RunFailure| {
-            let res = match e {
-                RunFailure::RunErr(l, e) => format!("{l}: {e}"),
-                RunFailure::RunExn(l, v) => format!("{l}: exception {v}"),
-            };
-            self.log.log(&format!("runfailure {res}"));
-            res
-        };
-
-        let mut use_symbol_table = HashMap::new();
-        let mut inputs = DebuggerInputs {
-            is_hex: is_hex_file(read_in_file),
-            source: None,
-            compile_input: None,
-            symbols: None,
-            compiled: Err("no program read yet".to_string()),
-        };
-
-        if let Some((source_file, source_content)) = try_locate_source_file(self.fs.clone(), name) {
-            let source_parsed =
-                parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
-                    .map_err(parse_err_map)?;
-
-            let source_and_content = DebuggerSourceAndContent {
-                source_file,
-                source_content,
-                source_parsed,
-            };
-
-            let mut compile_input_args = HashMap::new();
-            compile_input_args.insert(
-                "path_or_code".to_string(),
-                ArgumentValue::ArgString(
-                    Some(source_and_content.source_file.clone()),
-                    decode_string(&source_and_content.source_content),
-                ),
-            );
-            // We don't get this info explicitly at this point.  We will grab it downstream when
-            // we receive a better view of the launch request.
-            compile_input_args.insert(
-                "env".to_string(),
-                ArgumentValue::ArgString(None, "()".to_string()),
-            );
-            if !inputs.is_hex {
-                inputs.compile_input =
-                    Some(RunAndCompileInputData::new(allocator, &compile_input_args)?);
-            };
-
-            let frontend_compiled = frontend(opts.clone(), &source_and_content.source_parsed)
-                .map_err(compile_err_map)?;
-
-            inputs.source = Some(source_and_content);
-            inputs.compiled = Ok(ProgramKind::FromModern(frontend_compiled));
-        }
-
-        let mut parsed_program = if inputs.is_hex {
-            let prog_srcloc = Srcloc::start(name);
-
-            // Synthesize content by disassembling the file.
-            use_symbol_table =
-                if let Some((symfile, symdata)) = try_locate_symbols(self.fs.clone(), name) {
-                    serde_json::from_str(&decode_string(&symdata))
-                        .map_err(|_| format!("Failure decoding symbols from {symfile}"))?
-                } else {
-                    HashMap::new()
-                };
-
-            hex_to_modern_sexp(
-                allocator,
-                &use_symbol_table,
-                prog_srcloc,
-                &decode_string(read_in_file),
-            )
-            .map_err(run_err_map)?
-        } else {
-            let parsed = parse_sexp(Srcloc::start(name), read_in_file.iter().copied())
-                .map_err(parse_err_map)?;
-
-            if parsed.is_empty() {
-                return Err(format!("Empty program file {name}"));
-            }
-
-            parsed[0].clone()
-        };
-
-        if is_mod(parsed_program.clone()) {
-            // Compile program.
-            let clvm_res = compile_clvm_text(
-                allocator,
-                opts.clone(),
-                &mut use_symbol_table,
-                &decode_string(read_in_file),
-                name,
-                true,
-            )
-            .map_err(|e| {
-                let formatted = match e {
-                    CompileError::Classic(_x, y) => y,
-                    CompileError::Modern(l, v) => format!("{l}: {v}"),
-                };
-                self.log.log(&format!("error compiling: {formatted}"));
-                formatted
-            })?;
-            let bin = sexp_as_bin(allocator, clvm_res).hex();
-            parsed_program =
-                hex_to_modern_sexp(allocator, &use_symbol_table, Srcloc::start(name), &bin)
-                    .map_err(run_err_map)?;
-        };
-
-        let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
-
-        Ok(RunStartData {
-            source_file: name.to_owned(),
-            program: parsed_program,
-            program_lines,
-            arguments,
-            symbols: use_symbol_table,
-            compiled: match &inputs.compiled {
-                Err(_) => None,
-                Ok(ProgramKind::FromHex(_sexp)) => None,
-                Ok(ProgramKind::FromClassic(_node)) => None,
-                Ok(ProgramKind::FromModern(cf)) => Some(cf.clone()),
-            },
-        })
-    }
-
     /// Given a launch command and the extra data it receives from launch.json,
     /// try to locate enough pieces to run a debug session.
     ///
@@ -501,12 +274,15 @@ impl Debugger {
             self.fs.clone(),
             &config.include_paths,
         ));
-        let mut launch_data = self.read_program_data(
+        let mut launch_data = read_program_data(
+            self.fs.clone(),
+            self.log.clone(),
             &mut allocator,
             opts.clone(),
             launch_args.init_args,
             launch_args.launch_request,
             launch_args.program,
+            launch_args.symbols,
             read_in_file.as_bytes(),
         )?;
 
