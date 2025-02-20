@@ -31,6 +31,7 @@ use crate::dbg::source::{parse_srcloc, StoredScope};
 use crate::dbg::types::MessageHandler;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::types::ConfigJson;
+
 // Lifecycle:
 // (a (code... ) (c arg ...))
 // We encounter this and we're creating the arguments for a future call to
@@ -49,6 +50,8 @@ pub struct ExtraLaunchData {
     args: Option<Vec<String>>,
     #[serde(rename = "program")]
     program: Option<String>,
+    #[serde(rename = "symbols")]
+    symbols: Option<String>,
 }
 
 /// Used to make some aspects of deserializing easier via serde_json easier.
@@ -187,6 +190,8 @@ struct LaunchArgs<'a> {
     launch_request: &'a LaunchRequestArguments,
     program: &'a str,
     args_for_program: &'a [String],
+    #[allow(dead_code)]
+    symbols: &'a str,
     stop_on_entry: bool,
 }
 
@@ -265,6 +270,7 @@ impl Debugger {
             launch_args.init_args,
             launch_args.launch_request,
             launch_args.program,
+            launch_args.symbols,
             read_in_file.as_bytes(),
         )?;
 
@@ -402,6 +408,10 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                         .as_ref()
                         .and_then(|l| l.arguments.args.clone())
                         .unwrap_or(vec![]);
+                    let symbols = launch_extra
+                        .as_ref()
+                        .and_then(|l| l.arguments.symbols.clone())
+                        .unwrap_or("".to_string());
                     if let Some(name) = &l.name {
                         let program = launch_extra
                             .and_then(|l| l.arguments.program)
@@ -414,6 +424,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             launch_request: l,
                             program: &program,
                             args_for_program: &args,
+                            symbols: &symbols,
                             stop_on_entry,
                         })?;
                         self.msg_seq = new_seq;

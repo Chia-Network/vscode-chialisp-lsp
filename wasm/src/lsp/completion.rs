@@ -52,7 +52,7 @@ fn complete_variable_name(
             .filter_map(|(l, n)| {
                 if l.line > 0 && l.col > 1 {
                     get_positional_text(
-                        doc,
+                        &doc.text,
                         &Position {
                             line: (l.line - 1) as u32,
                             character: (l.col - 1) as u32,
@@ -183,7 +183,7 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
                 on_previous_character
             ));
 
-            if let Some(cpl) = get_positional_text(doc, &on_previous_character) {
+            if let Some(cpl) = get_positional_text(&doc.text, &on_previous_character) {
                 let mut found_scopes = Vec::new();
                 let want_position = Srcloc::new(
                     Rc::new(uristring.clone()),
