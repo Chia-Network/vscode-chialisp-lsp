@@ -323,6 +323,8 @@ impl RunningDebugger {
         }
     }
 
+    /// Create a debugger object based on all the inputs we have available from the interface.
+    /// The result is a RunningDebugger.
     pub fn create(
         allocator: &mut Allocator,
         fs: Rc<dyn IFileReader>,
@@ -554,7 +556,7 @@ fn populate_arguments(
     }
 }
 
-pub struct RunStartData {
+struct RunStartData {
     pub source_file: String,
     pub program: Rc<SExp>,
     pub program_lines: Vec<String>,
@@ -564,9 +566,9 @@ pub struct RunStartData {
     pub compiled: Option<CompileForm>,
 }
 
-/// Try to obtain anything we're able to locate related to the chialisp program
-/// or clvm hex that was launched.
-pub fn read_program_data(
+// Try to obtain anything we're able to locate related to the chialisp program
+// or clvm hex that was launched.
+fn read_program_data(
     fs: Rc<dyn IFileReader>,
     log: Rc<dyn ILogWriter>,
     allocator: &mut Allocator,
