@@ -89,8 +89,6 @@ fn test_start_classic_program_get_args() {
 
     // The range of the function in the source file is recovered from what we can collect by
     // running the compiler frontend for the common chialisp subset.
-    // I need to add some support for this to work for texturally included files.  Module
-    // style will make it easier when i get there.
     let bp_ranges: Vec<_> = recognized_bps
         .iter()
         .map(|b| (b.line, b.column, b.end_line, b.end_column))
