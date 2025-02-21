@@ -6,7 +6,7 @@ use std::mem::swap;
 use std::rc::Rc;
 
 use debug_types::events::{ContinuedEvent, Event, EventBody, StoppedEvent, StoppedReason};
-use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, RequestCommand};
+use debug_types::requests::{InitializeRequestArguments, RequestCommand};
 use debug_types::responses::{
     InitializeResponse, Response, ResponseBody, ScopesResponse, SetBreakpointsResponse,
     SetExceptionBreakpointsResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
@@ -20,13 +20,12 @@ use clvmr::allocator::Allocator;
 
 use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 
-use clvm_tools_rs::compiler::cldb_hierarchy::HierarchialRunner;
 use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
+use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::obj::{read_program_data, RunningDebugger, TargetDepth};
+use crate::dbg::obj::{ObjLaunchArgs, RunningDebugger, TargetDepth};
 use crate::dbg::source::{parse_srcloc, StoredScope};
 use crate::dbg::types::MessageHandler;
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -60,6 +59,11 @@ pub struct ExtraLaunchData {
 #[derive(Clone, Debug, Deserialize)]
 pub struct RequestContainer<T> {
     arguments: T,
+}
+
+pub struct LaunchArgs<'a> {
+    proto_msg: &'a ProtocolMessage,
+    obj_launch_args: ObjLaunchArgs<'a>,
 }
 
 /// State diagram for the debugger.
@@ -183,18 +187,6 @@ fn get_initialize_response() -> InitializeResponse {
     }
 }
 
-struct LaunchArgs<'a> {
-    proto_msg: &'a ProtocolMessage,
-    name: &'a str,
-    init_args: &'a InitializeRequestArguments,
-    launch_request: &'a LaunchRequestArguments,
-    program: &'a str,
-    args_for_program: &'a [String],
-    #[allow(dead_code)]
-    symbols: &'a str,
-    stop_on_entry: bool,
-}
-
 impl Debugger {
     fn get_source_loc(&self, running: &RunningDebugger, name: &str) -> Option<Srcloc> {
         let get_helper_loc = |name: &str| {
@@ -254,65 +246,22 @@ impl Debugger {
         let mut allocator = Allocator::new();
         let mut seq_nr = self.msg_seq;
         let config = self.read_chialisp_json()?;
-        let read_in_file = self.fs.read_content(launch_args.program)?;
-        let def_opts = Rc::new(DefaultCompilerOpts::new(&launch_args.name));
+        let def_opts = Rc::new(DefaultCompilerOpts::new(&launch_args.obj_launch_args.name));
         let opts = Rc::new(DbgCompilerOpts::new(
             def_opts,
             self.log.clone(),
             self.fs.clone(),
             &config.include_paths,
         ));
-        let mut launch_data = read_program_data(
+        let debugger = RunningDebugger::create(
+            &mut allocator,
             self.fs.clone(),
             self.log.clone(),
-            &mut allocator,
-            opts.clone(),
-            launch_args.init_args,
-            launch_args.launch_request,
-            launch_args.program,
-            launch_args.symbols,
-            read_in_file.as_bytes(),
-        )?;
-
-        if !launch_args.args_for_program.is_empty() {
-            let parsed_argv0 = parse_sexp(
-                Srcloc::start("*args*"),
-                launch_args.args_for_program[0].bytes(),
-            )
-            .map_err(|(l, e)| format!("{l}: {e}"))?;
-            if !parsed_argv0.is_empty() {
-                launch_data.arguments = parsed_argv0[0].clone();
-            }
-        }
-
-        let symbol_rc = Rc::new(launch_data.symbols);
-
-        let run = HierarchialRunner::new(
             self.runner.clone(),
-            self.prim_map.clone(),
-            Some(launch_args.name.to_string()),
-            Rc::new(launch_data.program_lines),
-            symbol_rc.clone(),
-            launch_data.program,
-            launch_data.arguments,
-        );
-        let state = State::Launched(RunningDebugger {
-            initialized: launch_args.init_args.clone(),
-            launch_info: launch_args.launch_request.clone(),
-            running: !launch_args.stop_on_entry,
-            run,
-            opts,
-            output_stack: Vec::new(),
-            stopped_reason: None,
-            target_depth: None,
-            result: None,
-            source_file: launch_data.source_file,
-            compiled: launch_data.compiled,
-            breakpoints: HashMap::new(),
-            next_bp_id: 1,
-            at_breakpoint: None,
-            symbols: symbol_rc,
-        });
+            opts.clone(),
+            &launch_args.obj_launch_args,
+        )?;
+        let state = State::Launched(debugger);
 
         seq_nr += 1;
         let mut out_messages = vec![ProtocolMessage {
@@ -326,7 +275,7 @@ impl Debugger {
         }];
 
         // Signal that we're paused if stop on entry.
-        if launch_args.stop_on_entry {
+        if launch_args.obj_launch_args.stop_on_entry {
             seq_nr += 1;
             out_messages.push(ProtocolMessage {
                 seq: self.msg_seq,
@@ -419,13 +368,14 @@ impl MessageHandler<ProtocolMessage> for Debugger {
 
                         let (new_seq, new_state, out_msgs) = self.launch(LaunchArgs {
                             proto_msg: pm,
-                            name,
-                            init_args: &i,
-                            launch_request: l,
-                            program: &program,
-                            args_for_program: &args,
-                            symbols: &symbols,
-                            stop_on_entry,
+                            obj_launch_args: ObjLaunchArgs {
+                                init_args: &i,
+                                name,
+                                program: &program,
+                                args_for_program: &args,
+                                symbols: &symbols,
+                                stop_on_entry,
+                            },
                         })?;
                         self.msg_seq = new_seq;
                         self.state = new_state;

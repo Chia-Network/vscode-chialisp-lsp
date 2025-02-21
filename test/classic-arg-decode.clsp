@@ -1,0 +1,7 @@
+(mod (X)
+  (defun F (X Y)
+    (if X (F (- X 1) Y) Y)
+    )
+
+  (F X 2)
+  )

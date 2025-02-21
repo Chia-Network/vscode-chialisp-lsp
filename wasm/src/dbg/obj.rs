@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use debug_types::events::StoppedReason;
-use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, SourceArguments};
+use debug_types::requests::{InitializeRequestArguments, SourceArguments};
 use debug_types::responses::{ResponseBody, SourceResponse};
 use debug_types::types::{Breakpoint, Source, SourceBreakpoint};
 
@@ -15,6 +15,7 @@ use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType}
 use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
 use clvm_tools_rs::classic::clvm_tools::clvmc::{compile_clvm_text, CompileError};
 use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
+use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
 use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
@@ -30,7 +31,7 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 
 use clvmr::Allocator;
 
-use crate::dbg::source::{find_location, StoredScope, lines_from_bytes};
+use crate::dbg::source::{find_location, lines_from_bytes, StoredScope};
 use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
@@ -53,6 +54,16 @@ pub struct RecognizedBreakpoint {
     spec: Breakpoint,
 }
 
+pub struct ObjLaunchArgs<'a> {
+    pub name: &'a str,
+    pub init_args: &'a InitializeRequestArguments,
+    pub program: &'a str,
+    pub args_for_program: &'a [String],
+    #[allow(dead_code)]
+    pub symbols: &'a str,
+    pub stop_on_entry: bool,
+}
+
 /// This is a running debugger.  It's treated as an object with mutability via
 /// its step and set_breakpoints methods.  It is the primary object that implements
 /// tracking the debug state using the transitions emitted by the HierarchialRunner
@@ -61,7 +72,6 @@ pub struct RecognizedBreakpoint {
 /// It is created by the launch() method of Debugger.
 pub struct RunningDebugger {
     pub initialized: InitializeRequestArguments,
-    pub launch_info: LaunchRequestArguments,
     pub target_depth: Option<TargetDepth>,
     pub stopped_reason: Option<StoppedReason>,
 
@@ -312,6 +322,66 @@ impl RunningDebugger {
             }
         }
     }
+
+    pub fn create(
+        allocator: &mut Allocator,
+        fs: Rc<dyn IFileReader>,
+        log: Rc<dyn ILogWriter>,
+        runner: Rc<dyn TRunProgram>,
+        opts: Rc<dyn CompilerOpts>,
+        launch_args: &ObjLaunchArgs,
+    ) -> Result<RunningDebugger, String> {
+        let read_in_file = fs.read_content(launch_args.program)?;
+        let mut launch_data = read_program_data(
+            fs.clone(),
+            log.clone(),
+            allocator,
+            opts.clone(),
+            launch_args.init_args,
+            launch_args.program,
+            launch_args.symbols,
+            read_in_file.as_bytes(),
+        )?;
+
+        if !launch_args.args_for_program.is_empty() {
+            let parsed_argv0 = parse_sexp(
+                Srcloc::start("*args*"),
+                launch_args.args_for_program[0].bytes(),
+            )
+            .map_err(|(l, e)| format!("{l}: {e}"))?;
+            if !parsed_argv0.is_empty() {
+                launch_data.arguments = parsed_argv0[0].clone();
+            }
+        }
+
+        let symbol_rc = Rc::new(launch_data.symbols);
+
+        let run = HierarchialRunner::new(
+            runner.clone(),
+            opts.prim_map(),
+            Some(launch_args.name.to_string()),
+            Rc::new(launch_data.program_lines),
+            symbol_rc.clone(),
+            launch_data.program,
+            launch_data.arguments,
+        );
+        Ok(RunningDebugger {
+            initialized: launch_args.init_args.clone(),
+            running: !launch_args.stop_on_entry,
+            run,
+            opts,
+            output_stack: Vec::new(),
+            stopped_reason: None,
+            target_depth: None,
+            result: None,
+            source_file: launch_data.source_file,
+            compiled: launch_data.compiled,
+            breakpoints: HashMap::new(),
+            next_bp_id: 1,
+            at_breakpoint: None,
+            symbols: symbol_rc,
+        })
+    }
 }
 
 #[test]
@@ -502,7 +572,6 @@ pub fn read_program_data(
     allocator: &mut Allocator,
     opts: Rc<dyn CompilerOpts>,
     _i: &InitializeRequestArguments,
-    _l: &LaunchRequestArguments,
     name: &str,
     symbols: &str,
     read_in_file: &[u8],
