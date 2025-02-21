@@ -1,3 +1,5 @@
+/// An object interface to a chialisp debugger which allows better
+/// testing and use apart from the message handler interface.
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
 use std::io::BufRead;
@@ -5,28 +7,37 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use debug_types::events::StoppedReason;
-use debug_types::requests::{InitializeRequestArguments, LaunchRequestArguments, SourceArguments};
+use debug_types::requests::{InitializeRequestArguments, SourceArguments};
 use debug_types::responses::{ResponseBody, SourceResponse};
 use debug_types::types::{Breakpoint, Source, SourceBreakpoint};
 
+use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
 use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
 use clvm_tools_rs::classic::clvm_tools::clvmc::{compile_clvm_text, CompileError};
+use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
+use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
+use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
 use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
 use clvm_tools_rs::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
-
-use clvmr::Allocator;
-
-use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts};
+#[cfg(test)]
+use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
 use clvm_tools_rs::compiler::frontend::frontend;
 use clvm_tools_rs::compiler::runtypes::RunFailure;
 use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
 use clvm_tools_rs::compiler::srcloc::Srcloc;
 
-use crate::dbg::source::{find_location, StoredScope};
+use clvmr::Allocator;
+
+use crate::dbg::source::{find_location, lines_from_bytes, StoredScope};
+use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent};
+#[cfg(test)]
+use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
+use crate::lsp::parse::get_positional_text;
+use crate::lsp::types::DocRange;
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]
@@ -43,6 +54,16 @@ pub struct RecognizedBreakpoint {
     spec: Breakpoint,
 }
 
+pub struct ObjLaunchArgs<'a> {
+    pub name: &'a str,
+    pub init_args: &'a InitializeRequestArguments,
+    pub program: &'a str,
+    pub args_for_program: &'a [String],
+    #[allow(dead_code)]
+    pub symbols: &'a str,
+    pub stop_on_entry: bool,
+}
+
 /// This is a running debugger.  It's treated as an object with mutability via
 /// its step and set_breakpoints methods.  It is the primary object that implements
 /// tracking the debug state using the transitions emitted by the HierarchialRunner
@@ -51,7 +72,6 @@ pub struct RecognizedBreakpoint {
 /// It is created by the launch() method of Debugger.
 pub struct RunningDebugger {
     pub initialized: InitializeRequestArguments,
-    pub launch_info: LaunchRequestArguments,
     pub target_depth: Option<TargetDepth>,
     pub stopped_reason: Option<StoppedReason>,
 
@@ -114,7 +134,10 @@ impl RunningDebugger {
             .cloned()
             .map(Some)
             .unwrap_or_else(|| s.name.clone());
-        log.log(&format!("s.path {:?} s.name {:?}", s.path, s.name));
+        log.log(&format!(
+            "set_breakpoint s.path {:?} s.name {:?}",
+            s.path, s.name
+        ));
         let bp_id_start = self.next_bp_id;
         self.next_bp_id += breakpoints.len();
 
@@ -141,12 +164,16 @@ impl RunningDebugger {
             let mut reported_breakpoints = Vec::new();
 
             for (i, b) in breakpoints.iter().enumerate() {
+                log.log(&format!("try to place breakpoint {p} {b:?}"));
                 // Verfified if we overlap at least one location in the symbols
                 // We.ll be simple and set it to the first matching point following
                 // the given location.
                 if let Some((hash, found)) =
                     find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
                 {
+                    log.log(&format!(
+                        "breakpoint {p} {b:?} resolved to {hash} {found:?}"
+                    ));
                     let end_col = found.until.clone().map(|e| e.col as u32);
                     let end_line = found.until.map(|e| e.line as u32);
                     let bp = Breakpoint {
@@ -295,6 +322,96 @@ impl RunningDebugger {
             }
         }
     }
+
+    /// Create a debugger object based on all the inputs we have available from the interface.
+    /// The result is a RunningDebugger.
+    pub fn create(
+        allocator: &mut Allocator,
+        fs: Rc<dyn IFileReader>,
+        log: Rc<dyn ILogWriter>,
+        runner: Rc<dyn TRunProgram>,
+        opts: Rc<dyn CompilerOpts>,
+        launch_args: &ObjLaunchArgs,
+    ) -> Result<RunningDebugger, String> {
+        let read_in_file = fs.read_content(launch_args.program)?;
+        let mut launch_data = read_program_data(
+            fs.clone(),
+            log.clone(),
+            allocator,
+            opts.clone(),
+            launch_args.init_args,
+            launch_args.program,
+            launch_args.symbols,
+            read_in_file.as_bytes(),
+        )?;
+
+        if !launch_args.args_for_program.is_empty() {
+            let parsed_argv0 = parse_sexp(
+                Srcloc::start("*args*"),
+                launch_args.args_for_program[0].bytes(),
+            )
+            .map_err(|(l, e)| format!("{l}: {e}"))?;
+            if !parsed_argv0.is_empty() {
+                launch_data.arguments = parsed_argv0[0].clone();
+            }
+        }
+
+        let symbol_rc = Rc::new(launch_data.symbols);
+
+        let run = HierarchialRunner::new(
+            runner.clone(),
+            opts.prim_map(),
+            Some(launch_args.name.to_string()),
+            Rc::new(launch_data.program_lines),
+            symbol_rc.clone(),
+            launch_data.program,
+            launch_data.arguments,
+        );
+        Ok(RunningDebugger {
+            initialized: launch_args.init_args.clone(),
+            running: !launch_args.stop_on_entry,
+            run,
+            opts,
+            output_stack: Vec::new(),
+            stopped_reason: None,
+            target_depth: None,
+            result: None,
+            source_file: launch_data.source_file,
+            compiled: launch_data.compiled,
+            breakpoints: HashMap::new(),
+            next_bp_id: 1,
+            at_breakpoint: None,
+            symbols: symbol_rc,
+        })
+    }
+}
+
+#[test]
+fn test_simple_find_location_classic_symbols_1() {
+    let log = Rc::new(EPrintWriter::new());
+    let symbols_map = HashMap::from([(
+        "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string(),
+        "fact".to_string(),
+    )]);
+    let symbols = Rc::new(symbols_map);
+    let program =
+        "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
+    let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
+    let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
+    let compiled = frontend(opts, &parsed).expect("should compile");
+    let breakpoint_spec = SourceBreakpoint {
+        column: Some(0),
+        condition: None,
+        hit_condition: None,
+        line: 2,
+        log_message: None,
+    };
+    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
+        .expect("should be found");
+    assert_eq!(
+        hash,
+        "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
+    );
 }
 
 fn is_mod(sexp: Rc<SExp>) -> bool {
@@ -374,7 +491,72 @@ fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(Strin
     None
 }
 
-pub struct RunStartData {
+fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
+    match sexp.borrow() {
+        SExp::Cons(l, a, b) => Rc::new(SExp::Cons(
+            l.clone(),
+            translate_argument_names(lines, a.clone()),
+            translate_argument_names(lines, b.clone()),
+        )),
+        SExp::Atom(l, _) => {
+            let vrange = DocRange::from_srcloc(l.clone()).to_range();
+            if let Some(replacement) = get_positional_text(lines, &vrange.start) {
+                Rc::new(SExp::Atom(l.clone(), replacement.to_vec()))
+            } else {
+                sexp.clone()
+            }
+        }
+        _ => sexp.clone(),
+    }
+}
+
+fn populate_arguments(
+    fs: Rc<dyn IFileReader>,
+    use_symbol_table: &mut HashMap<String, String>,
+    cf: &CompileForm,
+) {
+    let mut name_to_hash = HashMap::new();
+    let mut files: HashMap<String, Vec<Rc<Vec<u8>>>> = HashMap::new();
+
+    for (k, v) in use_symbol_table.iter() {
+        name_to_hash.insert(v.clone(), k.clone());
+    }
+    // Populate arguments if they aren't in the symbols.
+    for helper in cf.helpers.iter() {
+        let helper_file = helper.loc().file.clone();
+        let borrowed_file: &String = helper_file.borrow();
+        let content: &[Rc<Vec<u8>>] = if let Some(content) = files.get(borrowed_file) {
+            let ct: &[Rc<Vec<u8>>] = &content;
+            ct
+        } else if let Ok(content) = fs.read_content(borrowed_file) {
+            let lines = lines_from_bytes(content.bytes());
+            files.insert(helper.loc().file.to_string(), lines);
+            if let Some(lines) = files.get(borrowed_file) {
+                let ct: &[Rc<Vec<u8>>] = lines;
+                ct
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        if let Some(hash) = name_to_hash.get(&decode_string(helper.name())) {
+            let arguments_name = format!("{hash}_arguments");
+            if !use_symbol_table.contains_key(&arguments_name) {
+                if let HelperForm::Defun(_, d) = helper {
+                    use_symbol_table.insert(
+                        arguments_name,
+                        format!("{}", translate_argument_names(content, d.args.clone())),
+                    );
+                    use_symbol_table.insert(format!("{hash}_left_env"), "1".to_string());
+                }
+            }
+        }
+    }
+}
+
+struct RunStartData {
     pub source_file: String,
     pub program: Rc<SExp>,
     pub program_lines: Vec<String>,
@@ -384,16 +566,16 @@ pub struct RunStartData {
     pub compiled: Option<CompileForm>,
 }
 
-/// Try to obtain anything we're able to locate related to the chialisp program
-/// or clvm hex that was launched.
-pub fn read_program_data(
+// Try to obtain anything we're able to locate related to the chialisp program
+// or clvm hex that was launched.
+fn read_program_data(
     fs: Rc<dyn IFileReader>,
     log: Rc<dyn ILogWriter>,
     allocator: &mut Allocator,
     opts: Rc<dyn CompilerOpts>,
     _i: &InitializeRequestArguments,
-    _l: &LaunchRequestArguments,
     name: &str,
+    symbols: &str,
     read_in_file: &[u8],
 ) -> Result<RunStartData, String> {
     let program_lines: Vec<String> = read_in_file.lines().map(|x| x.unwrap()).collect();
@@ -409,23 +591,56 @@ pub fn read_program_data(
     };
 
     let mut use_symbol_table = HashMap::new();
-    let is_hex = is_hex_file(read_in_file);
+    let mut inputs = DebuggerInputs {
+        is_hex: is_hex_file(read_in_file),
+        source: None,
+        compile_input: None,
+        symbols: None,
+        compiled: Err("no program read yet".to_string()),
+    };
 
-    let mut compiled = None;
     if let Some((source_file, source_content)) = try_locate_source_file(fs.clone(), name) {
         let source_parsed = parse_sexp(Srcloc::start(&source_file), source_content.iter().copied())
             .map_err(parse_err_map)?;
 
-        let frontend_compiled = frontend(opts.clone(), &source_parsed).map_err(compile_err_map)?;
+        let source_and_content = DebuggerSourceAndContent {
+            source_file,
+            source_content,
+            source_parsed,
+        };
 
-        compiled = Some(frontend_compiled);
+        let mut compile_input_args = HashMap::new();
+        compile_input_args.insert(
+            "path_or_code".to_string(),
+            ArgumentValue::ArgString(
+                Some(source_and_content.source_file.clone()),
+                decode_string(&source_and_content.source_content),
+            ),
+        );
+        // We don't get this info explicitly at this point.  We will grab it downstream when
+        // we receive a better view of the launch request.
+        compile_input_args.insert(
+            "env".to_string(),
+            ArgumentValue::ArgString(None, "()".to_string()),
+        );
+        if !inputs.is_hex {
+            inputs.compile_input =
+                Some(RunAndCompileInputData::new(allocator, &compile_input_args)?);
+        };
+
+        let frontend_compiled =
+            frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
+
+        inputs.source = Some(source_and_content);
+        inputs.compiled = Ok(Some(frontend_compiled));
     }
 
-    let mut parsed_program = if is_hex {
+    let mut parsed_program = if inputs.is_hex {
         let prog_srcloc = Srcloc::start(name);
 
         // Synthesize content by disassembling the file.
         use_symbol_table = if let Some((symfile, symdata)) = try_locate_symbols(fs.clone(), name) {
+            log.log(&format!("symfile {symfile}"));
             serde_json::from_str(&decode_string(&symdata))
                 .map_err(|_| format!("Failure decoding symbols from {symfile}"))?
         } else {
@@ -474,6 +689,24 @@ pub fn read_program_data(
                 .map_err(run_err_map)?;
     };
 
+    // If a symbol file was specified, it overrides everything else.
+    if !symbols.is_empty() {
+        if let Ok(symdata) = fs.read_content(symbols) {
+            log.log(&format!("symfile {symdata}"));
+            use_symbol_table = serde_json::from_str(&symdata)
+                .map_err(|_| format!("Failure decoding symbols from {:?}", symbols))?;
+        };
+    }
+
+    let compiled = match &inputs.compiled {
+        Err(_) => None,
+        Ok(None) => None,
+        Ok(Some(cf)) => {
+            populate_arguments(fs.clone(), &mut use_symbol_table, cf);
+            Some(cf.clone())
+        }
+    };
+
     let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
 
     Ok(RunStartData {
@@ -482,7 +715,6 @@ pub fn read_program_data(
         program_lines,
         arguments,
         symbols: use_symbol_table,
-        // is_hex,
         compiled,
     })
 }

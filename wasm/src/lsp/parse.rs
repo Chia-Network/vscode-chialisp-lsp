@@ -393,10 +393,10 @@ fn test_not_is_first_in_list_next_word() {
 }
 
 // Given a position, return the identifier at that position.  Relies on find_ident.
-pub fn get_positional_text(lines: &DocData, position: &Position) -> Option<Vec<u8>> {
+pub fn get_positional_text(text: &[Rc<Vec<u8>>], position: &Position) -> Option<Vec<u8>> {
     let pl = position.line as usize;
-    if pl < lines.text.len() {
-        let line = lines.text[pl].clone();
+    if pl < text.len() {
+        let line = text[pl].clone();
         find_ident(line, position.character)
     } else {
         None
@@ -408,7 +408,7 @@ fn test_get_positional_text() {
     let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(", "  hi there", ")"]);
     assert_eq!(
         get_positional_text(
-            &simple_doc,
+            &simple_doc.text,
             &Position {
                 line: 1,
                 character: 3
@@ -663,7 +663,7 @@ fn make_scope_stack_simple() {
     for v in program_scope.containing[1].containing[0].variables.iter() {
         let vrange = DocRange::from_srcloc(v.loc()).to_range();
         assert_eq!(
-            get_positional_text(&doc, &vrange.start),
+            get_positional_text(&doc.text, &vrange.start),
             Some(b"C".to_vec())
         );
     }

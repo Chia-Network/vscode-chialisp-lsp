@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
+use std::mem::swap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -243,4 +244,27 @@ fn test_resolve_function_1() {
         resolve_function(symbols, "fact"),
         Some("de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de".to_string())
     );
+}
+
+pub fn lines_from_bytes<I>(iter: I) -> Vec<Rc<Vec<u8>>>
+where
+    I: Iterator<Item = u8>,
+{
+    let mut lines = vec![];
+    let mut current_line = vec![];
+    for by in iter {
+        if by == 0xa {
+            let mut new_line = vec![];
+            swap(&mut new_line, &mut current_line);
+            lines.push(Rc::new(new_line));
+        } else {
+            current_line.push(by);
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(Rc::new(current_line));
+    }
+
+    lines
 }
