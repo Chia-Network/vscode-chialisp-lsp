@@ -32,7 +32,7 @@ use clvm_tools_rs::compiler::srcloc::Srcloc;
 use clvmr::Allocator;
 
 use crate::dbg::source::{find_location, lines_from_bytes, StoredScope};
-use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent, ProgramKind};
+use crate::dbg::types::{DebuggerInputs, DebuggerSourceAndContent};
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -630,7 +630,7 @@ pub fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(ProgramKind::FromModern(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled));
     }
 
     let mut parsed_program = if inputs.is_hex {
@@ -698,9 +698,8 @@ pub fn read_program_data(
 
     let compiled = match &inputs.compiled {
         Err(_) => None,
-        Ok(ProgramKind::FromHex(_sexp)) => None,
-        Ok(ProgramKind::FromClassic(_node)) => None,
-        Ok(ProgramKind::FromModern(cf)) => {
+        Ok(None) => None,
+        Ok(Some(cf)) => {
             populate_arguments(fs.clone(), &mut use_symbol_table, cf);
             Some(cf.clone())
         }
