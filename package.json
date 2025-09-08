@@ -9,7 +9,7 @@
         "vscode": "^1.85.0"
     },
     "categories": [
-        "Programming Languages"
+        "Programming Languages", "test"
     ],
     "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
