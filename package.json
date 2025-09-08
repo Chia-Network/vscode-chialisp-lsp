@@ -9,7 +9,7 @@
         "vscode": "^1.85.0"
     },
     "categories": [
-        "Programming Languages", "test"
+        "Programming Languages"
     ],
     "repository": "https://github.com/Chia-Network/vscode-chialisp-lsp",
     "activationEvents": [
@@ -114,7 +114,9 @@
                                 "items": {
                                     "type": "string"
                                 },
-                                "default": ["()"]
+                                "default": [
+                                    "()"
+                                ]
                             },
                             "symbols": {
                                 "type": "string",
@@ -161,6 +163,7 @@
         "@typescript-eslint/parser": "^8.24.1",
         "@vscode/test-electron": "^2.4.1",
         "@vscode/vsce": "2.32.0",
+        "empty-npm-package": "^1.0.0",
         "eslint": "^9.20.0",
         "glob": "^11.0.1",
         "mocha": "^11.1.0",
