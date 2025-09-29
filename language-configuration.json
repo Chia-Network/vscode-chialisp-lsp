@@ -16,7 +16,7 @@
     }
   ],
   "comments": {
-    "lineComments": ";"
+    "lineComment": ";"
   },
   "autoCloseBefore": ";:.,=)` \n\t"
 }

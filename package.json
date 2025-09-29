@@ -40,7 +40,14 @@
                     "dark": "images/chialisp_dark.svg",
                     "light": "images/chialisp_light.svg"
                 }
-            }
+	    }
+        ],
+        "grammars": [
+           {
+              "language": "chialisp",
+              "scopeName": "source.chialisp",
+              "path": "./syntaxes/chialisp.tmGrammar.json"
+           }
         ],
         "configuration": [
             {

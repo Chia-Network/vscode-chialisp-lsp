@@ -1,0 +1,24 @@
+{
+  "scopeName": "source.chialisp",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#form" }
+  ],
+  "repository": {
+    "form": { "patterns": [{"include": "parenform"}, {"include": "word"}] },
+    "comment": {
+      "name": "comment",
+      "match": ";.*$"
+    },
+    "parenform": {
+      "begin": "\\(",
+      "end": "\\)",
+      "name": "parenform",
+      "patterns": [{"include": "form"}]
+    },
+    "word": {
+      "match": "[a-zA-Z0-9_!@#$%^&*-+=|\\/[]{},.<>?]+",
+      "name": "word"
+    }
+  }
+}
