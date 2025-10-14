@@ -26,10 +26,10 @@ use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::CompilerOpts;
-use clvm_tools_rs::compiler::prims;
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::compiler::DefaultCompilerOpts;
+use chialisp::compiler::comptypes::CompilerOpts;
+use chialisp::compiler::prims;
+use chialisp::compiler::srcloc::Srcloc;
 
 fn make_did_open_message(uri: &String, v: i32, body: String) -> Message {
     Message::Notification(Notification {

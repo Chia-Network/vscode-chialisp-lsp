@@ -9,14 +9,14 @@ use clvmr::allocator::Allocator;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
-use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompilerOpts, HasCompilerOptsDelegation};
-use clvm_tools_rs::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
-use clvm_tools_rs::compiler::optimize::get_optimizer;
-use clvm_tools_rs::compiler::sexp::SExp;
-use clvm_tools_rs::compiler::srcloc::Srcloc;
-use clvm_tools_rs::compiler::CompileContextWrapper;
+use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
+use chialisp::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
+use chialisp::compiler::comptypes::{CompileErr, CompilerOpts, HasCompilerOptsDelegation};
+use chialisp::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
+use chialisp::compiler::optimize::get_optimizer;
+use chialisp::compiler::sexp::SExp;
+use chialisp::compiler::srcloc::Srcloc;
+use chialisp::compiler::CompileContextWrapper;
 
 use super::patch::get_bytes;
 

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
-use clvm_tools_rs::compiler::comptypes::CompileForm;
-use clvm_tools_rs::compiler::sexp::SExp;
+use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
+use chialisp::compiler::comptypes::CompileForm;
+use chialisp::compiler::sexp::SExp;
 
 pub struct DebuggerSymbols {
     pub symbol_file: String,

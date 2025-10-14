@@ -7,14 +7,14 @@ use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
-use clvm_tools_rs::compiler::clvm::sha256tree_from_atom;
-use clvm_tools_rs::compiler::comptypes::{
+use chialisp::compiler::clvm::sha256tree_from_atom;
+use chialisp::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
 };
-use clvm_tools_rs::compiler::frontend::{compile_bodyform, compile_helperform};
-use clvm_tools_rs::compiler::prims::primquote;
-use clvm_tools_rs::compiler::sexp::{enlist, parse_sexp, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::frontend::{compile_bodyform, compile_helperform};
+use chialisp::compiler::prims::primquote;
+use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 lazy_static! {
     static ref END_TAG: Vec<u8> = b"__chia_end".to_vec();

@@ -200,7 +200,7 @@ dependencies = [
 name = "clvm_tools_lsp"
 version = "1.2.4"
 dependencies = [
- "clvm_tools_rs",
+ "chialisp",
  "clvmr",
  "debug_types",
  "getrandom 0.2.9",
@@ -219,7 +219,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "clvm_tools_rs"
+name = "chialisp"
 version = "0.1.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a141e364568a42351c711a31c87a2483093b9b038153a804712abcdd38028e4"

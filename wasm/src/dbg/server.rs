@@ -1,7 +1,7 @@
 // Based on https://docs.rs/lsp-server/latest/src/lsp_server/lib.rs.html#27-30
 // and https://github.com/Chia-Network/vscode-chialisp-lsp/blob/main/runner/src/runer.js
 use crate::dbg::types::MessageHandler;
-use clvm_tools_rs::compiler::sexp::decode_string;
+use chialisp::compiler::sexp::decode_string;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 

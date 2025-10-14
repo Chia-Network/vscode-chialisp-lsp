@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use clvm_tools_rs::classic::clvm_tools::stages::stage_0::DefaultProgramRunner;
-use clvm_tools_rs::compiler::prims;
+use chialisp::classic::clvm_tools::stages::stage_0::DefaultProgramRunner;
+use chialisp::compiler::prims;
 
 use crate::dbg::handler::Debugger;
 use crate::dbg::server::MessageBuffer;

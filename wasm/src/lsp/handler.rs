@@ -18,8 +18,8 @@ use crate::lsp::semtok::LSPSemtokRequestHandler;
 use crate::lsp::types::{
     cast, ConfigJson, DocData, DocRange, IncludeData, InitState, LSPServiceProvider,
 };
-use clvm_tools_rs::compiler::sexp::decode_string;
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::sexp::decode_string;
+use chialisp::compiler::srcloc::Srcloc;
 
 pub trait LSPServiceMessageHandler {
     fn handle_message(&mut self, msg: &Message) -> Result<Vec<Message>, String>;

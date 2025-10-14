@@ -7,9 +7,9 @@ use lsp_types::{CompletionItem, CompletionList, CompletionParams, CompletionResp
 use crate::lsp::parse::{find_scope_stack, get_positional_text, is_first_in_list, is_identifier};
 use crate::lsp::types::{DocData, ParseScope, ScopeKind};
 use crate::lsp::LSPServiceProvider;
-use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::prims::prims;
+use chialisp::compiler::sexp::{decode_string, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 lazy_static! {
     pub static ref PRIM_NAMES: Vec<Vec<u8>> = {

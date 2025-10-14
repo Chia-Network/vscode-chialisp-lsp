@@ -5,16 +5,16 @@ use std::rc::Rc;
 use lsp_types::Position;
 
 #[cfg(test)]
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{
+use chialisp::compiler::compiler::DefaultCompilerOpts;
+use chialisp::compiler::comptypes::{
     Binding, BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
 };
 #[cfg(test)]
-use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::sexp::SExp;
+use chialisp::compiler::frontend::frontend;
+use chialisp::compiler::sexp::SExp;
 #[cfg(test)]
-use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::sexp::{decode_string, parse_sexp};
+use chialisp::compiler::srcloc::Srcloc;
 
 use crate::lsp::types::{
     DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedHelper,
@@ -30,7 +30,7 @@ pub struct ParsedDoc {
     pub mod_kw: Option<Srcloc>,
     // If we were able to run a frontend pass (even partially), compiled contains
     // it.  CompileForm is the result of frontend and is used for analyzing
-    // chialisp in many different tools deriving from clvm_tools_rs.
+    // chialisp in many different tools deriving from chialisp.
     pub compiled: CompileForm,
     // The scope stack for this file.
     pub scopes: ParseScope,

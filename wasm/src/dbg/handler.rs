@@ -18,11 +18,11 @@ use debug_types::{MessageKind, ProtocolMessage};
 
 use clvmr::allocator::Allocator;
 
-use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
+use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::compiler::DefaultCompilerOpts;
+use chialisp::compiler::sexp::{decode_string, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::obj::{ObjLaunchArgs, RunningDebugger, TargetDepth};
@@ -403,7 +403,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                     }]));
                 }
 
-                // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/clvm_tools_rs/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
+                // ProtocolMessage { seq: 8, message: Request(SetBreakpoints(SetBreakpointsArguments { source: Source { name: Some("fact.clsp"), path: Some("/home/arty/dev/chia/chialisp/fact.clsp"), source_reference: None, presentation_hint: None, origin: None, sources: None, adapter_data: None, checksums: None }, breakpoints: Some([SourceBreakpoint { line: 2, column: Some(4), condition: None, hit_condition: None, log_message: None }]), lines: Some([2]), source_modified: Some(false) })) }
                 // Set breakpoints from source.  Requires advertised capability in
                 // package.json.
                 (State::Launched(mut r), RequestCommand::SetBreakpoints(b)) => {
