@@ -29,11 +29,11 @@ use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
-use clvm_tools_rs::compiler::prims::prims;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::compiler::DefaultCompilerOpts;
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use chialisp::compiler::prims::prims;
+use chialisp::compiler::sexp::{decode_string, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 lazy_static! {
     /// The spec requires us to list the token types we use so we provide them
@@ -1094,7 +1094,7 @@ pub enum ScopeKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 // Various ways chialisp can include a file (compile and embed pending in
-// https://github.com/Chia-Network/clvm_tools_rs/pull/71 )
+// https://github.com/Chia-Network/chialisp/pull/71 )
 pub enum IncludeKind {
     Include,
     CompileFile(Srcloc),

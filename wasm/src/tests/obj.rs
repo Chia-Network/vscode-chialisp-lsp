@@ -4,8 +4,8 @@ use clvmr::Allocator;
 use debug_types::requests::InitializeRequestArguments;
 use debug_types::types::{Source, SourceBreakpoint};
 
-use clvm_tools_rs::classic::clvm_tools::stages::stage_0::{DefaultProgramRunner, TRunProgram};
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
+use chialisp::classic::clvm_tools::stages::stage_0::{DefaultProgramRunner, TRunProgram};
+use chialisp::compiler::compiler::DefaultCompilerOpts;
 
 use crate::dbg::obj::{ObjLaunchArgs, RunningDebugger};
 use crate::interfaces::{EPrintWriter, FSFileReader};

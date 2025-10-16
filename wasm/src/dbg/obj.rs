@@ -11,23 +11,23 @@ use debug_types::requests::{InitializeRequestArguments, SourceArguments};
 use debug_types::responses::{ResponseBody, SourceResponse};
 use debug_types::types::{Breakpoint, Source, SourceBreakpoint};
 
-use clvm_tools_rs::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
-use clvm_tools_rs::classic::clvm::sexp::sexp_as_bin;
-use clvm_tools_rs::classic::clvm_tools::clvmc::{compile_clvm_text, CompileError};
-use clvm_tools_rs::classic::clvm_tools::comp_input::RunAndCompileInputData;
-use clvm_tools_rs::classic::clvm_tools::stages::stage_0::TRunProgram;
-use clvm_tools_rs::classic::platform::argparse::ArgumentValue;
-use clvm_tools_rs::compiler::cldb::hex_to_modern_sexp;
-use clvm_tools_rs::compiler::cldb_hierarchy::{
+use chialisp::classic::clvm::__type_compatibility__::{Bytes, BytesFromType};
+use chialisp::classic::clvm::sexp::sexp_as_bin;
+use chialisp::classic::clvm_tools::clvmc::{compile_clvm_text, CompileError};
+use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
+use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
+use chialisp::classic::platform::argparse::ArgumentValue;
+use chialisp::compiler::cldb::hex_to_modern_sexp;
+use chialisp::compiler::cldb_hierarchy::{
     HierarchialRunner, HierarchialStepResult, RunPurpose,
 };
 #[cfg(test)]
-use clvm_tools_rs::compiler::compiler::DefaultCompilerOpts;
-use clvm_tools_rs::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
-use clvm_tools_rs::compiler::frontend::frontend;
-use clvm_tools_rs::compiler::runtypes::RunFailure;
-use clvm_tools_rs::compiler::sexp::{decode_string, parse_sexp, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::compiler::DefaultCompilerOpts;
+use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
+use chialisp::compiler::frontend::frontend;
+use chialisp::compiler::runtypes::RunFailure;
+use chialisp::compiler::sexp::{decode_string, parse_sexp, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 use clvmr::Allocator;
 

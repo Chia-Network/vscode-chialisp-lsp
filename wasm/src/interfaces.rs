@@ -1,4 +1,4 @@
-use clvm_tools_rs::compiler::sexp::decode_string;
+use chialisp::compiler::sexp::decode_string;
 
 /// A simple abstract filesystem reader trait.
 pub trait IFileReader {

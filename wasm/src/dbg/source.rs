@@ -6,9 +6,9 @@ use std::rc::Rc;
 
 use debug_types::types::SourceBreakpoint;
 
-use clvm_tools_rs::compiler::comptypes::CompileForm;
-use clvm_tools_rs::compiler::sexp::{decode_string, SExp};
-use clvm_tools_rs::compiler::srcloc::Srcloc;
+use chialisp::compiler::comptypes::CompileForm;
+use chialisp::compiler::sexp::{decode_string, SExp};
+use chialisp::compiler::srcloc::Srcloc;
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::types::{DocPosition, DocRange};
