@@ -17,8 +17,8 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-chialisp = "=0.1.48"
-clvmr = "0.12.0"
+chialisp = "=0.4.1"
+clvmr = "0.16.0"
 wasm-bindgen = "=0.2.100"
 wasm-bindgen-test = "=0.3.50"
 js-sys = "0.3.60"
