@@ -49,6 +49,11 @@
               "path": "./syntaxes/chialisp.tmGrammar.json"
            }
         ],
+        "grammars": [{
+            "language": "chialisp",
+            "scopeName": "source.chialisp",
+            "path": "./syntaxes/chialisp.tmLanguage.json"
+        }],
         "configuration": [
             {
                 "type": "object",
