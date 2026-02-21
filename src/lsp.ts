@@ -21,6 +21,8 @@ export class WorkaroundFeature implements StaticFeature {
     fillClientCapabilities(capabilities: any): void {
         capabilities.workspace.workspaceEdit = { documentChanges: true };
     }
+    clear(): void {
+    }
     register() {
     }
     unreigster() {
