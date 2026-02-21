@@ -40,14 +40,14 @@
                     "dark": "images/chialisp_dark.svg",
                     "light": "images/chialisp_light.svg"
                 }
-	    }
+            }
         ],
         "grammars": [
-           {
-              "language": "chialisp",
-              "scopeName": "source.chialisp",
-              "path": "./syntaxes/chialisp.tmGrammar.json"
-           }
+            {
+                "language": "chialisp",
+                "scopeName": "source.chialisp",
+                "path": "./syntaxes/chialisp.tmGrammar.json"
+            }
         ],
         "configuration": [
             {
@@ -121,7 +121,9 @@
                                 "items": {
                                     "type": "string"
                                 },
-                                "default": ["()"]
+                                "default": [
+                                    "()"
+                                ]
                             },
                             "symbols": {
                                 "type": "string",
@@ -148,7 +150,7 @@
     "license": "Apache 2.0",
     "main": "./out/extension.js",
     "scripts": {
-        "vscode:prepublish": "make && npm run compile",
+        "vscode:prepublish": "make && npm run compile && npm install --production",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
@@ -156,7 +158,7 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
-        "vscode-languageclient": "^8.1.0"
+        "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
         "@stylistic/eslint-plugin": "^5.5.0",
@@ -171,6 +173,8 @@
         "eslint": "^9.39.1",
         "glob": "^11.1.0",
         "mocha": "^11.1.0",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "webpack": "^5.105.2",
+        "webpack-cli": "^6.0.1"
     }
 }
