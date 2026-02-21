@@ -159,7 +159,7 @@
         "vscode-languageclient": "^8.1.0"
     },
     "devDependencies": {
-        "@stylistic/eslint-plugin": "^5.5.0",
+        "@stylistic/eslint-plugin": "^5.8.0",
         "@types/glob": "^8.1.0",
         "@types/mocha": "^10.0.10",
         "@types/node": "25.0.3",
