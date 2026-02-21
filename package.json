@@ -150,7 +150,7 @@
     "license": "Apache 2.0",
     "main": "./out/extension.js",
     "scripts": {
-        "vscode:prepublish": "make && npm run compile && npm install --production",
+        "vscode:prepublish": "make && npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
