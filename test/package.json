@@ -4,7 +4,7 @@
     "follow-redirects": "1.15.6"
   },
   "dependencies": {
-    "chromedriver": "122.0.3",
+    "chromedriver": "146.0.0",
     "jasmine": "^4.5.0",
     "jest": "^29.7.0",
     "mocha": "^10.8.2",
