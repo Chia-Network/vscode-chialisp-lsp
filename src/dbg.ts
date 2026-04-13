@@ -205,28 +205,9 @@ export function debuggerActivate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             `${extensionName}.startDebug`,
-            async () => {
-                let textEditor = vscode.window.activeTextEditor;
-                let uri = vscode.window.activeTextEditor?.document.uri;
-                if (!uri) {
-                    throw new Error("could not get uri for active text editor");
-                }
-                let folder = vscode.workspace.getWorkspaceFolder(uri);
-                if (!folder) {
-                    throw new Error(
-                        "No workspace root for open files"
-                    );
-                }
-
-                const options = {
-                    name: uri.fsPath,
-                    type: extensionName,
-                    request: "launch",
-                    stopOnEntry: true,
-                    yieldSteps: 4096,
-                };
-
-                return vscode.debug.startDebugging(folder, options);
+            async (resource?: vscode.Uri) => {
+                // Legacy entry point kept for compatibility; use GDB prototype flow.
+                return vscode.commands.executeCommand(`${extensionName}.gdbDebug`, resource);
             }
         )
     );
