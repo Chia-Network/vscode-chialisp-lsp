@@ -7,11 +7,9 @@ use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
-use chialisp::compiler::clvm::sha256tree_from_atom;
-use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
-};
-use chialisp::compiler::frontend::{compile_bodyform, compile_helperform};
+use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
+use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -102,7 +100,7 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
 fn compile_helperform_with_loose_defconstant(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>,
-) -> Result<Option<HelperForm>, CompileErr> {
+) -> Result<Option<HelperFormResult>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -341,24 +339,83 @@ pub fn reparse_subset(
                         continue;
                     }
 
-                    result.helpers.insert(
-                        hash.clone(),
-                        ReparsedHelper {
-                            hash,
-                            range: r.clone(),
-                            parsed: compile_helperform_with_loose_defconstant(
-                                opts.clone(),
-                                parsed[0].clone(),
-                            )
+                    let compiled_result = compile_helperform(opts.clone(), parsed[0].clone());
+
+                    let parsed_result_to_record = match compiled_result {
+                        Ok(Some(parsed)) => {
+                            let typedefs: Vec<&HelperForm> = vec![];
+                            let other_helpers: &[HelperForm] = &parsed.new_helpers;
+
+                            let use_helper = if !typedefs.is_empty() {
+                                for h in other_helpers.into_iter() {
+                                    let new_hash = Hash::new(&sha256tree(h.to_sexp()));
+                                    result.helpers.insert(
+                                        new_hash.clone(),
+                                        ReparsedHelper {
+                                            hash: new_hash,
+                                            range: r.clone(),
+                                            parsed: Ok(h.clone()),
+                                        },
+                                    );
+                                }
+                                Some(typedefs[0])
+                            } else if !parsed.new_helpers.is_empty() {
+                                Some(&parsed.new_helpers[0])
+                            } else {
+                                None
+                            };
+
+                            let new_parsed = if let Some(h) = use_helper {
+                                Ok(h)
+                            } else {
+                                Err(CompileErr(
+                                    loc.clone(),
+                                    "helper form was parsed but it wasn't understood by the LSP"
+                                        .to_string(),
+                                ))
+                            };
+
+                            new_parsed.cloned()
+                        }
+                        Ok(None) => {
+                            Err(CompileErr(loc.clone(), "must be a helper form".to_string()))
+                        }
+                        Err(e) => Err(e),
+                    };
+
+                    let dc_result =
+                        compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone())
                             .and_then(|mh| {
                                 if let Some(h) = mh {
                                     Ok(h)
                                 } else {
                                     Err(CompileErr(loc, "must be a helper form".to_string()))
                                 }
-                            }),
-                        },
-                    );
+                            });
+                    match dc_result {
+                        Ok(res) => {
+                            if let Some(h) = res.new_helpers.iter().next() {
+                                result.helpers.insert(
+                                    hash.clone(),
+                                    ReparsedHelper {
+                                        hash,
+                                        range: r.clone(),
+                                        parsed: Ok(h.clone()),
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            result.helpers.insert(
+                                hash.clone(),
+                                ReparsedHelper {
+                                    hash,
+                                    range: r.clone(),
+                                    parsed: Err(e),
+                                },
+                            );
+                        }
+                    }
                 }
                 Err((l, s)) => {
                     result.helpers.insert(

@@ -7,7 +7,8 @@ use lsp_types::Position;
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, FrontendOutput, HelperForm,
+    LetData, LetFormKind,
 };
 #[cfg(test)]
 use chialisp::compiler::frontend::frontend;
@@ -122,6 +123,12 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
 
     for h in fe.helpers.iter() {
         match h {
+            HelperForm::Defnamespace(_) => {
+                // XXX
+            }
+            HelperForm::Defnsref(_) => {
+                // XXX
+            }
             HelperForm::Defun(_, d) => {
                 toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
@@ -393,10 +400,10 @@ fn test_not_is_first_in_list_next_word() {
 }
 
 // Given a position, return the identifier at that position.  Relies on find_ident.
-pub fn get_positional_text(text: &[Rc<Vec<u8>>], position: &Position) -> Option<Vec<u8>> {
+pub fn get_positional_text(lines: &DocData, position: &Position) -> Option<Vec<u8>> {
     let pl = position.line as usize;
-    if pl < text.len() {
-        let line = text[pl].clone();
+    if pl < lines.text.len() {
+        let line = lines.text[pl].clone();
         find_ident(line, position.character)
     } else {
         None
@@ -408,7 +415,7 @@ fn test_get_positional_text() {
     let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(", "  hi there", ")"]);
     assert_eq!(
         get_positional_text(
-            &simple_doc.text,
+            &simple_doc,
             &Position {
                 line: 1,
                 character: 3
@@ -588,7 +595,7 @@ fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
 }
 
 #[cfg(test)]
-fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> CompileForm {
+fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> FrontendOutput {
     let sl = Srcloc::start(file);
     let parsed = parse_sexp(sl, DocVecByteIter::new(prog)).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new(file));
@@ -596,15 +603,16 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
 }
 
 #[cfg(test)]
-fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, ParseScope) {
+fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (FrontendOutput, ParseScope) {
     let compiled = get_test_program_for_scope_tests(file, prog);
     (
         compiled.clone(),
         ParseScope {
-            region: compiled.loc.clone(),
+            region: compiled.compileform().loc.clone(),
             kind: ScopeKind::Module,
             variables: Default::default(),
             functions: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| {
@@ -618,6 +626,7 @@ fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, Pa
                 })
                 .collect(),
             containing: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| make_helper_scope(&h))
@@ -640,13 +649,15 @@ fn make_scope_stack_simple() {
     let (compiled, program_scope) = make_test_program_scope(file, &doc.text);
     assert_eq!(program_scope.functions.len(), 2);
     assert_eq!(program_scope.containing.len(), 2);
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test1")));
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test2")));
-    let filename_rc = compiled.loc.file.clone();
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test1"
+    )));
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test2"
+    )));
+    let filename_rc = compiled.compileform().loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,
         Srcloc::new(filename_rc.clone(), 2, 3).ext(&Srcloc::new(filename_rc.clone(), 2, 25))
@@ -663,7 +674,7 @@ fn make_scope_stack_simple() {
     for v in program_scope.containing[1].containing[0].variables.iter() {
         let vrange = DocRange::from_srcloc(v.loc()).to_range();
         assert_eq!(
-            get_positional_text(&doc.text, &vrange.start),
+            get_positional_text(&doc, &vrange.start),
             Some(b"C".to_vec())
         );
     }

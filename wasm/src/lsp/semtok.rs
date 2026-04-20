@@ -18,7 +18,9 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use chialisp::compiler::clvm::sha256tree;
-use chialisp::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
+use chialisp::compiler::comptypes::{
+    BindingPattern, BodyForm, CompileForm, HelperForm, LetFormKind,
+};
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
 
@@ -459,6 +461,8 @@ pub fn build_semantic_tokens(
 
     for form in parsed.compiled.helpers.iter() {
         match form {
+            HelperForm::Defnamespace(_) => {}
+            HelperForm::Defnsref(_) => {}
             HelperForm::Defconstant(defc) => {
                 if let Some(kw) = &defc.kw {
                     collected_tokens.push(SemanticTokenSortable {
