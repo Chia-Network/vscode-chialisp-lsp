@@ -97,6 +97,26 @@ fn find_call_token(
     l: &Srcloc,
     name: &Vec<u8>,
 ) -> Option<(SemanticTokenSortable, Srcloc)> {
+    let find_helper_by_name = |helper_name: &[u8]| {
+        for f in frontend.helpers.iter() {
+            match f {
+                HelperForm::Defun(_inline, defun) => {
+                    if defun.name == helper_name {
+                        return Some((TK_FUNCTION_IDX, defun.nl.clone()));
+                    }
+                }
+                HelperForm::Defmacro(mac) => {
+                    if mac.name == helper_name {
+                        return Some((TK_MACRO_IDX, mac.nl.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    };
+
     for f in frontend.helpers.iter() {
         match f {
             HelperForm::Defun(_inline, defun) => {
@@ -120,6 +140,31 @@ fn find_call_token(
                 }
             }
             _ => {}
+        }
+    }
+
+    for f in frontend.helpers.iter() {
+        if let HelperForm::Defnsref(nsref) = f {
+            if let ModuleImportSpec::Exposing(_, exposed_names) = &nsref.specification {
+                for exposed in exposed_names.iter() {
+                    let exposed_name = exposed.alias.as_ref().unwrap_or(&exposed.name);
+                    if exposed_name != name {
+                        continue;
+                    }
+
+                    let imported_target = find_helper_by_name(&exposed.name);
+                    let (token_type, target_loc) =
+                        imported_target.unwrap_or((TK_FUNCTION_IDX, exposed.nl.clone()));
+                    return Some((
+                        SemanticTokenSortable {
+                            loc: l.clone(),
+                            token_type,
+                            token_mod: 0,
+                        },
+                        target_loc,
+                    ));
+                }
+            }
         }
     }
 
@@ -498,6 +543,9 @@ pub fn build_semantic_tokens(
                     }
                     ModuleImportSpec::Exposing(l, e) => {
                         for h in e.iter() {
+                            if h.alias.is_some() {
+                                continue;
+                            }
                             collected_tokens.push(SemanticTokenSortable {
                                 loc: h.nl.clone(),
                                 token_type: TK_VARIABLE_IDX,

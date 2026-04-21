@@ -2090,7 +2090,7 @@ fn test_sem_tok_for_module_style_reverse_function() {
             SemanticToken {
                 delta_line: 0,
                 delta_start: 7,
-                length: 10,
+                length: 11,
                 token_type: TK_VARIABLE_IDX,
                 token_modifiers_bitset: 0,
             },
