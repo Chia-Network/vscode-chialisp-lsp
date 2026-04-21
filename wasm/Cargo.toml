@@ -20,8 +20,8 @@ path = "src/mod.rs"
 wasm-opt = false # ["-Oz", "--enable-mutable-globals", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
 [dependencies]
-chialisp = "0.4.3"
-clvmr = "0.17.5"
+chialisp = { git = "https://github.com/Chia-Network/chialisp", rev = "bb4fe971b1d4d444fbc110483987673fe6337faa" }
+clvmr = "0.16.0"
 wasm-bindgen = "=0.2.100"
 wasm-bindgen-test = "=0.3.50"
 js-sys = "0.3.77"

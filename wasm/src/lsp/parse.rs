@@ -867,7 +867,7 @@ fn test_make_arg_set() {
 //
 // In module style, there is no outside container.  We should detect which the
 // source file is and act accordingly.
-pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
+pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     let mut ranges_1 = Vec::new();
     let mut ranges_0 = Vec::new();
     let mut in_comment = false;
@@ -936,9 +936,9 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
     eprintln!("ranges_0 {ranges_0:?}");
     eprintln!("ranges_1 {ranges_1:?}");
     if ranges_0.len() < 2 {
-        ranges_1
+        (false, ranges_1)
     } else {
-        ranges_0
+        (true, ranges_0)
     }
 }
 
@@ -955,7 +955,7 @@ fn test_make_simple_ranges_1() {
     ];
     assert_eq!(
         make_simple_ranges(test_data),
-        vec![
+        (false, vec![
             DocRange {
                 start: DocPosition {
                     line: 0,
@@ -1006,6 +1006,6 @@ fn test_make_simple_ranges_1() {
                     character: 4
                 }
             }
-        ]
+        ])
     );
 }

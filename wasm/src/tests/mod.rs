@@ -559,7 +559,7 @@ fn test_simple_ranges() {
     let simple_ranges = make_simple_ranges(&split_text(&content));
     assert_eq!(
         simple_ranges,
-        vec![
+        (false, vec![
             DocRange {
                 start: DocPosition {
                     line: 0,
@@ -590,7 +590,7 @@ fn test_simple_ranges() {
                     character: 7
                 }
             }
-        ]
+        ])
     );
 }
 
@@ -705,12 +705,13 @@ fn run_reparse_steps(
 
     for content in text_inputs.iter() {
         let text = split_text(&content);
-        let ranges = make_simple_ranges(&text);
+        let (module_style, ranges) = make_simple_ranges(&text);
         let reparsed = reparse_subset(
             &prims,
             opts.clone(),
             &text,
             &file,
+            module_style,
             &ranges,
             &doc.compiled,
             &HashMap::new(),

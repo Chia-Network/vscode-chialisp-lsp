@@ -737,13 +737,14 @@ impl LSPServiceProvider {
                 .get(uristring)
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
-            let ranges = make_simple_ranges(&doc.text);
+            let (module_style, ranges) = make_simple_ranges(&doc.text);
             eprintln!("got ranges {ranges:?}");
             let mut new_helpers = reparse_subset(
                 &self.prims,
                 opts,
                 &doc.text,
                 uristring,
+                module_style,
                 &ranges,
                 &output.compiled,
                 &output.helpers,

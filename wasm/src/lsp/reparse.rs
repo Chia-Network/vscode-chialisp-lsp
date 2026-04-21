@@ -151,6 +151,7 @@ pub fn reparse_subset(
     opts: Rc<dyn CompilerOpts>,
     doc: &[Rc<Vec<u8>>],
     uristring: &str,
+    module_style: bool,
     simple_ranges: &[DocRange],
     compiled: &CompileForm,
     prev_helpers: &HashMap<Hash, ReparsedHelper>,
@@ -260,7 +261,7 @@ pub fn reparse_subset(
         }
     }
 
-    if break_end == suffix_text.len() {
+    if break_end == suffix_text.len() && !module_style {
         result.errors.push(CompileErr(
             DocRange {
                 start: suffix_start.clone(),
