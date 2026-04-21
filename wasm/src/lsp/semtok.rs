@@ -8,7 +8,7 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc};
+use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc, IncludedFileSpec};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm, ReparsedExp,
     ReparsedHelper,
@@ -367,14 +367,14 @@ fn process_body_code(
                 let hashed = Hash::new(&sha256tree(i.to_sexp()));
                 includes.insert(
                     hashed,
-                    IncludeData {
+                    IncludedFileSpec::Include(IncludeData {
                         loc: i.kw.clone(),
                         name_loc: i.nl.clone(),
                         kw_loc: i.kw.clone(),
                         kind: IncludeKind::Include,
                         filename: i.name.clone(),
                         found: None,
-                    },
+                    }),
                 );
             }
 
@@ -426,36 +426,43 @@ pub fn build_semantic_tokens(
     }
 
     for (_, incl) in parsed.includes.iter() {
-        collected_tokens.push(SemanticTokenSortable {
-            loc: incl.kw_loc.clone(),
-            token_type: TK_KEYWORD_IDX,
-            token_mod: 0,
-        });
-        collected_tokens.push(SemanticTokenSortable {
-            loc: incl.name_loc.clone(),
-            token_type: TK_STRING_IDX,
-            token_mod: 0,
-        });
-        match &incl.kind {
-            IncludeKind::Include => {}
-            IncludeKind::CompileFile(il) => {
+        match incl {
+            IncludedFileSpec::Include(incl) => {
                 collected_tokens.push(SemanticTokenSortable {
-                    loc: il.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: TK_DEFINITION_BIT,
-                });
-            }
-            IncludeKind::EmbedFile(il, kl) => {
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: il.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: TK_DEFINITION_BIT,
-                });
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: kl.clone(),
+                    loc: incl.kw_loc.clone(),
                     token_type: TK_KEYWORD_IDX,
                     token_mod: 0,
                 });
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: incl.name_loc.clone(),
+                    token_type: TK_STRING_IDX,
+                    token_mod: 0,
+                });
+                match &incl.kind {
+                    IncludeKind::Include => {}
+                    IncludeKind::CompileFile(il) => {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: il.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: TK_DEFINITION_BIT,
+                        });
+                    }
+                    IncludeKind::EmbedFile(il, kl) => {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: il.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: TK_DEFINITION_BIT,
+                        });
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kl.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
+                }
+            }
+            IncludedFileSpec::Import(imp) => {
+                // Handled in the helper personality.
             }
         }
     }

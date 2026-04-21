@@ -9,7 +9,7 @@ use std::rc::Rc;
 use crate::lsp::{
     LSPServiceMessageHandler, LSPServiceProvider, TK_COMMENT_IDX, TK_DEFINITION_BIT,
     TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_STRING_IDX,
-    TK_VARIABLE_IDX,
+    TK_VARIABLE_IDX, TK_MACRO_IDX,
 };
 
 use lsp_server::{Message, Notification, Request, RequestId};
@@ -22,7 +22,7 @@ use lsp_types::{
 
 use crate::dbg::source::parse_srcloc;
 use crate::interfaces::{EPrintWriter, FSFileReader};
-use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc};
+use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc, IncludedFileSpec};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
@@ -860,7 +860,11 @@ fn include_is_annotated() {
         .to_string()],
     );
     let includes_flat: Vec<IncludeData> =
-        combined.includes.iter().map(|(_, v)| v.clone()).collect();
+        combined.includes.iter().filter_map(|(_, v)| if let IncludedFileSpec::Include(i) = v {
+            Some(i.clone())
+        } else {
+            None
+        }).collect();
     assert_eq!(includes_flat[0].kw_loc.line, 2);
     assert_eq!(includes_flat[0].kw_loc.col, 4);
     assert_eq!(includes_flat[0].name_loc.line, 2);
@@ -1949,7 +1953,7 @@ fn test_sem_tok_for_module_style() {
     );
     lsp.set_workspace_root(PathBuf::from(r"."));
     lsp.set_config(ConfigJson {
-        include_paths: vec!["./resources/tests".to_string()],
+        include_paths: vec!["../resources/tests".to_string()],
     });
     let file = "file://./test.cl".to_string();
     let open_msg = make_did_open_message(
@@ -2023,7 +2027,14 @@ fn test_sem_tok_for_module_style() {
             },
             SemanticToken {
                 delta_line: 0,
-                delta_start: 11,
+                delta_start: 4,
+                length: 6,
+                token_type: TK_MACRO_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 7,
                 length: 1,
                 token_type: TK_PARAMETER_IDX,
                 token_modifiers_bitset: 0,

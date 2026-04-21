@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
+use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc, IncludedFileSpec};
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParsedForm, ParseScope, ReparsedExp, ReparsedHelper,
 };
 use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData};
 use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult, match_export_form};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
@@ -25,7 +25,7 @@ pub struct ReparsedModule {
     pub helpers: HashMap<Hash, ReparsedHelper>,
     pub exp: Option<ReparsedExp>,
     pub unparsed: HashMap<Hash, DocRange>,
-    pub includes: HashMap<Hash, IncludeData>,
+    pub includes: HashMap<Hash, IncludedFileSpec>,
     pub errors: Vec<CompileErr>,
 }
 
@@ -344,7 +344,7 @@ pub fn reparse_subset(
                         });
                         continue;
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
-                        result.includes.insert(hash, include.clone());
+                        result.includes.insert(hash, IncludedFileSpec::Include(include.clone()));
                         continue;
                     }
 
@@ -404,6 +404,10 @@ pub fn reparse_subset(
                     match dc_result {
                         Ok(ParsedForm::Helper(res)) => {
                             if let Some(h) = res.new_helpers.iter().next() {
+                                if let HelperForm::Defnsref(import) = h {
+                                    let nsref: &NamespaceRefData = import.borrow();
+                                    result.includes.insert(hash.clone(), IncludedFileSpec::Import(nsref.clone()));
+                                }
                                 result.helpers.insert(
                                     hash.clone(),
                                     ReparsedHelper {

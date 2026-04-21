@@ -8,7 +8,7 @@ use lsp_types::Position;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
     Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm,
-    LetData, LetFormKind,
+    LetData, LetFormKind, NamespaceRefData,
 };
 #[cfg(test)]
 use chialisp::compiler::frontend::frontend;
@@ -21,6 +21,12 @@ use crate::lsp::types::{
     DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedHelper,
     ScopeKind,
 };
+
+#[derive(Debug, Clone)]
+pub enum IncludedFileSpec {
+    Include(IncludeData),
+    Import(NamespaceRefData),
+}
 
 #[derive(Debug, Clone)]
 // A parsed document.
@@ -43,7 +49,7 @@ pub struct ParsedDoc {
     // If present, the main expression in ReparsedExp form.
     pub exp: Option<ReparsedExp>,
     // Includes in the various files, indexed by included file.
-    pub includes: HashMap<Hash, IncludeData>,
+    pub includes: HashMap<Hash, IncludedFileSpec>,
     // Index of hashed ranges (as Reparsed* data) to the names they bind.
     pub hash_to_name: HashMap<Hash, Vec<u8>>,
     // Chialisp frontend errors encountered while parsing.
@@ -876,6 +882,8 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     let mut level = 0;
     let mut line = 0;
     let mut character = 0;
+    let mut first_range = true;
+    let mut first_word_of_module = Vec::new();
 
     for i in DocVecByteIter::new(srctext) {
         if i == b';' {
@@ -897,6 +905,10 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
             }
             character += 1;
         } else if i == b')' {
+            // First range is over.  This is watching for
+            // (import , (defun , etc.
+            first_range = false;
+
             // We expect to contain only one toplevel list, so other ends
             // are probably a misparse.
             if !in_comment && level > 0 {
@@ -929,13 +941,32 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
             }
             character += 1;
         } else {
+            if level == 1 && first_word_of_module.len() < 20 {
+                first_word_of_module.push(i);
+            }
             character += 1;
         }
     }
 
-    eprintln!("ranges_0 {ranges_0:?}");
-    eprintln!("ranges_1 {ranges_1:?}");
-    if ranges_0.len() < 2 {
+    // XXX improve this detection.
+    // Module style should match when there's 1 range if:
+    // The single form starts with 'export' or a word that begins a helper:
+    // embed, import, defconst, defconstant, defun, defun-inline, defmacro
+
+    let first_word: Vec<u8> = first_word_of_module.iter().take_while(|c| **c >= b'a' && **c <= b'z' || **c == b'-').copied().collect();
+    let is_module_form = [
+        "defconst",
+        "defconstant",
+        "defmac",
+        "defmacro",
+        "defun",
+        "defun-inline",
+        "embed",
+        "export",
+        "import"
+    ].iter().find(|w| w.as_bytes() == first_word).is_some();
+
+    if ranges_0.len() == 1 && !is_module_form {
         (false, ranges_1)
     } else {
         (true, ranges_0)
