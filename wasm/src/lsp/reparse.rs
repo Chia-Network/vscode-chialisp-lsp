@@ -5,11 +5,11 @@ use std::rc::Rc;
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParsedForm, ParseScope, ReparsedExp, ReparsedHelper,
 };
 use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
-use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm};
+use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult, match_export_form};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -97,10 +97,10 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
     })
 }
 
-fn compile_helperform_with_loose_defconstant(
+fn compile_helperform_with_loose_defconstant_and_module_forms(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>,
-) -> Result<Option<HelperFormResult>, CompileErr> {
+) -> Result<Option<ParsedForm<HelperFormResult>>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -129,13 +129,21 @@ fn compile_helperform_with_loose_defconstant(
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
-                return compile_helperform(opts, Rc::new(amended_instr));
+                return compile_helperform(opts.clone(), Rc::new(amended_instr)).map(|o| o.map(ParsedForm::Helper));
             }
         }
     }
 
     // Not a proper list so not the kind of thing we're looking for.
-    compile_helperform(opts, parsed)
+    match compile_helperform(opts.clone(), parsed.clone()).map(|o| o.filter(|h| !h.new_helpers.is_empty()).map(ParsedForm::Helper)) {
+        Err(e) => {
+            match_export_form(
+                opts.clone(),
+                parsed.clone()).map(|o| o.map(ParsedForm::ModuleExport)
+            ).map_err(|_| e)
+        }
+        r => r
+    }
 }
 
 pub fn reparse_subset(
@@ -354,7 +362,7 @@ pub fn reparse_subset(
                                         ReparsedHelper {
                                             hash: new_hash,
                                             range: r.clone(),
-                                            parsed: Ok(h.clone()),
+                                            parsed: Ok(ParsedForm::Helper(h.clone())),
                                         },
                                     );
                                 }
@@ -384,7 +392,7 @@ pub fn reparse_subset(
                     };
 
                     let dc_result =
-                        compile_helperform_with_loose_defconstant(opts.clone(), parsed[0].clone())
+                        compile_helperform_with_loose_defconstant_and_module_forms(opts.clone(), parsed[0].clone())
                             .and_then(|mh| {
                                 if let Some(h) = mh {
                                     Ok(h)
@@ -393,17 +401,27 @@ pub fn reparse_subset(
                                 }
                             });
                     match dc_result {
-                        Ok(res) => {
+                        Ok(ParsedForm::Helper(res)) => {
                             if let Some(h) = res.new_helpers.iter().next() {
                                 result.helpers.insert(
                                     hash.clone(),
                                     ReparsedHelper {
                                         hash,
                                         range: r.clone(),
-                                        parsed: Ok(h.clone()),
+                                        parsed: Ok(ParsedForm::Helper(h.clone())),
                                     },
                                 );
                             }
+                        }
+                        Ok(ParsedForm::ModuleExport(res)) => {
+                            result.helpers.insert(
+                                hash.clone(),
+                                ReparsedHelper {
+                                    hash,
+                                    range: r.clone(),
+                                    parsed: Ok(ParsedForm::ModuleExport(res.clone()))
+                                },
+                            );
                         }
                         Err(e) => {
                             result.helpers.insert(
@@ -550,6 +568,7 @@ pub fn combine_new_with_old_parse(
     let new_includes = reparse.includes.clone();
     let mut new_helpers = parsed.helpers.clone();
     let mut extracted_helpers = Vec::new();
+    let mut exports = Vec::new();
     let mut to_remove = HashSet::new();
     let mut remove_names = HashSet::new();
     let mut hash_to_name = parsed.hash_to_name.clone();
@@ -584,9 +603,12 @@ pub fn combine_new_with_old_parse(
             Err(e) => {
                 out_errors.push(e.clone());
             }
-            Ok(parsed) => {
+            Ok(ParsedForm::Helper(parsed)) => {
                 hash_to_name.insert(h.clone(), parsed.name().clone());
                 extracted_helpers.push(parsed.clone());
+            }
+            Ok(ParsedForm::ModuleExport(parsed)) => {
+                exports.push(parsed.clone());
             }
         }
         new_helpers.insert(h.clone(), p.clone());
@@ -636,6 +658,7 @@ pub fn combine_new_with_old_parse(
         ignored: reparse.ignored,
         mod_kw: reparse.mod_kw.clone(),
         compiled: compile_with_dead_helpers_removed,
+        exports,
         errors: out_errors,
         scopes,
         includes: new_includes,

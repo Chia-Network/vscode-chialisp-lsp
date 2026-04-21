@@ -30,7 +30,8 @@ use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::semtok::SemanticTokenSortable;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, HelperForm};
+use chialisp::compiler::frontend::HelperFormResult;
 use chialisp::compiler::prims::prims;
 use chialisp::compiler::sexp::{decode_string, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -737,6 +738,7 @@ impl LSPServiceProvider {
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
             let ranges = make_simple_ranges(&doc.text);
+            eprintln!("got ranges {ranges:?}");
             let mut new_helpers = reparse_subset(
                 &self.prims,
                 opts,
@@ -749,8 +751,7 @@ impl LSPServiceProvider {
 
             for (_, incfile) in new_helpers.includes.iter() {
                 if incfile.kind != IncludeKind::Include
-                    || incfile.filename == b"*standard-cl-21*"
-                    || incfile.filename == b"*standard-cl-22*"
+                    || incfile.filename.starts_with(b"*")
                 {
                     continue;
                 }
@@ -1125,11 +1126,17 @@ pub struct IncludeData {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParsedForm<H> {
+    ModuleExport(Export),
+    Helper(H),
+}
+
+#[derive(Debug, Clone)]
 // A helper (defmacro, defun, etc)  that we parsed alone via document range.
 pub struct ReparsedHelper {
     pub hash: Hash,
     pub range: DocRange,
-    pub parsed: Result<HelperForm, CompileErr>,
+    pub parsed: Result<ParsedForm<HelperForm>, CompileErr>,
 }
 
 #[derive(Debug, Clone)]

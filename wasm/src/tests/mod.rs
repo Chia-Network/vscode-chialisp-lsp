@@ -1956,8 +1956,8 @@ fn test_sem_tok_for_module_style() {
         1,
         indoc! {"
 (import std.assert)
-
-(export F (X Y) (assert X Y))"}
+(include *standard-cl-25*)
+(export (X Y) (assert X Y))"}
         .to_string(),
     );
     let sem_tok = make_get_semantic_tokens_msg(&file, 2);
@@ -1973,16 +1973,65 @@ fn test_sem_tok_for_module_style() {
         vec![
             SemanticToken {
                 delta_line: 0,
-                delta_start: 0,
-                length: 16,
-                token_type: TK_COMMENT_IDX,
+                delta_start: 1,
+                length: 6,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 7,
+                length: 10,
+                token_type: TK_VARIABLE_IDX,
                 token_modifiers_bitset: 0,
             },
             SemanticToken {
                 delta_line: 1,
                 delta_start: 1,
-                length: 3,
+                length: 7,
                 token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 8,
+                length: 16,
+                token_type: TK_STRING_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 1,
+                delta_start: 1,
+                length: 6,
+                token_type: TK_KEYWORD_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 8,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 1,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 1,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 11,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
+                token_modifiers_bitset: 0,
+            },
+            SemanticToken {
+                delta_line: 0,
+                delta_start: 2,
+                length: 1,
+                token_type: TK_PARAMETER_IDX,
                 token_modifiers_bitset: 0,
             },
         ]

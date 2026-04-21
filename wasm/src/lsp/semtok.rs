@@ -10,7 +10,7 @@ use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedExp,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm, ReparsedExp,
     ReparsedHelper,
 };
 use crate::lsp::{
@@ -19,7 +19,7 @@ use crate::lsp::{
 };
 use chialisp::compiler::clvm::sha256tree;
 use chialisp::compiler::comptypes::{
-    BindingPattern, BodyForm, CompileForm, HelperForm, LetFormKind,
+    BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
 };
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
@@ -346,7 +346,7 @@ fn process_body_code(
                     ReparsedHelper {
                         hash: Hash::new(&hash),
                         range: DocRange::from_srcloc(h.loc()),
-                        parsed: Ok(h.clone()),
+                        parsed: Ok(ParsedForm::Helper(h.clone())),
                     },
                 );
             }
@@ -383,6 +383,7 @@ fn process_body_code(
                 ignored: false,
                 mod_kw: Some(l.clone()),
                 compiled: m.clone(),
+                exports: Vec::default(),
                 scopes,
                 helpers,
                 exp: Some(reparsed_exp),
@@ -462,7 +463,52 @@ pub fn build_semantic_tokens(
     for form in parsed.compiled.helpers.iter() {
         match form {
             HelperForm::Defnamespace(_) => {}
-            HelperForm::Defnsref(_) => {}
+            HelperForm::Defnsref(nsref) => {
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: nsref.kw.clone(),
+                    token_type: TK_KEYWORD_IDX,
+                    token_mod: 0,
+                });
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: nsref.nl.clone(),
+                    token_type: TK_VARIABLE_IDX,
+                    token_mod: 0,
+                });
+                match &nsref.specification {
+                    ModuleImportSpec::Qualified(q) => {
+                        if let Some(target) = &q.target {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: q.kw.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: q.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                    ModuleImportSpec::Exposing(l, e) => {
+                        for h in e.iter() {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: h.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                    ModuleImportSpec::Hiding(l, e) => {
+                        for h in e.iter() {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: h.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                }
+            }
             HelperForm::Defconstant(defc) => {
                 if let Some(kw) = &defc.kw {
                     collected_tokens.push(SemanticTokenSortable {
@@ -540,6 +586,37 @@ pub fn build_semantic_tokens(
                     &parsed.compiled,
                     mac.program.exp.clone(),
                 );
+            }
+        }
+
+        for export in parsed.exports.iter() {
+            match export {
+                Export::MainProgram(p) => {
+                    collect_arg_tokens(&mut collected_tokens, &mut argcollection, p.args.clone());
+                    if let Some(kw_loc) = p.kw_loc.as_ref() {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kw_loc.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
+                    process_body_code(
+                        env,
+                        &mut collected_tokens,
+                        goto_def,
+                        &argcollection,
+                        &varcollection,
+                        &CompileForm {
+                            loc: p.loc.clone(),
+                            exp: p.expr.clone(),
+                            .. parsed.compiled.clone()
+                        },
+                        p.expr.clone(),
+                    );
+                }
+                Export::Function(f) => {
+                    todo!();
+                }
             }
         }
     }

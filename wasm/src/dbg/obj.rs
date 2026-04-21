@@ -406,7 +406,7 @@ fn test_simple_find_location_classic_symbols_1() {
         line: 2,
         log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
+    let (hash, _) = find_location(symbols, &Some(compiled.compileform().clone()), log, "fact.clsp", &breakpoint_spec)
         .expect("should be found");
     assert_eq!(
         hash,
@@ -500,7 +500,7 @@ fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
         )),
         SExp::Atom(l, _) => {
             let vrange = DocRange::from_srcloc(l.clone()).to_range();
-            if let Some(replacement) = get_positional_text(lines, &vrange.start) {
+            if let Some(replacement) = get_positional_text(&lines, &vrange.start) {
                 Rc::new(SExp::Atom(l.clone(), replacement.to_vec()))
             } else {
                 sexp.clone()
@@ -632,7 +632,7 @@ fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(Some(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled.compileform().clone()));
     }
 
     let mut parsed_program = if inputs.is_hex {

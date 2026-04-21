@@ -7,7 +7,7 @@ use lsp_types::Position;
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, FrontendOutput, HelperForm,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm,
     LetData, LetFormKind,
 };
 #[cfg(test)]
@@ -33,6 +33,8 @@ pub struct ParsedDoc {
     // it.  CompileForm is the result of frontend and is used for analyzing
     // chialisp in many different tools deriving from chialisp.
     pub compiled: CompileForm,
+    // Exports if module style.
+    pub exports: Vec<Export>,
     // The scope stack for this file.
     pub scopes: ParseScope,
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
@@ -64,6 +66,7 @@ impl ParsedDoc {
                 helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
             },
+            exports: Vec::default(),
             scopes: ParseScope {
                 region: startloc,
                 kind: ScopeKind::Module,
@@ -400,10 +403,10 @@ fn test_not_is_first_in_list_next_word() {
 }
 
 // Given a position, return the identifier at that position.  Relies on find_ident.
-pub fn get_positional_text(lines: &DocData, position: &Position) -> Option<Vec<u8>> {
+pub fn get_positional_text(lines: &[Rc<Vec<u8>>], position: &Position) -> Option<Vec<u8>> {
     let pl = position.line as usize;
-    if pl < lines.text.len() {
-        let line = lines.text[pl].clone();
+    if pl < lines.len() {
+        let line = lines[pl].clone();
         find_ident(line, position.character)
     } else {
         None
@@ -415,7 +418,7 @@ fn test_get_positional_text() {
     let simple_doc = make_simple_test_doc_data_from_lines("test.clsp", &["(", "  hi there", ")"]);
     assert_eq!(
         get_positional_text(
-            &simple_doc,
+            &simple_doc.text,
             &Position {
                 line: 1,
                 character: 3
@@ -674,7 +677,7 @@ fn make_scope_stack_simple() {
     for v in program_scope.containing[1].containing[0].variables.iter() {
         let vrange = DocRange::from_srcloc(v.loc()).to_range();
         assert_eq!(
-            get_positional_text(&doc, &vrange.start),
+            get_positional_text(&doc.text, &vrange.start),
             Some(b"C".to_vec())
         );
     }
@@ -861,10 +864,15 @@ fn test_make_arg_set() {
 // Source files in chialisp are for legacy reasons all expected to contain only
 // one toplevel element, so the areas of interest that may move or change are at
 // the second level.
+//
+// In module style, there is no outside container.  We should detect which the
+// source file is and act accordingly.
 pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
-    let mut ranges = Vec::new();
+    let mut ranges_1 = Vec::new();
+    let mut ranges_0 = Vec::new();
     let mut in_comment = false;
-    let mut start = None;
+    let mut start_1 = None;
+    let mut start_0 = None;
     let mut level = 0;
     let mut line = 0;
     let mut character = 0;
@@ -879,8 +887,11 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
             in_comment = false;
         } else if i == b'(' {
             if !in_comment {
-                if level == 1 && start.is_none() {
-                    start = Some(DocPosition { line, character });
+                if level == 1 && start_1.is_none() {
+                    start_1 = Some(DocPosition { line, character });
+                }
+                if level == 0 {
+                    start_0 = Some(DocPosition { line, character });
                 }
                 level += 1;
             }
@@ -892,15 +903,27 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
                 level -= 1;
 
                 if level == 1 {
-                    if let Some(s) = start.clone() {
-                        ranges.push(DocRange {
+                    if let Some(s) = start_1.clone() {
+                        ranges_1.push(DocRange {
                             start: s,
                             end: DocPosition {
                                 line,
                                 character: character + 1,
                             },
                         });
-                        start = None;
+                        start_1 = None;
+                    }
+                }
+                if level == 0 {
+                    if let Some(s) = start_0.clone() {
+                        ranges_0.push(DocRange {
+                            start: s,
+                            end: DocPosition {
+                                line,
+                                character: character + 1,
+                            },
+                        });
+                        start_0 = None;
                     }
                 }
             }
@@ -910,7 +933,13 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
         }
     }
 
-    ranges
+    eprintln!("ranges_0 {ranges_0:?}");
+    eprintln!("ranges_1 {ranges_1:?}");
+    if ranges_0.len() < 2 {
+        ranges_1
+    } else {
+        ranges_0
+    }
 }
 
 #[test]
