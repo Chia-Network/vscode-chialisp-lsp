@@ -350,7 +350,7 @@ pub fn reparse_subset(
 
                     let compiled_result = compile_helperform(opts.clone(), parsed[0].clone());
 
-                    let parsed_result_to_record = match compiled_result {
+                    let _ = match compiled_result {
                         Ok(Some(parsed)) => {
                             let typedefs: Vec<&HelperForm> = vec![];
                             let other_helpers: &[HelperForm] = &parsed.new_helpers;
@@ -419,6 +419,7 @@ pub fn reparse_subset(
                             }
                         }
                         Ok(ParsedForm::ModuleExport(res)) => {
+                            eprintln!("export res {res:?}");
                             result.helpers.insert(
                                 hash.clone(),
                                 ReparsedHelper {
@@ -573,7 +574,7 @@ pub fn combine_new_with_old_parse(
     let new_includes = reparse.includes.clone();
     let mut new_helpers = parsed.helpers.clone();
     let mut extracted_helpers = Vec::new();
-    let mut exports = Vec::new();
+    let mut exports = parsed.exports.clone();
     let mut to_remove = HashSet::new();
     let mut remove_names = HashSet::new();
     let mut hash_to_name = parsed.hash_to_name.clone();
@@ -600,6 +601,7 @@ pub fn combine_new_with_old_parse(
     for h in to_remove.iter() {
         hash_to_name.remove(h);
         new_helpers.remove(h);
+        exports.remove(h);
     }
 
     // Iterate new helpers.
@@ -611,12 +613,20 @@ pub fn combine_new_with_old_parse(
             Ok(ParsedForm::Helper(parsed)) => {
                 hash_to_name.insert(h.clone(), parsed.name().clone());
                 extracted_helpers.push(parsed.clone());
+                new_helpers.insert(h.clone(), p.clone());
             }
-            Ok(ParsedForm::ModuleExport(parsed)) => {
-                exports.push(parsed.clone());
+            Ok(ParsedForm::ModuleExport(Export::MainProgram(p))) => {
+                let name = b"__export__main".to_vec();
+                hash_to_name.insert(h.clone(), name.clone());
+                exports.insert(h.clone(), Export::MainProgram(p.clone()));
+            }
+            Ok(ParsedForm::ModuleExport(Export::Function(f))) => {
+                let mut name = b"__export__".to_vec();
+                name.append(&mut f.name.value.clone());
+                hash_to_name.insert(h.clone(), name.clone());
+                exports.insert(h.clone(), Export::Function(f.clone()));
             }
         }
-        new_helpers.insert(h.clone(), p.clone());
     }
 
     // For helpers that parsed, replace them in the compile.

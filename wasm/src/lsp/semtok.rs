@@ -383,7 +383,7 @@ fn process_body_code(
                 ignored: false,
                 mod_kw: Some(l.clone()),
                 compiled: m.clone(),
-                exports: Vec::default(),
+                exports: HashMap::default(),
                 scopes,
                 helpers,
                 exp: Some(reparsed_exp),
@@ -595,34 +595,46 @@ pub fn build_semantic_tokens(
                 );
             }
         }
+    }
 
-        for export in parsed.exports.iter() {
-            match export {
-                Export::MainProgram(p) => {
-                    collect_arg_tokens(&mut collected_tokens, &mut argcollection, p.args.clone());
-                    if let Some(kw_loc) = p.kw_loc.as_ref() {
-                        collected_tokens.push(SemanticTokenSortable {
-                            loc: kw_loc.clone(),
-                            token_type: TK_KEYWORD_IDX,
-                            token_mod: 0,
-                        });
-                    }
-                    process_body_code(
-                        env,
-                        &mut collected_tokens,
-                        goto_def,
-                        &argcollection,
-                        &varcollection,
-                        &CompileForm {
-                            loc: p.loc.clone(),
-                            exp: p.expr.clone(),
-                            .. parsed.compiled.clone()
-                        },
-                        p.expr.clone(),
-                    );
+    for (_, export) in parsed.exports.iter() {
+        match export {
+            Export::MainProgram(p) => {
+                collect_arg_tokens(&mut collected_tokens, &mut argcollection, p.args.clone());
+                if let Some(kw_loc) = p.kw_loc.as_ref() {
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: kw_loc.clone(),
+                        token_type: TK_KEYWORD_IDX,
+                        token_mod: 0,
+                    });
                 }
-                Export::Function(f) => {
-                    todo!();
+                process_body_code(
+                    env,
+                    &mut collected_tokens,
+                    goto_def,
+                    &argcollection,
+                    &varcollection,
+                    &CompileForm {
+                        loc: p.loc.clone(),
+                        exp: p.expr.clone(),
+                        .. parsed.compiled.clone()
+                    },
+                    p.expr.clone(),
+                );
+            }
+            Export::Function(f) => {
+                for (kind, loc) in
+                    [(TK_KEYWORD_IDX, f.kw_loc.as_ref()),
+                     (TK_KEYWORD_IDX, f.as_loc.as_ref()),
+                     (TK_VARIABLE_IDX, f.name.loc.as_ref()),
+                     (TK_VARIABLE_IDX, f.as_name.as_ref().and_then(|n| n.loc.as_ref()))
+                    ].iter().filter_map(|(k, l)| l.map(|l| (k,l)))
+                {
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: loc.clone(),
+                        token_type: *kind,
+                        token_mod: 0
+                    })
                 }
             }
         }

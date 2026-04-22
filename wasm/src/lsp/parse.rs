@@ -40,7 +40,7 @@ pub struct ParsedDoc {
     // chialisp in many different tools deriving from chialisp.
     pub compiled: CompileForm,
     // Exports if module style.
-    pub exports: Vec<Export>,
+    pub exports: HashMap<Hash, Export>,
     // The scope stack for this file.
     pub scopes: ParseScope,
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
@@ -72,7 +72,6 @@ impl ParsedDoc {
                 helpers: Default::default(),
                 exp: Rc::new(BodyForm::Quoted(nil)),
             },
-            exports: Vec::default(),
             scopes: ParseScope {
                 region: startloc,
                 kind: ScopeKind::Module,
@@ -81,6 +80,7 @@ impl ParsedDoc {
                 containing: Default::default(),
             },
             helpers: Default::default(),
+            exports: Default::default(),
             exp: None,
             includes: Default::default(),
             hash_to_name: Default::default(),
