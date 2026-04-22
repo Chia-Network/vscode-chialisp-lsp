@@ -169,7 +169,9 @@ impl LSPServiceProvider {
                 }
                 IncludedFileSpec::Import(imp) => {
                     let mut found_include = false;
-                    let target_file = imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                    let target_file = imp
+                        .longname
+                        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
                     for path in self.config.include_paths.clone().iter() {
                         let target_name = Path::new(&path)
                             .join(&decode_string(&target_file))
@@ -238,7 +240,7 @@ impl LSPServiceProvider {
                                     arguments: Some(vec![serde_json::to_value(&decode_string(
                                         &inc.filename,
                                     ))
-                                                         .unwrap()]),
+                                    .unwrap()]),
                                 }),
                                 is_preferred: None,
                                 disabled: None,

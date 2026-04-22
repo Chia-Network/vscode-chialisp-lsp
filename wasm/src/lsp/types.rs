@@ -25,12 +25,14 @@ use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, ParsedDoc, IncludedFileSpec};
+use crate::lsp::parse::{make_simple_ranges, IncludedFileSpec, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset, ReparsedModule};
 use crate::lsp::semtok::SemanticTokenSortable;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, Export, HelperForm, LongNameTranslation};
+use chialisp::compiler::comptypes::{
+    BodyForm, CompileErr, CompilerOpts, Export, HelperForm, LongNameTranslation,
+};
 use chialisp::compiler::frontend::HelperFormResult;
 use chialisp::compiler::prims::prims;
 use chialisp::compiler::sexp::{decode_string, SExp};
@@ -658,18 +660,16 @@ impl LSPServiceProvider {
         let errors = missing_includes
             .iter()
             .map(|i| {
-                let loc =
-                    match i {
-                        IncludedFileSpec::Include(i) => i.name_loc.clone(),
-                        IncludedFileSpec::Import(imp) => imp.loc.clone()
-                    };
-                let filename =
-                    match i {
-                        IncludedFileSpec::Include(i) => i.filename.clone(),
-                        IncludedFileSpec::Import(imp) => {
-                            imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()))
-                        }
-                    };
+                let loc = match i {
+                    IncludedFileSpec::Include(i) => i.name_loc.clone(),
+                    IncludedFileSpec::Import(imp) => imp.loc.clone(),
+                };
+                let filename = match i {
+                    IncludedFileSpec::Include(i) => i.filename.clone(),
+                    IncludedFileSpec::Import(imp) => imp
+                        .longname
+                        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string())),
+                };
                 Diagnostic {
                     range: DocRange::from_srcloc(loc).to_range(),
                     severity: None,
@@ -732,7 +732,12 @@ impl LSPServiceProvider {
         self.parsed_documents.insert(uristring, p);
     }
 
-    pub fn try_handle_incoming_file(&mut self, new_helpers: &mut ReparsedModule, target_filename: &[u8], contained: bool) -> bool {
+    pub fn try_handle_incoming_file(
+        &mut self,
+        new_helpers: &mut ReparsedModule,
+        target_filename: &[u8],
+        contained: bool,
+    ) -> bool {
         let mut success = false;
 
         if let Ok((filename, file_body)) = get_file_content(
@@ -809,7 +814,9 @@ impl LSPServiceProvider {
                         self.try_handle_incoming_file(&mut new_helpers, &incfile.filename, true);
                     }
                     IncludedFileSpec::Import(imp) => {
-                        let filename_inc = imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        let filename_inc = imp
+                            .longname
+                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
                         if !self.try_handle_incoming_file(&mut new_helpers, &filename_inc, false) {
                             /* XXX implement me.
                             let filename_clsp = imp.longname.as_u8_vec(LongNameTranslaction::Filename(".clsp".to_string()));

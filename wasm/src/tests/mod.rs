@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use crate::lsp::{
     LSPServiceMessageHandler, LSPServiceProvider, TK_COMMENT_IDX, TK_DEFINITION_BIT,
-    TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_STRING_IDX,
-    TK_VARIABLE_IDX, TK_MACRO_IDX,
+    TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX, TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_STRING_IDX,
+    TK_VARIABLE_IDX,
 };
 
 use lsp_server::{Message, Notification, Request, RequestId};
@@ -22,7 +22,7 @@ use lsp_types::{
 
 use crate::dbg::source::parse_srcloc;
 use crate::interfaces::{EPrintWriter, FSFileReader};
-use crate::lsp::parse::{is_first_in_list, make_simple_ranges, ParsedDoc, IncludedFileSpec};
+use crate::lsp::parse::{is_first_in_list, make_simple_ranges, IncludedFileSpec, ParsedDoc};
 use crate::lsp::patch::{split_text, stringify_doc, PatchableDocument};
 use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
 use crate::lsp::types::{ConfigJson, DocData, DocPosition, DocRange, IncludeData};
@@ -559,38 +559,41 @@ fn test_simple_ranges() {
     let simple_ranges = make_simple_ranges(&split_text(&content));
     assert_eq!(
         simple_ranges,
-        (false, vec![
-            DocRange {
-                start: DocPosition {
-                    line: 0,
-                    character: 5
+        (
+            false,
+            vec![
+                DocRange {
+                    start: DocPosition {
+                        line: 0,
+                        character: 5
+                    },
+                    end: DocPosition {
+                        line: 0,
+                        character: 7
+                    }
                 },
-                end: DocPosition {
-                    line: 0,
-                    character: 7
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 1,
-                    character: 2,
+                DocRange {
+                    start: DocPosition {
+                        line: 1,
+                        character: 2,
+                    },
+                    end: DocPosition {
+                        line: 3,
+                        character: 5
+                    }
                 },
-                end: DocPosition {
-                    line: 3,
-                    character: 5
+                DocRange {
+                    start: DocPosition {
+                        line: 4,
+                        character: 2
+                    },
+                    end: DocPosition {
+                        line: 4,
+                        character: 7
+                    }
                 }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 4,
-                    character: 2
-                },
-                end: DocPosition {
-                    line: 4,
-                    character: 7
-                }
-            }
-        ])
+            ]
+        )
     );
 }
 
@@ -859,12 +862,17 @@ fn include_is_annotated() {
   )"}
         .to_string()],
     );
-    let includes_flat: Vec<IncludeData> =
-        combined.includes.iter().filter_map(|(_, v)| if let IncludedFileSpec::Include(i) = v {
-            Some(i.clone())
-        } else {
-            None
-        }).collect();
+    let includes_flat: Vec<IncludeData> = combined
+        .includes
+        .iter()
+        .filter_map(|(_, v)| {
+            if let IncludedFileSpec::Include(i) = v {
+                Some(i.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(includes_flat[0].kw_loc.line, 2);
     assert_eq!(includes_flat[0].kw_loc.col, 4);
     assert_eq!(includes_flat[0].name_loc.line, 2);
@@ -2163,7 +2171,7 @@ fn test_sem_tok_for_module_just_export() {
         &file,
         1,
         indoc! {"
-(export (X) (+ X 1))"}
+        (export (X) (+ X 1))"}
         .to_string(),
     );
     let sem_tok = make_get_semantic_tokens_msg(&file, 2);

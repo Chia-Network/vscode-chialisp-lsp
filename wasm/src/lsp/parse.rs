@@ -953,7 +953,11 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     // The single form starts with 'export' or a word that begins a helper:
     // embed, import, defconst, defconstant, defun, defun-inline, defmacro
 
-    let first_word: Vec<u8> = first_word_of_module.iter().take_while(|c| **c >= b'a' && **c <= b'z' || **c == b'-').copied().collect();
+    let first_word: Vec<u8> = first_word_of_module
+        .iter()
+        .take_while(|c| **c >= b'a' && **c <= b'z' || **c == b'-')
+        .copied()
+        .collect();
     let is_module_form = [
         "defconst",
         "defconstant",
@@ -963,8 +967,11 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
         "defun-inline",
         "embed",
         "export",
-        "import"
-    ].iter().find(|w| w.as_bytes() == first_word).is_some();
+        "import",
+    ]
+    .iter()
+    .find(|w| w.as_bytes() == first_word)
+    .is_some();
 
     if ranges_0.len() == 1 && !is_module_form {
         (false, ranges_1)
@@ -986,57 +993,60 @@ fn test_make_simple_ranges_1() {
     ];
     assert_eq!(
         make_simple_ranges(test_data),
-        (false, vec![
-            DocRange {
-                start: DocPosition {
-                    line: 0,
-                    character: 2
+        (
+            false,
+            vec![
+                DocRange {
+                    start: DocPosition {
+                        line: 0,
+                        character: 2
+                    },
+                    end: DocPosition {
+                        line: 0,
+                        character: 8
+                    }
                 },
-                end: DocPosition {
-                    line: 0,
-                    character: 8
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 0,
-                    character: 9
+                DocRange {
+                    start: DocPosition {
+                        line: 0,
+                        character: 9
+                    },
+                    end: DocPosition {
+                        line: 0,
+                        character: 16
+                    }
                 },
-                end: DocPosition {
-                    line: 0,
-                    character: 16
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 2,
-                    character: 3
+                DocRange {
+                    start: DocPosition {
+                        line: 2,
+                        character: 3
+                    },
+                    end: DocPosition {
+                        line: 3,
+                        character: 40
+                    }
                 },
-                end: DocPosition {
-                    line: 3,
-                    character: 40
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 4,
-                    character: 0
+                DocRange {
+                    start: DocPosition {
+                        line: 4,
+                        character: 0
+                    },
+                    end: DocPosition {
+                        line: 4,
+                        character: 10
+                    }
                 },
-                end: DocPosition {
-                    line: 4,
-                    character: 10
+                DocRange {
+                    start: DocPosition {
+                        line: 5,
+                        character: 2
+                    },
+                    end: DocPosition {
+                        line: 5,
+                        character: 4
+                    }
                 }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 5,
-                    character: 2
-                },
-                end: DocPosition {
-                    line: 5,
-                    character: 4
-                }
-            }
-        ])
+            ]
+        )
     );
 }

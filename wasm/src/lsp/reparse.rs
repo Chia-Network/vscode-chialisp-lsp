@@ -3,13 +3,18 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc, IncludedFileSpec};
+use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, IncludedFileSpec, ParsedDoc};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParsedForm, ParseScope, ReparsedExp, ReparsedHelper,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ParsedForm, ReparsedExp,
+    ReparsedHelper,
 };
 use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData};
-use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult, match_export_form};
+use chialisp::compiler::comptypes::{
+    BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData,
+};
+use chialisp::compiler::frontend::{
+    compile_bodyform, compile_helperform, match_export_form, HelperFormResult,
+};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -129,20 +134,21 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
-                return compile_helperform(opts.clone(), Rc::new(amended_instr)).map(|o| o.map(ParsedForm::Helper));
+                return compile_helperform(opts.clone(), Rc::new(amended_instr))
+                    .map(|o| o.map(ParsedForm::Helper));
             }
         }
     }
 
     // Not a proper list so not the kind of thing we're looking for.
-    match compile_helperform(opts.clone(), parsed.clone()).map(|o| o.filter(|h| !h.new_helpers.is_empty()).map(ParsedForm::Helper)) {
-        Err(e) => {
-            match_export_form(
-                opts.clone(),
-                parsed.clone()).map(|o| o.map(ParsedForm::ModuleExport)
-            ).map_err(|_| e)
-        }
-        r => r
+    match compile_helperform(opts.clone(), parsed.clone()).map(|o| {
+        o.filter(|h| !h.new_helpers.is_empty())
+            .map(ParsedForm::Helper)
+    }) {
+        Err(e) => match_export_form(opts.clone(), parsed.clone())
+            .map(|o| o.map(ParsedForm::ModuleExport))
+            .map_err(|_| e),
+        r => r,
     }
 }
 
@@ -344,7 +350,9 @@ pub fn reparse_subset(
                         });
                         continue;
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
-                        result.includes.insert(hash, IncludedFileSpec::Include(include.clone()));
+                        result
+                            .includes
+                            .insert(hash, IncludedFileSpec::Include(include.clone()));
                         continue;
                     }
 
@@ -392,21 +400,26 @@ pub fn reparse_subset(
                         Err(e) => Err(e),
                     };
 
-                    let dc_result =
-                        compile_helperform_with_loose_defconstant_and_module_forms(opts.clone(), parsed[0].clone())
-                            .and_then(|mh| {
-                                if let Some(h) = mh {
-                                    Ok(h)
-                                } else {
-                                    Err(CompileErr(loc, "must be a helper form".to_string()))
-                                }
-                            });
+                    let dc_result = compile_helperform_with_loose_defconstant_and_module_forms(
+                        opts.clone(),
+                        parsed[0].clone(),
+                    )
+                    .and_then(|mh| {
+                        if let Some(h) = mh {
+                            Ok(h)
+                        } else {
+                            Err(CompileErr(loc, "must be a helper form".to_string()))
+                        }
+                    });
                     match dc_result {
                         Ok(ParsedForm::Helper(res)) => {
                             if let Some(h) = res.new_helpers.iter().next() {
                                 if let HelperForm::Defnsref(import) = h {
                                     let nsref: &NamespaceRefData = import.borrow();
-                                    result.includes.insert(hash.clone(), IncludedFileSpec::Import(nsref.clone()));
+                                    result.includes.insert(
+                                        hash.clone(),
+                                        IncludedFileSpec::Import(nsref.clone()),
+                                    );
                                 }
                                 result.helpers.insert(
                                     hash.clone(),
@@ -425,7 +438,7 @@ pub fn reparse_subset(
                                 ReparsedHelper {
                                     hash,
                                     range: r.clone(),
-                                    parsed: Ok(ParsedForm::ModuleExport(res.clone()))
+                                    parsed: Ok(ParsedForm::ModuleExport(res.clone())),
                                 },
                             );
                         }

@@ -18,9 +18,7 @@ use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::classic::platform::argparse::ArgumentValue;
 use chialisp::compiler::cldb::hex_to_modern_sexp;
-use chialisp::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose,
-};
+use chialisp::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
@@ -406,8 +404,14 @@ fn test_simple_find_location_classic_symbols_1() {
         line: 2,
         log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled.compileform().clone()), log, "fact.clsp", &breakpoint_spec)
-        .expect("should be found");
+    let (hash, _) = find_location(
+        symbols,
+        &Some(compiled.compileform().clone()),
+        log,
+        "fact.clsp",
+        &breakpoint_spec,
+    )
+    .expect("should be found");
     assert_eq!(
         hash,
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
