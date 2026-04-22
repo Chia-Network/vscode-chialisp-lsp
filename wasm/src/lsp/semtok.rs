@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::Path;
 use std::rc::Rc;
 
 use lsp_server::{Message, RequestId, Response};
@@ -8,10 +9,12 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc, IncludedFileSpec};
+use crate::lsp::parse::{
+    add_bindings_to_set, add_sexp_bindings, recover_scopes, IncludedFileSpec, ParsedDoc,
+};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm, ReparsedExp,
-    ReparsedHelper,
+    urlify, DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm,
+    ReparsedExp, ReparsedHelper,
 };
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
@@ -19,9 +22,10 @@ use crate::lsp::{
 };
 use chialisp::compiler::clvm::sha256tree;
 use chialisp::compiler::comptypes::{
-    BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
+    BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, LongNameTranslation,
+    ModuleImportSpec,
 };
-use chialisp::compiler::sexp::SExp;
+use chialisp::compiler::sexp::{decode_string, SExp};
 use chialisp::compiler::srcloc::Srcloc;
 
 #[derive(Clone, Debug)]
@@ -69,6 +73,95 @@ pub trait LSPSemtokRequestHandler {
     ) -> Result<Vec<Message>, String>;
 }
 
+pub trait ModuleHelperResolver {
+    fn resolve_module_helper_reference(
+        &self,
+        parsed: &ParsedDoc,
+        name: &[u8],
+    ) -> Option<HelperForm>;
+}
+
+fn resolve_imported_name(spec: &ModuleImportSpec, called_name: &[u8]) -> Option<Vec<u8>> {
+    match spec {
+        ModuleImportSpec::Qualified(_) => None,
+        ModuleImportSpec::Exposing(_, exposed_names) => {
+            for exposed_name in exposed_names.iter() {
+                let available_name = exposed_name.alias.as_ref().unwrap_or(&exposed_name.name);
+                if available_name == called_name {
+                    return Some(exposed_name.name.clone());
+                }
+            }
+            None
+        }
+        ModuleImportSpec::Hiding(_, hidden_names) => {
+            for hidden_name in hidden_names.iter() {
+                let hidden = hidden_name.alias.as_ref().unwrap_or(&hidden_name.name);
+                if hidden == called_name {
+                    return None;
+                }
+            }
+            Some(called_name.to_vec())
+        }
+    }
+}
+
+impl ModuleHelperResolver for LSPServiceProvider {
+    fn resolve_module_helper_reference(
+        &self,
+        parsed: &ParsedDoc,
+        name: &[u8],
+    ) -> Option<HelperForm> {
+        for helper in parsed.compiled.helpers.iter() {
+            let nsref = match helper {
+                HelperForm::Defnsref(nsref) => nsref,
+                _ => continue,
+            };
+
+            let Some(imported_name) = resolve_imported_name(&nsref.specification, name) else {
+                continue;
+            };
+
+            let imported_filename = nsref
+                .longname
+                .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+            let imported_filename_decoded = decode_string(&imported_filename);
+
+            for search_path in self.config.include_paths.iter() {
+                let joined_path = Path::new(search_path).join(&imported_filename_decoded);
+                let joined_path_string = match joined_path.to_str() {
+                    Some(path) => path.to_owned(),
+                    None => continue,
+                };
+
+                let mut candidate_uris = vec![urlify(&joined_path_string)];
+                if let Some(workspace_root) = self.get_workspace_root() {
+                    if let Some(path_from_workspace) = workspace_root.join(&joined_path).to_str() {
+                        candidate_uris.push(urlify(path_from_workspace));
+                    }
+                }
+
+                for candidate_uri in candidate_uris {
+                    if let Some(imported_doc) = self.parsed_documents.get(&candidate_uri) {
+                        for imported_helper in imported_doc.compiled.helpers.iter() {
+                            match imported_helper {
+                                HelperForm::Defun(_, defun) if defun.name == imported_name => {
+                                    return Some(imported_helper.clone());
+                                }
+                                HelperForm::Defmacro(mac) if mac.name == imported_name => {
+                                    return Some(imported_helper.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+}
+
 fn collect_arg_tokens(
     collected_tokens: &mut Vec<SemanticTokenSortable>,
     argcollection: &mut HashMap<Vec<u8>, Srcloc>,
@@ -93,6 +186,8 @@ fn collect_arg_tokens(
 
 fn find_call_token(
     prims: &[Vec<u8>],
+    module_helper_resolver: &dyn ModuleHelperResolver,
+    parsed: &ParsedDoc,
     frontend: &CompileForm,
     l: &Srcloc,
     name: &Vec<u8>,
@@ -123,6 +218,30 @@ fn find_call_token(
         }
     }
 
+    if let Some(imported_helper) =
+        module_helper_resolver.resolve_module_helper_reference(parsed, name)
+    {
+        match imported_helper {
+            HelperForm::Defun(_, defun) => {
+                let st = SemanticTokenSortable {
+                    loc: l.clone(),
+                    token_type: TK_FUNCTION_IDX,
+                    token_mod: 0,
+                };
+                return Some((st, defun.nl.clone()));
+            }
+            HelperForm::Defmacro(mac) => {
+                let st = SemanticTokenSortable {
+                    loc: l.clone(),
+                    token_type: TK_MACRO_IDX,
+                    token_mod: 0,
+                };
+                return Some((st, mac.nl.clone()));
+            }
+            _ => {}
+        }
+    }
+
     for p in prims.iter() {
         if p == name {
             return Some((
@@ -141,6 +260,7 @@ fn find_call_token(
 
 pub struct DocumentProcessingDescription<'a> {
     pub prims: &'a [Vec<u8>],
+    pub module_helper_resolver: &'a dyn ModuleHelperResolver,
     pub log: Rc<dyn ILogWriter>,
     pub id: RequestId,
     pub uristring: &'a str,
@@ -153,6 +273,7 @@ fn process_body_code(
     gotodef: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
     argcollection: &HashMap<Vec<u8>, Srcloc>,
     varcollection: &HashMap<Vec<u8>, Srcloc>,
+    parsed: &ParsedDoc,
     frontend: &CompileForm,
     body: Rc<BodyForm>,
 ) {
@@ -186,6 +307,7 @@ fn process_body_code(
                         gotodef,
                         argcollection,
                         &bindings_vars,
+                        parsed,
                         frontend,
                         b.body.clone(),
                     );
@@ -196,6 +318,7 @@ fn process_body_code(
                         gotodef,
                         argcollection,
                         varcollection,
+                        parsed,
                         frontend,
                         b.body.clone(),
                     )
@@ -214,6 +337,7 @@ fn process_body_code(
                 gotodef,
                 argcollection,
                 &bindings_vars,
+                parsed,
                 frontend,
                 letdata.body.clone(),
             );
@@ -247,6 +371,7 @@ fn process_body_code(
                 gotodef,
                 argcollection,
                 &bindings_vars,
+                parsed,
                 frontend,
                 ldata.body.clone(),
             );
@@ -306,7 +431,14 @@ fn process_body_code(
 
             let head: &BodyForm = args[0].borrow();
             if let BodyForm::Value(SExp::Atom(l, a)) = head {
-                if let Some((call_token, location)) = find_call_token(env.prims, frontend, l, a) {
+                if let Some((call_token, location)) = find_call_token(
+                    env.prims,
+                    env.module_helper_resolver,
+                    parsed,
+                    frontend,
+                    l,
+                    a,
+                ) {
                     collected_tokens.push(call_token.clone());
                     gotodef.insert(call_token, location);
                 }
@@ -319,6 +451,7 @@ fn process_body_code(
                     gotodef,
                     argcollection,
                     varcollection,
+                    parsed,
                     frontend,
                     a.clone(),
                 );
@@ -331,6 +464,7 @@ fn process_body_code(
                     gotodef,
                     argcollection,
                     varcollection,
+                    parsed,
                     frontend,
                     tail.clone(),
                 );
@@ -536,6 +670,7 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &HashMap::new(),
                     &varcollection,
+                    parsed,
                     &parsed.compiled,
                     defc.body.clone(),
                 );
@@ -565,6 +700,7 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &argcollection,
                     &varcollection,
+                    parsed,
                     &parsed.compiled,
                     defun.body.clone(),
                 );
@@ -590,6 +726,7 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &argcollection,
                     &varcollection,
+                    parsed,
                     &parsed.compiled,
                     mac.program.exp.clone(),
                 );
@@ -614,26 +751,32 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &argcollection,
                     &varcollection,
+                    parsed,
                     &CompileForm {
                         loc: p.loc.clone(),
                         exp: p.expr.clone(),
-                        .. parsed.compiled.clone()
+                        ..parsed.compiled.clone()
                     },
                     p.expr.clone(),
                 );
             }
             Export::Function(f) => {
-                for (kind, loc) in
-                    [(TK_KEYWORD_IDX, f.kw_loc.as_ref()),
-                     (TK_KEYWORD_IDX, f.as_loc.as_ref()),
-                     (TK_VARIABLE_IDX, f.name.loc.as_ref()),
-                     (TK_VARIABLE_IDX, f.as_name.as_ref().and_then(|n| n.loc.as_ref()))
-                    ].iter().filter_map(|(k, l)| l.map(|l| (k,l)))
+                for (kind, loc) in [
+                    (TK_KEYWORD_IDX, f.kw_loc.as_ref()),
+                    (TK_KEYWORD_IDX, f.as_loc.as_ref()),
+                    (TK_VARIABLE_IDX, f.name.loc.as_ref()),
+                    (
+                        TK_VARIABLE_IDX,
+                        f.as_name.as_ref().and_then(|n| n.loc.as_ref()),
+                    ),
+                ]
+                .iter()
+                .filter_map(|(k, l)| l.map(|l| (k, l)))
                 {
                     collected_tokens.push(SemanticTokenSortable {
                         loc: loc.clone(),
                         token_type: *kind,
-                        token_mod: 0
+                        token_mod: 0,
                     })
                 }
             }
@@ -652,6 +795,7 @@ pub fn build_semantic_tokens(
         goto_def,
         &argcollection,
         &varcollection,
+        parsed,
         &parsed.compiled,
         parsed.compiled.exp.clone(),
     );
@@ -741,6 +885,7 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
             let resp = do_semantic_tokens(
                 &DocumentProcessingDescription {
                     prims: &PRIM_NAMES,
+                    module_helper_resolver: self,
                     log: self.log.clone(),
                     id,
                     uristring: &uristring,
