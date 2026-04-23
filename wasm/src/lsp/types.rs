@@ -721,9 +721,9 @@ impl LSPServiceProvider {
     }
 
     pub fn save_doc(&mut self, uristring: String, dd: DocData) {
-        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         self.parsed_documents.remove(&uristring);
         self.clear_missing_import_files_for_doc(&uristring);
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         cell.replace_with(|coll| {
             let mut repl = HashMap::new();
             swap(&mut repl, coll);
