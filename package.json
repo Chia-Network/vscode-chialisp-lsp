@@ -15,6 +15,7 @@
     "activationEvents": [
         "onLanguage:chialisp",
         "onCommand:chialisp.startDebug",
+        "onCommand:chialisp.gdbDebug",
         "onDebug",
         "onDebugResolve:chialisp",
         "workspaceContains:chialisp.json",
@@ -58,6 +59,55 @@
                         "type": "string",
                         "default": "",
                         "description": "filename for stderr log for lsp"
+                    },
+                    "chialisp.gdb.backend": {
+                        "type": "string",
+                        "enum": ["auto", "local", "web"],
+                        "default": "auto",
+                        "description": "Select local gdb-multiarch, web-gdb-node, or auto detection."
+                    },
+                    "chialisp.gdb.localDebuggerPath": {
+                        "type": "string",
+                        "default": "gdb-multiarch",
+                        "description": "Path or command name for local gdb executable."
+                    },
+                    "chialisp.gdb.serverAddress": {
+                        "type": "string",
+                        "default": "localhost:9001",
+                        "description": "Host:port where armtx gdbserver listens."
+                    },
+                    "chialisp.gdb.prettyPrinterPath": {
+                        "type": "string",
+                        "default": "${workspaceFolder}/support/gdb_print_sexp.py",
+                        "description": "Path to python pretty-printer script sourced by gdb."
+                    },
+                    "chialisp.gdb.autoStartArmtx": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Automatically launch armtx in a terminal before attaching gdb."
+                    },
+                    "chialisp.gdb.armtxCommand": {
+                        "type": "string",
+                        "default": "armtx \"${file}\"",
+                        "description": "Command used to start armtx before debugging."
+                    },
+                    "chialisp.gdb.webNodePath": {
+                        "type": "string",
+                        "default": "node",
+                        "description": "Node executable used to start web-gdb-node."
+                    },
+                    "chialisp.gdb.webGdbRunnerPath": {
+                        "type": "string",
+                        "default": "${workspaceFolder}/node_modules/web-gdb-node/src/runner.js",
+                        "description": "Path to web-gdb-node runner.js."
+                    },
+                    "chialisp.gdb.webGdbExtraArgs": {
+                        "type": "array",
+                        "description": "Additional arguments passed to web-gdb-node.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": []
                     }
                 }
             }
@@ -71,6 +121,11 @@
             {
                 "command": "chialisp.startDebug",
                 "title": "Start Chialisp Debug"
+            },
+            {
+                "command": "chialisp.gdbDebug",
+                "title": "Chialisp: GDB Debug",
+                "category": "Chialisp"
             }
         ],
         "menus": {
@@ -78,6 +133,10 @@
                 {
                     "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
                     "command": "chialisp.startDebug"
+                },
+                {
+                    "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
+                    "command": "chialisp.gdbDebug"
                 }
             ]
         },
