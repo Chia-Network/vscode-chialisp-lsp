@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chialisp::compiler::comptypes::{CompileForm, HelperForm, LongNameTranslation, ModuleImportSpec};
+use chialisp::compiler::comptypes::{CompileForm, HelperForm, ImportLongName, LongNameTranslation, ModuleImportSpec, NamespaceRefData};
 use chialisp::compiler::sexp::decode_string;
 use chialisp::compiler::srcloc::Srcloc;
 
@@ -18,28 +18,57 @@ pub trait HelperResolver {
     ) -> Option<HelperForm>;
 }
 
-fn resolve_imported_name(spec: &ModuleImportSpec, called_name: &[u8]) -> Option<Vec<u8>> {
-    match spec {
-        ModuleImportSpec::Qualified(_) => None,
-        ModuleImportSpec::Exposing(_, exposed_names) => {
-            for exposed_name in exposed_names.iter() {
-                let available_name = exposed_name.alias.as_ref().unwrap_or(&exposed_name.name);
-                if available_name == called_name {
-                    return Some(exposed_name.name.clone());
+fn get_filename_of_import(longname: &ImportLongName) -> String {
+    let imported_filename = longname
+        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+    decode_string(&imported_filename)
+}
+
+fn resolve_imported_name(
+    service_provider: &mut LSPServiceProvider,
+    namespace_ref: &NamespaceRefData,
+    called_name: &[u8]
+) -> Option<(String, Vec<u8>)> {
+    match &namespace_ref.specification {
+        ModuleImportSpec::Qualified(q) => {
+            let filename_decoded = get_filename_of_import(&q.name);
+            if let Some((file_uri, parsed)) = service_provider.get_file_uri_and_ensure_parsing(&filename_decoded) {
+                let qualified_parent = q.target.as_ref().map(|q| &q.name).unwrap_or_else(|| &q.name);
+                for helper in parsed.compiled.helpers.iter() {
+                    let full_helper_qualified_name = qualified_parent.with_child(helper.name());
+                    let name_to_match = full_helper_qualified_name.as_u8_vec(LongNameTranslation::Namespace);
+                    if name_to_match == called_name {
+                        return Some((file_uri, helper.name().to_vec()));
+                    }
                 }
             }
-            None
+        }
+        ModuleImportSpec::Exposing(_, exposed_names) => {
+            let filename_decoded = get_filename_of_import(&namespace_ref.longname);
+            if let Some((file_uri, parsed)) = service_provider.get_file_uri_and_ensure_parsing(&filename_decoded) {
+                for exposed_name in exposed_names.iter() {
+                    let available_name = exposed_name.alias.as_ref().unwrap_or(&exposed_name.name);
+                    if available_name == called_name {
+                        return Some((file_uri, exposed_name.name.clone()));
+                    }
+                }
+            }
         }
         ModuleImportSpec::Hiding(_, hidden_names) => {
-            for hidden_name in hidden_names.iter() {
-                let hidden = hidden_name.alias.as_ref().unwrap_or(&hidden_name.name);
-                if hidden == called_name {
-                    return None;
+            let filename_decoded = get_filename_of_import(&namespace_ref.longname);
+            if let Some((file_uri, parsed)) = service_provider.get_file_uri_and_ensure_parsing(&filename_decoded) {
+                for hidden_name in hidden_names.iter() {
+                    let hidden = hidden_name.alias.as_ref().unwrap_or(&hidden_name.name);
+                    if hidden == called_name {
+                        return None;
+                    }
                 }
+                return Some((file_uri, called_name.to_vec()));
             }
-            Some(called_name.to_vec())
         }
     }
+
+    None
 }
 
 impl HelperResolver for LSPServiceProvider {
@@ -54,41 +83,20 @@ impl HelperResolver for LSPServiceProvider {
                 _ => continue,
             };
 
-            let Some(imported_name) = resolve_imported_name(&nsref.specification, name) else {
+            let Some((file_uri, imported_name)) = resolve_imported_name(self, &nsref, name) else {
                 continue;
             };
 
-            let imported_filename = nsref
-                .longname
-                .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
-            let imported_filename_decoded = decode_string(&imported_filename);
-
-            if let Ok((filename, file_body)) = get_file_content(
-                self.log.clone(),
-                self.fs.clone(),
-                self.get_workspace_root(),
-                &self.config.include_paths,
-                &decode_string(&imported_filename),
-            ) {
-                if let Some(file_uri) = self
-                    .get_workspace_root()
-                    .and_then(|r| r.join(&filename).to_str().map(urlify))
-                {
-                    self.save_doc(file_uri.clone(), file_body);
-                    self.ensure_parsed_document(&file_uri);
-
-                    if let Some(imported_doc) = self.get_parsed(&file_uri) {
-                        for imported_helper in imported_doc.compiled.helpers.iter() {
-                            match imported_helper {
-                                HelperForm::Defun(_, defun) if defun.name == imported_name => {
-                                    return Some(imported_helper.clone());
-                                }
-                                HelperForm::Defmacro(mac) if mac.name == imported_name => {
-                                    return Some(imported_helper.clone());
-                                }
-                                _ => {}
-                            }
+            if let Some(imported_doc) = self.get_parsed(&file_uri) {
+                for imported_helper in imported_doc.compiled.helpers.iter() {
+                    match imported_helper {
+                        HelperForm::Defun(_, defun) if defun.name == imported_name => {
+                            return Some(imported_helper.clone());
                         }
+                        HelperForm::Defmacro(mac) if mac.name == imported_name => {
+                            return Some(imported_helper.clone());
+                        }
+                        _ => {}
                     }
                 }
             }

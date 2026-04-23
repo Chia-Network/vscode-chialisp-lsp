@@ -979,6 +979,30 @@ impl LSPServiceProvider {
             .map(|d| stringify_doc(&d.text))
             .unwrap_or_else(|| Err(format!("don't have file {}", filename)))
     }
+
+    pub fn get_file_uri_and_ensure_parsing(
+        &mut self,
+        filename: &str
+    ) -> Option<(String, ParsedDoc)> {
+        if let Ok((filename, file_body)) = get_file_content(
+            self.log.clone(),
+            self.fs.clone(),
+            self.get_workspace_root(),
+            &self.config.include_paths,
+            &filename,
+        ) {
+            if let Some(file_uri) = self
+                .get_workspace_root()
+                .and_then(|r| r.join(&filename).to_str().map(urlify))
+            {
+                self.save_doc(file_uri.clone(), file_body);
+                self.ensure_parsed_document(&file_uri);
+                return self.get_parsed(&file_uri).map(|parsed| (file_uri, parsed));
+            }
+        }
+
+        None
+    }
 }
 
 // Note: This is using a directive that ensures that this code is only included

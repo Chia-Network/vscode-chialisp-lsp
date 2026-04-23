@@ -98,7 +98,7 @@ impl LSPServiceProvider {
                         }
                     }
                     IncludedFileSpec::Import(imp) => {
-                        todo!();
+                        // XXX determine whether there's anything we should be doing here.
                     }
                 }
             }
@@ -220,6 +220,32 @@ impl LSPServiceProvider {
     ) -> Result<Vec<Message>, String> {
         let uristring = params.text_document.uri.to_string();
         let mut result_messages = Vec::new();
+        let emit_quick_fix_action = |result_messages: &mut Vec<Message>, name_loc, filename: Vec<u8>| {
+            if DocRange::from_srcloc(name_loc).to_range() == params.range {
+                let code_action = vec![CodeActionOrCommand::CodeAction(CodeAction {
+                    title: "Locate include path".to_string(),
+                    kind: Some(CodeActionKind::QUICKFIX),
+                    diagnostics: None,
+                    edit: None,
+                    command: Some(Command {
+                        title: "Locate include path".to_string(),
+                        command: "chialisp.locateIncludePath".to_string(),
+                        arguments: Some(vec![serde_json::to_value(&decode_string(
+                            &filename,
+                        ))
+                                             .unwrap()]),
+                    }),
+                    is_preferred: None,
+                    disabled: None,
+                    data: None,
+                })];
+                result_messages.push(Message::Response(Response {
+                    id: id.clone(),
+                    result: Some(serde_json::to_value(code_action).unwrap()),
+                    error: None,
+                }));
+            }
+        };
 
         // Double check parsed state.
         self.ensure_parsed_document(&uristring);
@@ -228,33 +254,12 @@ impl LSPServiceProvider {
             for (_, inc) in doc.includes.iter() {
                 match inc {
                     IncludedFileSpec::Include(inc) => {
-                        if DocRange::from_srcloc(inc.name_loc.clone()).to_range() == params.range {
-                            let code_action = vec![CodeActionOrCommand::CodeAction(CodeAction {
-                                title: "Locate include path".to_string(),
-                                kind: Some(CodeActionKind::QUICKFIX),
-                                diagnostics: None,
-                                edit: None,
-                                command: Some(Command {
-                                    title: "Locate include path".to_string(),
-                                    command: "chialisp.locateIncludePath".to_string(),
-                                    arguments: Some(vec![serde_json::to_value(&decode_string(
-                                        &inc.filename,
-                                    ))
-                                    .unwrap()]),
-                                }),
-                                is_preferred: None,
-                                disabled: None,
-                                data: None,
-                            })];
-                            result_messages.push(Message::Response(Response {
-                                id: id.clone(),
-                                result: Some(serde_json::to_value(code_action).unwrap()),
-                                error: None,
-                            }));
-                        }
+                        emit_quick_fix_action(&mut result_messages, inc.name_loc.clone(), inc.filename.clone());
                     }
                     IncludedFileSpec::Import(imp) => {
-                        todo!();
+                        // XXX detect a clinc import vs a program import.
+                        let filename = imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);
                     }
                 }
             }
