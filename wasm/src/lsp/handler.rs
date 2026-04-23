@@ -87,26 +87,41 @@ impl LSPServiceProvider {
 
     // Update include state
     fn update_include_state(&mut self, parsed_file: &str, file_name: &[u8], file_found: bool) {
+        let mut matching_include_hashes = Vec::new();
+        let mut matching_import = false;
+
         if let Some(found) = self.parsed_documents.get_mut(parsed_file) {
-            let mut found_hash = None;
             for (h, inc) in found.includes.iter() {
                 match inc {
                     IncludedFileSpec::Include(inc) => {
                         if inc.filename == file_name {
-                            found_hash = Some(h.clone());
-                            break;
+                            matching_include_hashes.push(h.clone());
                         }
                     }
                     IncludedFileSpec::Import(imp) => {
-                        // XXX determine whether there's anything we should be doing here.
+                        let import_file = imp
+                            .longname
+                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        if import_file == file_name {
+                            matching_import = true;
+                        }
                     }
                 }
             }
 
-            if let Some(h) = &found_hash {
+            for h in matching_include_hashes.iter() {
                 if let Some(IncludedFileSpec::Include(inc)) = found.includes.get_mut(h) {
                     inc.found = Some(file_found);
                 }
+            }
+        }
+
+        if matching_import {
+            let key = (parsed_file.to_owned(), file_name.to_vec());
+            if file_found {
+                self.missing_import_files.remove(&key);
+            } else {
+                self.missing_import_files.insert(key);
             }
         }
     }
@@ -125,9 +140,7 @@ impl LSPServiceProvider {
                         }
                     }
                     IncludedFileSpec::Import(imp) => {
-                        if self.get_doc(uristring).is_none() {
-                            to_resolve.push((uristring, IncludedFileSpec::Import(imp.clone())));
-                        }
+                        to_resolve.push((uristring, IncludedFileSpec::Import(imp.clone())));
                     }
                 }
             }
@@ -156,15 +169,14 @@ impl LSPServiceProvider {
                         if let Some(target) = target_name {
                             if self.fs.read_content(&target).is_ok() {
                                 found_include = true;
-                                self.update_include_state(parsed, &i.filename, true);
                                 break;
                             }
                         }
                     }
 
+                    self.update_include_state(parsed, &i.filename, found_include);
                     if !found_include {
                         ask_ui_for_resolution.push(IncludedFileSpec::Include(i.clone()));
-                        self.update_include_state(parsed, &i.filename, false);
                     }
                 }
                 IncludedFileSpec::Import(imp) => {
@@ -180,9 +192,17 @@ impl LSPServiceProvider {
                         if let Some(target) = target_name {
                             if self.fs.read_content(&target).is_ok() {
                                 found_include = true;
-                                self.update_include_state(parsed, &target_file, true);
+                                break;
                             }
                         }
+                    }
+
+                    self.update_include_state(parsed, &target_file, found_include);
+                    if self
+                        .missing_import_files
+                        .contains(&(parsed.to_string(), target_file.clone()))
+                    {
+                        ask_ui_for_resolution.push(IncludedFileSpec::Import(imp.clone()));
                     }
                 }
             }
@@ -376,6 +396,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
                                     self.log.log("reconfigured");
                                     self.config = config;
                                     self.parsed_documents.clear();
+                                    self.missing_import_files.clear();
                                     self.goto_defs.clear();
                                 }
                             } else if self

@@ -15,9 +15,10 @@ use crate::lsp::{
 use lsp_server::{Message, Notification, Request, RequestId};
 use lsp_types::{
     CompletionItem, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams, PartialResultParams, Position, Range, SemanticToken, SemanticTokens,
-    SemanticTokensParams, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+    DidOpenTextDocumentParams, PartialResultParams, Position, PublishDiagnosticsParams, Range,
+    SemanticToken, SemanticTokens, SemanticTokensParams, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+    VersionedTextDocumentIdentifier, WorkDoneProgressParams,
 };
 
 use crate::dbg::source::parse_srcloc;
@@ -2055,6 +2056,51 @@ fn test_sem_tok_for_module_style() {
             },
         ]
     );
+}
+
+#[test]
+fn test_missing_import_reports_diagnostic() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    lsp.set_workspace_root(PathBuf::from(r"."));
+    lsp.set_config(ConfigJson {
+        include_paths: vec!["../resources/tests".to_string()],
+    });
+    let file = "file://./test.cl".to_string();
+    let open_msg = make_did_open_message(
+        &file,
+        1,
+        indoc! {"
+(import std.missing)
+(export (X) X)"}
+        .to_string(),
+    );
+    let sem_tok = make_get_semantic_tokens_msg(&file, 2);
+    let out_msgs = run_lsp(&mut lsp, &vec![open_msg, sem_tok]).expect("should run");
+
+    let diag_sets: Vec<PublishDiagnosticsParams> = out_msgs
+        .iter()
+        .filter_map(|msg| {
+            if let Message::Notification(Notification { method, params }) = msg {
+                if method == "textDocument/publishDiagnostics" {
+                    return serde_json::from_value(params.clone()).ok();
+                }
+            }
+            None
+        })
+        .collect();
+    assert!(!diag_sets.is_empty());
+
+    let missing_messages: Vec<String> = diag_sets
+        .iter()
+        .flat_map(|set| set.diagnostics.iter())
+        .map(|d| d.message.clone())
+        .filter(|m| m.contains("std/missing.clinc"))
+        .collect();
+    assert_eq!(missing_messages.len(), 1);
 }
 
 #[test]

@@ -560,6 +560,9 @@ pub struct LSPServiceProvider {
 
     // These aren't shared.
     pub parsed_documents: HashMap<String, ParsedDoc>,
+    // Set of import targets we attempted and could not locate, keyed by
+    // (document uri, imported filename).
+    pub missing_import_files: HashSet<(String, Vec<u8>)>,
     pub goto_defs: HashMap<String, BTreeMap<SemanticTokenSortable, Srcloc>>,
 
     // Collection of all known errors we're throwing.
@@ -720,6 +723,7 @@ impl LSPServiceProvider {
     pub fn save_doc(&mut self, uristring: String, dd: DocData) {
         let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         self.parsed_documents.remove(&uristring);
+        self.clear_missing_import_files_for_doc(&uristring);
         cell.replace_with(|coll| {
             let mut repl = HashMap::new();
             swap(&mut repl, coll);
@@ -729,7 +733,13 @@ impl LSPServiceProvider {
     }
 
     fn save_parse(&mut self, uristring: String, p: ParsedDoc) {
+        self.clear_missing_import_files_for_doc(&uristring);
         self.parsed_documents.insert(uristring, p);
+    }
+
+    pub fn clear_missing_import_files_for_doc(&mut self, uristring: &str) {
+        self.missing_import_files
+            .retain(|(parsed_file, _)| parsed_file != uristring);
     }
 
     pub fn try_handle_incoming_file(
@@ -908,6 +918,7 @@ impl LSPServiceProvider {
             document_collection: Rc::new(RefCell::new(HashMap::new())),
 
             parsed_documents: HashMap::new(),
+            missing_import_files: HashSet::new(),
             goto_defs: HashMap::new(),
             thrown_errors: HashMap::new(),
 
