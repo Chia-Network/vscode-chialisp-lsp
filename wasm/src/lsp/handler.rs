@@ -89,6 +89,7 @@ impl LSPServiceProvider {
     fn update_include_state(&mut self, parsed_file: &str, file_name: &[u8], file_found: bool) {
         if let Some(found) = self.parsed_documents.get_mut(parsed_file) {
             let mut found_hash = None;
+
             for (h, inc) in found.includes.iter() {
                 match inc {
                     IncludedFileSpec::Include(inc) => {
@@ -97,15 +98,27 @@ impl LSPServiceProvider {
                             break;
                         }
                     }
-                    IncludedFileSpec::Import(imp) => {
-                        // XXX determine whether there's anything we should be doing here.
+                    IncludedFileSpec::Import(_found, imp) => {
+                        let import_file = imp
+                            .longname
+                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        if import_file == file_name {
+                            found_hash = Some(h.clone());
+                            break;
+                        }
                     }
                 }
             }
 
-            if let Some(h) = &found_hash {
-                if let Some(IncludedFileSpec::Include(inc)) = found.includes.get_mut(h) {
-                    inc.found = Some(file_found);
+            if let Some(h) = found_hash {
+                match found.includes.get_mut(&h) {
+                    Some(IncludedFileSpec::Include(inc)) => {
+                        inc.found = Some(file_found);
+                    }
+                    Some(IncludedFileSpec::Import(found, _)) => {
+                        *found = Some(file_found);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -119,16 +132,13 @@ impl LSPServiceProvider {
         if let Some(doc) = self.parsed_documents.get(uristring) {
             for (_, i) in doc.includes.iter() {
                 match i {
-                    IncludedFileSpec::Include(i) => {
-                        if i.found != Some(true) {
-                            to_resolve.push((uristring, IncludedFileSpec::Include(i.clone())));
-                        }
+                    IncludedFileSpec::Include(i) if i.found != Some(true) => {
+                        to_resolve.push((uristring, IncludedFileSpec::Include(i.clone())));
                     }
-                    IncludedFileSpec::Import(imp) => {
-                        if self.get_doc(uristring).is_none() {
-                            to_resolve.push((uristring, IncludedFileSpec::Import(imp.clone())));
-                        }
+                    IncludedFileSpec::Import(found, imp) if *found != Some(true) => {
+                        to_resolve.push((uristring, IncludedFileSpec::Import(None, imp.clone())));
                     }
+                    _ => { }
                 }
             }
         }
@@ -143,7 +153,7 @@ impl LSPServiceProvider {
         for (parsed, i) in to_read_files.iter() {
             match i {
                 IncludedFileSpec::Include(i) => {
-                    if i.filename.is_empty() || i.filename[0] == b'*' || i.found == Some(true) {
+                    if i.filename.is_empty() || i.filename[0] == b'*' {
                         continue;
                     }
 
@@ -156,18 +166,17 @@ impl LSPServiceProvider {
                         if let Some(target) = target_name {
                             if self.fs.read_content(&target).is_ok() {
                                 found_include = true;
-                                self.update_include_state(parsed, &i.filename, true);
                                 break;
                             }
                         }
                     }
 
+                    self.update_include_state(parsed, &i.filename, found_include);
                     if !found_include {
                         ask_ui_for_resolution.push(IncludedFileSpec::Include(i.clone()));
-                        self.update_include_state(parsed, &i.filename, false);
                     }
                 }
-                IncludedFileSpec::Import(imp) => {
+                IncludedFileSpec::Import(found, imp) => {
                     let mut found_include = false;
                     let target_file = imp
                         .longname
@@ -180,9 +189,14 @@ impl LSPServiceProvider {
                         if let Some(target) = target_name {
                             if self.fs.read_content(&target).is_ok() {
                                 found_include = true;
-                                self.update_include_state(parsed, &target_file, true);
+                                break;
                             }
                         }
+                    }
+
+                    self.update_include_state(parsed, &target_file, found_include);
+                    if !found_include {
+                        ask_ui_for_resolution.push(IncludedFileSpec::Import(found.clone(), imp.clone()));
                     }
                 }
             }
@@ -256,7 +270,7 @@ impl LSPServiceProvider {
                     IncludedFileSpec::Include(inc) => {
                         emit_quick_fix_action(&mut result_messages, inc.name_loc.clone(), inc.filename.clone());
                     }
-                    IncludedFileSpec::Import(imp) => {
+                    IncludedFileSpec::Import(_, imp) => {
                         // XXX detect a clinc import vs a program import.
                         let filename = imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
                         emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);

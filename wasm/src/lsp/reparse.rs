@@ -13,7 +13,7 @@ use chialisp::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData,
 };
 use chialisp::compiler::frontend::{
-    compile_bodyform, compile_helperform, match_export_form, HelperFormResult,
+    compile_bodyform, compile_helperform, match_export_form, compile_nsref, HelperFormResult,
 };
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
@@ -34,7 +34,7 @@ pub struct ReparsedModule {
     pub errors: Vec<CompileErr>,
 }
 
-pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
+pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludedFileSpec> {
     // Match include with quoted or unquoted argument.
     let matches_include = |l: &[SExp]| {
         if let (SExp::Atom(kl, incl), SExp::Atom(nl, fname)) = (l[0].borrow(), l[1].borrow()) {
@@ -52,14 +52,14 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
         if l.len() == 2 {
             if let Some((kl, incl, nl, fname)) = matches_include(&l) {
                 if incl == b"include" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl,
                         name_loc: nl,
                         kind: IncludeKind::Include,
                         filename: fname,
                         found: None,
-                    });
+                    }));
                 }
             }
         } else if l.len() == 3 {
@@ -67,14 +67,14 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                 (l[0].borrow(), l[1].borrow(), l[2].borrow())
             {
                 if incl == b"compile-file" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl.clone(),
                         name_loc: nl.clone(),
                         kind: IncludeKind::CompileFile(il.clone()),
                         filename: fname.clone(),
                         found: None,
-                    });
+                    }));
                 }
             }
         } else if l.len() == 4 {
@@ -86,16 +86,18 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
             ) = (l[0].borrow(), l[1].borrow(), l[2].borrow(), l[3].borrow())
             {
                 if incl == b"embed-file" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl.clone(),
                         name_loc: nl.clone(),
                         kind: IncludeKind::EmbedFile(il.clone(), tl.clone()),
                         filename: fname.clone(),
                         found: None,
-                    });
+                    }));
                 }
             }
+        } else if let Ok(HelperForm::Defnsref(imp)) = compile_nsref(sexp.loc(), &l) {
+            return Some(IncludedFileSpec::Import(None, *imp.clone()));
         }
 
         None
@@ -352,7 +354,7 @@ pub fn reparse_subset(
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
                         result
                             .includes
-                            .insert(hash, IncludedFileSpec::Include(include.clone()));
+                            .insert(hash, include.clone());
                         continue;
                     }
 
@@ -418,7 +420,7 @@ pub fn reparse_subset(
                                     let nsref: &NamespaceRefData = import.borrow();
                                     result.includes.insert(
                                         hash.clone(),
-                                        IncludedFileSpec::Import(nsref.clone()),
+                                        IncludedFileSpec::Import(None, nsref.clone()),
                                     );
                                 }
                                 result.helpers.insert(
@@ -584,7 +586,7 @@ pub fn combine_new_with_old_parse(
     parsed: &ParsedDoc,
     reparse: &ReparsedModule,
 ) -> ParsedDoc {
-    let new_includes = reparse.includes.clone();
+    let mut new_includes = parsed.includes.clone();
     let mut new_helpers = parsed.helpers.clone();
     let mut extracted_helpers = Vec::new();
     let mut exports = parsed.exports.clone();
@@ -612,9 +614,15 @@ pub fn combine_new_with_old_parse(
     }
 
     for h in to_remove.iter() {
+        // If we removed a namespace ref, clobber it from the import files.
         hash_to_name.remove(h);
         new_helpers.remove(h);
         exports.remove(h);
+        new_includes.remove(h);
+    }
+
+    for (h, i) in reparse.includes.iter() {
+        new_includes.insert(h.clone(), i.clone());
     }
 
     // Iterate new helpers.
@@ -623,9 +631,9 @@ pub fn combine_new_with_old_parse(
             Err(e) => {
                 out_errors.push(e.clone());
             }
-            Ok(ParsedForm::Helper(parsed)) => {
-                hash_to_name.insert(h.clone(), parsed.name().clone());
-                extracted_helpers.push(parsed.clone());
+            Ok(ParsedForm::Helper(parsed_helper)) => {
+                hash_to_name.insert(h.clone(), parsed_helper.name().clone());
+                extracted_helpers.push(parsed_helper.clone());
                 new_helpers.insert(h.clone(), p.clone());
             }
             Ok(ParsedForm::ModuleExport(Export::MainProgram(p))) => {

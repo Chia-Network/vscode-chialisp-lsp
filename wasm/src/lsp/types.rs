@@ -657,16 +657,18 @@ impl LSPServiceProvider {
         self.ensure_parsed_document(uristring);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
+        self.log.log(&format!("missing includes {missing_includes:?}"));
+
         let errors = missing_includes
             .iter()
             .map(|i| {
                 let loc = match i {
                     IncludedFileSpec::Include(i) => i.name_loc.clone(),
-                    IncludedFileSpec::Import(imp) => imp.loc.clone(),
+                    IncludedFileSpec::Import(_, imp) => imp.nl.clone(),
                 };
                 let filename = match i {
                     IncludedFileSpec::Include(i) => i.filename.clone(),
-                    IncludedFileSpec::Import(imp) => imp
+                    IncludedFileSpec::Import(_, imp) => imp
                         .longname
                         .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string())),
                 };
@@ -718,8 +720,8 @@ impl LSPServiceProvider {
     }
 
     pub fn save_doc(&mut self, uristring: String, dd: DocData) {
-        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         self.parsed_documents.remove(&uristring);
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         cell.replace_with(|coll| {
             let mut repl = HashMap::new();
             swap(&mut repl, coll);
@@ -813,7 +815,7 @@ impl LSPServiceProvider {
 
                         self.try_handle_incoming_file(&mut new_helpers, &incfile.filename, true);
                     }
-                    IncludedFileSpec::Import(imp) => {
+                    IncludedFileSpec::Import(_, imp) => {
                         let filename_inc = imp
                             .longname
                             .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
@@ -830,6 +832,7 @@ impl LSPServiceProvider {
             }
 
             let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+
             self.set_error_list(
                 uristring,
                 false,

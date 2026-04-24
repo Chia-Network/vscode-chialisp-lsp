@@ -8,7 +8,7 @@ use lsp_types::Position;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
     Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm,
-    LetData, LetFormKind, NamespaceRefData,
+    ImportLongName, LetData, LetFormKind, NamespaceRefData,
 };
 #[cfg(test)]
 use chialisp::compiler::frontend::frontend;
@@ -25,7 +25,7 @@ use crate::lsp::types::{
 #[derive(Debug, Clone)]
 pub enum IncludedFileSpec {
     Include(IncludeData),
-    Import(NamespaceRefData),
+    Import(Option<bool>, NamespaceRefData),
 }
 
 #[derive(Debug, Clone)]

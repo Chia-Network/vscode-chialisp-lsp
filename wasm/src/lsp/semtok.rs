@@ -450,7 +450,7 @@ pub fn build_semantic_tokens(
                     }
                 }
             }
-            IncludedFileSpec::Import(imp) => {
+            IncludedFileSpec::Import(_, _) => {
                 // Handled in the helper personality.
             }
         }
