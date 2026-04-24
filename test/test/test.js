@@ -565,8 +565,14 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         console.log('enter module include path');
-        let inputBox = await findFileInput(driver);
-        await inputBox.click();
+        // Use the quick input text box directly; findFileInput can match a hidden
+        // editor widget in headless mode.
+        let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+        try {
+            await inputBox.click();
+        } catch (e) {
+            console.log('module path input not interactable, typing into focused quick input');
+        }
         await inputBox.sendKeys("module-stdlib/std/reverse.clinc");
 
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
