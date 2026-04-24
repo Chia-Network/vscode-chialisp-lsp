@@ -138,7 +138,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
 
             const filterDirectory = (targetDirectory: string, wantDirectory: string) => {
                 if (targetDirectory == '.' || wantDirectory == '.') {
-                    return wantDirectory;
+                    return targetDirectory;
                 }
                 let targetWithBasename = targetDirectory.replace(/[\/\\]$/, '');
                 let wantWithBasename = wantDirectory.replace(/[\/\\]$/, '');
