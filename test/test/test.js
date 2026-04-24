@@ -528,4 +528,62 @@ describe("Basic element tests", function() {
             text = await expression.getText();
         }
     });
+
+    it("Does not regress module highlighting and navigation", async function() {
+        console.log('open module file');
+        await openFile(driver, "module.clsp");
+
+        // Check that the first word of each top-level form is highlighted as keyword.
+        console.log('checking module keyword highlight');
+        let importKeyword = await driver.wait(until.elementLocated(byExactText("import")));
+        expect(await importKeyword.getAttribute("class")).toBe("mtk16");
+
+        let includeKeyword = await driver.wait(until.elementLocated(byExactText("include")));
+        expect(await includeKeyword.getAttribute("class")).toBe("mtk16");
+
+        let defunKeyword = await driver.wait(until.elementLocated(byExactText("defun")));
+        expect(await defunKeyword.getAttribute("class")).toBe("mtk16");
+
+        let exportKeyword = await driver.wait(until.elementLocated(byExactText("export")));
+        expect(await exportKeyword.getAttribute("class")).toBe("mtk16");
+
+        console.log('module import should have an error before quick fix');
+        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-error")));
+
+        console.log('hover module import for quick fix');
+        let importNameToHover = await driver.wait(until.elementLocated(byVisibleText("std.reverse")));
+        await hover(importNameToHover);
+
+        let quickFixElement = await driver.wait(until.elementLocated(byVisibleText("Quick Fix")));
+        await quickFixElement.click();
+        await sendReturn();
+
+        console.log('enter module include path');
+        let inputBox = await findFileInput(driver);
+        await inputBox.click();
+        await inputBox.sendKeys("module-stdlib/std/reverse.clinc");
+
+        let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
+        await okBox.click();
+
+        console.log('wait for module error to clear');
+        await driver.wait(async function() {
+            let squigglies = await driver.findElements(By.css('.squiggly-error'));
+            return squigglies.length === 0;
+        }, 30 * 1000);
+
+        let squigglies = await driver.findElements(By.css('.squiggly-error'));
+        expect(squigglies.length).toBe(0);
+
+        console.log('go to definition from rev call in export');
+        let revInstances = await driver.findElements(byExactText("rev"));
+        expect(revInstances.length).toBeGreaterThan(1);
+        let revCall = revInstances[revInstances.length - 1];
+        await revCall.click();
+        await performCommand("Go to Definition");
+
+        // If definition works from module alias, we should land on reverse.clinc.
+        await driver.wait(until.elementLocated(byVisibleText("reverse.clinc")));
+        let reverseDef = await driver.wait(until.elementLocated(byVisibleText("defun reverse (vals)")));
+    });
 });
