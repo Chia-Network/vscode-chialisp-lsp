@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-chialisp = "=0.4.1"
+chialisp = { git = "https://github.com/Chia-Network/chialisp", branch = "20260408-gdb-debug" }
 clvmr = "0.16.0"
 wasm-bindgen = "=0.2.100"
 wasm-bindgen-test = "=0.3.50"
