@@ -8,9 +8,7 @@ use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
 use chialisp::compiler::clvm::sha256tree_from_atom;
-use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
-};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
 use chialisp::compiler::frontend::{compile_bodyform, compile_helperform};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
@@ -131,13 +129,14 @@ fn compile_helperform_with_loose_defconstant(
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
-                return compile_helperform(opts, Rc::new(amended_instr));
+                return compile_helperform(opts, Rc::new(amended_instr))
+                    .map(|res| res.and_then(|hf| hf.new_helpers.first().cloned()));
             }
         }
     }
 
     // Not a proper list so not the kind of thing we're looking for.
-    compile_helperform(opts, parsed)
+    compile_helperform(opts, parsed).map(|res| res.and_then(|hf| hf.new_helpers.first().cloned()))
 }
 
 pub fn reparse_subset(
@@ -558,7 +557,7 @@ pub fn combine_new_with_old_parse(
     }
 
     let compile_with_dead_helpers_removed = new_compile.remove_helpers(&remove_names);
-    let scopes = recover_scopes(uristring, text, &new_compile);
+    let scopes = recover_scopes(uristring, text, &compile_with_dead_helpers_removed);
 
     for h in compile_with_dead_helpers_removed.helpers.iter() {
         if let HelperForm::Defun(_, d) = h {
@@ -569,9 +568,11 @@ pub fn combine_new_with_old_parse(
     }
 
     // Check whether functions called in exp are live
-    if let Some(error) =
-        check_live_helper_calls(&PRIM_NAMES, &scopes, &compile_with_dead_helpers_removed.exp)
-    {
+    if let Some(error) = check_live_helper_calls(
+        &PRIM_NAMES,
+        &scopes,
+        &compile_with_dead_helpers_removed.exp,
+    ) {
         out_errors.push(error);
     }
 

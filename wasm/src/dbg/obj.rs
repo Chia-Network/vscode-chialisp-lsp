@@ -23,7 +23,9 @@ use chialisp::compiler::cldb_hierarchy::{
 };
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
-use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
+use chialisp::compiler::comptypes::{
+    CompileErr, CompileForm, CompilerOpts, FrontendOutput, HelperForm,
+};
 use chialisp::compiler::frontend::frontend;
 use chialisp::compiler::runtypes::RunFailure;
 use chialisp::compiler::sexp::{decode_string, parse_sexp, SExp};
@@ -38,6 +40,13 @@ use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::parse::get_positional_text;
 use crate::lsp::types::DocRange;
+
+fn frontend_to_compile_form(fe: FrontendOutput) -> CompileForm {
+    match fe {
+        FrontendOutput::CompileForm(cf) => cf,
+        FrontendOutput::Module(cf, _) => cf,
+    }
+}
 
 /// When stepping in or out, set a depth to stop at if reached before a breakpoint.
 #[derive(Clone, Debug)]
@@ -398,7 +407,7 @@ fn test_simple_find_location_classic_symbols_1() {
         "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
     let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
-    let compiled = frontend(opts, &parsed).expect("should compile");
+    let compiled = frontend_to_compile_form(frontend(opts, &parsed).expect("should compile"));
     let breakpoint_spec = SourceBreakpoint {
         column: Some(0),
         condition: None,
@@ -628,8 +637,9 @@ fn read_program_data(
                 Some(RunAndCompileInputData::new(allocator, &compile_input_args)?);
         };
 
-        let frontend_compiled =
-            frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
+        let frontend_compiled = frontend_to_compile_form(
+            frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?,
+        );
 
         inputs.source = Some(source_and_content);
         inputs.compiled = Ok(Some(frontend_compiled));
