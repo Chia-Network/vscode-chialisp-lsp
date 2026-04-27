@@ -24,7 +24,7 @@ use chialisp::compiler::clvm::sha256tree;
 use chialisp::compiler::comptypes::{
     BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
 };
-use chialisp::compiler::sexp::{SExp, decode_string};
+use chialisp::compiler::sexp::{decode_string, SExp};
 use chialisp::compiler::srcloc::Srcloc;
 
 #[derive(Clone, Debug)]
@@ -263,26 +263,27 @@ fn process_body_code(
             let head: &BodyForm = args[0].borrow();
             if let BodyForm::Value(SExp::Atom(l, a)) = head {
                 if let Some((call_token, location)) =
-                    match env.resolver.resolve_helper_reference(
-                        frontend,
-                        a
-                    ) {
-                        Some(HelperForm::Defun(_, d)) => {
-                            Some((SemanticTokenSortable {
+                    match env.resolver.resolve_helper_reference(frontend, a) {
+                        Some(HelperForm::Defun(_, d)) => Some((
+                            SemanticTokenSortable {
                                 loc: l.clone(),
                                 token_type: TK_FUNCTION_IDX,
-                                token_mod: 0
-                            }, d.loc.clone()))
-                        }
+                                token_mod: 0,
+                            },
+                            d.loc.clone(),
+                        )),
                         Some(HelperForm::Defmacro(m)) => {
                             eprintln!("got macro {}", decode_string(&m.name));
-                            Some((SemanticTokenSortable {
-                                loc: l.clone(),
-                                token_type: TK_MACRO_IDX,
-                                token_mod: 0
-                            }, m.loc.clone()))
+                            Some((
+                                SemanticTokenSortable {
+                                    loc: l.clone(),
+                                    token_type: TK_MACRO_IDX,
+                                    token_mod: 0,
+                                },
+                                m.loc.clone(),
+                            ))
                         }
-                        _ => None
+                        _ => None,
                     }
                 {
                     collected_tokens.push(call_token.clone());

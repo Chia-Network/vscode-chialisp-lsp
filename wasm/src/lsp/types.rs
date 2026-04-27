@@ -657,7 +657,8 @@ impl LSPServiceProvider {
         self.ensure_parsed_document(uristring);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
-        self.log.log(&format!("missing includes {missing_includes:?}"));
+        self.log
+            .log(&format!("missing includes {missing_includes:?}"));
 
         let errors = missing_includes
             .iter()
@@ -985,7 +986,7 @@ impl LSPServiceProvider {
 
     pub fn get_file_uri_and_ensure_parsing(
         &mut self,
-        filename: &str
+        filename: &str,
     ) -> Option<(String, ParsedDoc)> {
         if let Ok((filename, file_body)) = get_file_content(
             self.log.clone(),

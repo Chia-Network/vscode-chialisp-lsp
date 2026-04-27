@@ -138,7 +138,7 @@ impl LSPServiceProvider {
                     IncludedFileSpec::Import(found, imp) if *found != Some(true) => {
                         to_resolve.push((uristring, IncludedFileSpec::Import(None, imp.clone())));
                     }
-                    _ => { }
+                    _ => {}
                 }
             }
         }
@@ -196,7 +196,8 @@ impl LSPServiceProvider {
 
                     self.update_include_state(parsed, &target_file, found_include);
                     if !found_include {
-                        ask_ui_for_resolution.push(IncludedFileSpec::Import(found.clone(), imp.clone()));
+                        ask_ui_for_resolution
+                            .push(IncludedFileSpec::Import(found.clone(), imp.clone()));
                     }
                 }
             }
@@ -234,32 +235,32 @@ impl LSPServiceProvider {
     ) -> Result<Vec<Message>, String> {
         let uristring = params.text_document.uri.to_string();
         let mut result_messages = Vec::new();
-        let emit_quick_fix_action = |result_messages: &mut Vec<Message>, name_loc, filename: Vec<u8>| {
-            if DocRange::from_srcloc(name_loc).to_range() == params.range {
-                let code_action = vec![CodeActionOrCommand::CodeAction(CodeAction {
-                    title: "Locate include path".to_string(),
-                    kind: Some(CodeActionKind::QUICKFIX),
-                    diagnostics: None,
-                    edit: None,
-                    command: Some(Command {
+        let emit_quick_fix_action =
+            |result_messages: &mut Vec<Message>, name_loc, filename: Vec<u8>| {
+                if DocRange::from_srcloc(name_loc).to_range() == params.range {
+                    let code_action = vec![CodeActionOrCommand::CodeAction(CodeAction {
                         title: "Locate include path".to_string(),
-                        command: "chialisp.locateIncludePath".to_string(),
-                        arguments: Some(vec![serde_json::to_value(&decode_string(
-                            &filename,
-                        ))
-                                             .unwrap()]),
-                    }),
-                    is_preferred: None,
-                    disabled: None,
-                    data: None,
-                })];
-                result_messages.push(Message::Response(Response {
-                    id: id.clone(),
-                    result: Some(serde_json::to_value(code_action).unwrap()),
-                    error: None,
-                }));
-            }
-        };
+                        kind: Some(CodeActionKind::QUICKFIX),
+                        diagnostics: None,
+                        edit: None,
+                        command: Some(Command {
+                            title: "Locate include path".to_string(),
+                            command: "chialisp.locateIncludePath".to_string(),
+                            arguments: Some(vec![
+                                serde_json::to_value(&decode_string(&filename)).unwrap()
+                            ]),
+                        }),
+                        is_preferred: None,
+                        disabled: None,
+                        data: None,
+                    })];
+                    result_messages.push(Message::Response(Response {
+                        id: id.clone(),
+                        result: Some(serde_json::to_value(code_action).unwrap()),
+                        error: None,
+                    }));
+                }
+            };
 
         // Double check parsed state.
         self.ensure_parsed_document(&uristring);
@@ -268,11 +269,17 @@ impl LSPServiceProvider {
             for (_, inc) in doc.includes.iter() {
                 match inc {
                     IncludedFileSpec::Include(inc) => {
-                        emit_quick_fix_action(&mut result_messages, inc.name_loc.clone(), inc.filename.clone());
+                        emit_quick_fix_action(
+                            &mut result_messages,
+                            inc.name_loc.clone(),
+                            inc.filename.clone(),
+                        );
                     }
                     IncludedFileSpec::Import(_, imp) => {
                         // XXX detect a clinc import vs a program import.
-                        let filename = imp.longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        let filename = imp
+                            .longname
+                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
                         emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);
                     }
                 }

@@ -13,7 +13,7 @@ use chialisp::compiler::comptypes::{
     BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData,
 };
 use chialisp::compiler::frontend::{
-    compile_bodyform, compile_helperform, match_export_form, compile_nsref, HelperFormResult,
+    compile_bodyform, compile_helperform, compile_nsref, match_export_form, HelperFormResult,
 };
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
@@ -352,9 +352,7 @@ pub fn reparse_subset(
                         });
                         continue;
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
-                        result
-                            .includes
-                            .insert(hash, include.clone());
+                        result.includes.insert(hash, include.clone());
                         continue;
                     }
 
