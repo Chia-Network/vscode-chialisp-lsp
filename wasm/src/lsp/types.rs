@@ -25,12 +25,15 @@ use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
-use crate::lsp::parse::{make_simple_ranges, ParsedDoc};
+use crate::lsp::parse::{make_simple_ranges, IncludedFileSpec, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
-use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset};
+use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset, ReparsedModule};
 use crate::lsp::semtok::SemanticTokenSortable;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
-use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompilerOpts, HelperForm};
+use chialisp::compiler::comptypes::{
+    BodyForm, CompileErr, CompilerOpts, Export, HelperForm, LongNameTranslation,
+};
+use chialisp::compiler::frontend::HelperFormResult;
 use chialisp::compiler::prims::prims;
 use chialisp::compiler::sexp::{decode_string, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -654,21 +657,36 @@ impl LSPServiceProvider {
         self.ensure_parsed_document(uristring);
 
         let missing_includes = self.check_for_missing_include_files(uristring);
+        self.log
+            .log(&format!("missing includes {missing_includes:?}"));
+
         let errors = missing_includes
             .iter()
-            .map(|i| Diagnostic {
-                range: DocRange::from_srcloc(i.name_loc.clone()).to_range(),
-                severity: None,
-                code: None,
-                code_description: None,
-                source: Some("chialisp".to_string()),
-                message: format!(
-                    "missing include file {} or path not set",
-                    decode_string(&i.filename)
-                ),
-                tags: None,
-                related_information: None,
-                data: None,
+            .map(|i| {
+                let loc = match i {
+                    IncludedFileSpec::Include(i) => i.name_loc.clone(),
+                    IncludedFileSpec::Import(_, imp) => imp.nl.clone(),
+                };
+                let filename = match i {
+                    IncludedFileSpec::Include(i) => i.filename.clone(),
+                    IncludedFileSpec::Import(_, imp) => imp
+                        .longname
+                        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string())),
+                };
+                Diagnostic {
+                    range: DocRange::from_srcloc(loc).to_range(),
+                    severity: None,
+                    code: None,
+                    code_description: None,
+                    source: Some("chialisp".to_string()),
+                    message: format!(
+                        "missing include file {} or path not set",
+                        decode_string(&filename)
+                    ),
+                    tags: None,
+                    related_information: None,
+                    data: None,
+                }
             })
             .collect();
 
@@ -703,8 +721,8 @@ impl LSPServiceProvider {
     }
 
     pub fn save_doc(&mut self, uristring: String, dd: DocData) {
-        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         self.parsed_documents.remove(&uristring);
+        let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         cell.replace_with(|coll| {
             let mut repl = HashMap::new();
             swap(&mut repl, coll);
@@ -715,6 +733,44 @@ impl LSPServiceProvider {
 
     fn save_parse(&mut self, uristring: String, p: ParsedDoc) {
         self.parsed_documents.insert(uristring, p);
+    }
+
+    pub fn try_handle_incoming_file(
+        &mut self,
+        new_helpers: &mut ReparsedModule,
+        target_filename: &[u8],
+        contained: bool,
+    ) -> bool {
+        let mut success = false;
+
+        if let Ok((filename, file_body)) = get_file_content(
+            self.log.clone(),
+            self.fs.clone(),
+            self.get_workspace_root(),
+            &self.config.include_paths,
+            &decode_string(&target_filename),
+        ) {
+            if let Some(file_uri) = self
+                .get_workspace_root()
+                .and_then(|r| r.join(&filename).to_str().map(urlify))
+            {
+                // Keep the contents.
+                self.save_doc(file_uri.clone(), file_body);
+                // Do parsing on this document if the content changed
+                // or it's new.
+                self.ensure_parsed_document(&file_uri);
+                // If it parsed, we have the helpers and can populate
+                // autocomplete/error functionality.
+                if let Some(p) = self.get_parsed(&file_uri) {
+                    for (hash, helper) in p.helpers.iter() {
+                        new_helpers.helpers.insert(hash.clone(), helper.clone());
+                        success = true;
+                    }
+                }
+            }
+        }
+
+        success
     }
 
     pub fn ensure_parsed_document(&mut self, uristring: &str) {
@@ -736,53 +792,48 @@ impl LSPServiceProvider {
                 .get(uristring)
                 .cloned()
                 .unwrap_or_else(|| ParsedDoc::new(startloc));
-            let ranges = make_simple_ranges(&doc.text);
+            let (module_style, ranges) = make_simple_ranges(&doc.text);
+            eprintln!("got ranges {ranges:?}");
             let mut new_helpers = reparse_subset(
                 &self.prims,
                 opts,
                 &doc.text,
                 uristring,
+                module_style,
                 &ranges,
                 &output.compiled,
                 &output.helpers,
             );
 
-            for (_, incfile) in new_helpers.includes.iter() {
-                if incfile.kind != IncludeKind::Include
-                    || incfile.filename == b"*standard-cl-21*"
-                    || incfile.filename == b"*standard-cl-22*"
-                {
-                    continue;
-                }
+            for (_, incfile) in new_helpers.includes.clone().iter() {
+                match incfile {
+                    IncludedFileSpec::Include(incfile) => {
+                        if incfile.kind != IncludeKind::Include
+                            || incfile.filename.starts_with(b"*")
+                        {
+                            continue;
+                        }
 
-                if let Ok((filename, file_body)) = get_file_content(
-                    self.log.clone(),
-                    self.fs.clone(),
-                    self.get_workspace_root(),
-                    &self.config.include_paths,
-                    &decode_string(&incfile.filename),
-                ) {
-                    if let Some(file_uri) = self
-                        .get_workspace_root()
-                        .and_then(|r| r.join(filename).to_str().map(urlify))
-                    {
-                        // Keep the contents.
-                        self.save_doc(file_uri.clone(), file_body);
-                        // Do parsing on this document if the content changed
-                        // or it's new.
-                        self.ensure_parsed_document(&file_uri);
-                        // If it parsed, we have the helpers and can populate
-                        // autocomplete/error functionality.
-                        if let Some(p) = self.get_parsed(&file_uri) {
-                            for (hash, helper) in p.helpers.iter() {
-                                new_helpers.helpers.insert(hash.clone(), helper.clone());
-                            }
+                        self.try_handle_incoming_file(&mut new_helpers, &incfile.filename, true);
+                    }
+                    IncludedFileSpec::Import(_, imp) => {
+                        let filename_inc = imp
+                            .longname
+                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                        if !self.try_handle_incoming_file(&mut new_helpers, &filename_inc, false) {
+                            /* XXX implement me.
+                            let filename_clsp = imp.longname.as_u8_vec(LongNameTranslaction::Filename(".clsp".to_string()));
+                            // When read, the exports (or default export) match .program and
+                            // other imports.
+                            self.try_handle_incoming_file(&filename_clsp, false);
+                            */
                         }
                     }
                 }
             }
 
             let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+
             self.set_error_list(
                 uristring,
                 false,
@@ -931,6 +982,30 @@ impl LSPServiceProvider {
         self.get_doc(filename)
             .map(|d| stringify_doc(&d.text))
             .unwrap_or_else(|| Err(format!("don't have file {}", filename)))
+    }
+
+    pub fn get_file_uri_and_ensure_parsing(
+        &mut self,
+        filename: &str,
+    ) -> Option<(String, ParsedDoc)> {
+        if let Ok((filename, file_body)) = get_file_content(
+            self.log.clone(),
+            self.fs.clone(),
+            self.get_workspace_root(),
+            &self.config.include_paths,
+            &filename,
+        ) {
+            if let Some(file_uri) = self
+                .get_workspace_root()
+                .and_then(|r| r.join(&filename).to_str().map(urlify))
+            {
+                self.save_doc(file_uri.clone(), file_body);
+                self.ensure_parsed_document(&file_uri);
+                return self.get_parsed(&file_uri).map(|parsed| (file_uri, parsed));
+            }
+        }
+
+        None
     }
 }
 
@@ -1125,11 +1200,17 @@ pub struct IncludeData {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParsedForm<H> {
+    ModuleExport(Export),
+    Helper(H),
+}
+
+#[derive(Debug, Clone)]
 // A helper (defmacro, defun, etc)  that we parsed alone via document range.
 pub struct ReparsedHelper {
     pub hash: Hash,
     pub range: DocRange,
-    pub parsed: Result<HelperForm, CompileErr>,
+    pub parsed: Result<ParsedForm<HelperForm>, CompileErr>,
 }
 
 #[derive(Debug, Clone)]

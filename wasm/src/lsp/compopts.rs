@@ -11,11 +11,14 @@ use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
 use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
-use chialisp::compiler::comptypes::{CompileErr, CompilerOpts, HasCompilerOptsDelegation};
+use chialisp::compiler::comptypes::{
+    CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation,
+};
 use chialisp::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
 use chialisp::compiler::optimize::get_optimizer;
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
+use chialisp::compiler::BasicCompileContext;
 use chialisp::compiler::CompileContextWrapper;
 
 use super::patch::get_bytes;
@@ -77,19 +80,11 @@ impl HasCompilerOptsDelegation for LSPCompilerOpts {
 
     fn override_compile_program(
         &self,
-        allocator: &mut Allocator,
-        runner: Rc<dyn TRunProgram>,
+        context: &mut BasicCompileContext,
         sexp: Rc<SExp>,
-        symbol_table: &mut HashMap<String, String>,
-    ) -> Result<SExp, CompileErr> {
+    ) -> Result<CompilerOutput, CompileErr> {
         let me = Rc::new(self.clone());
-        let mut context_wrapper = CompileContextWrapper::new(
-            allocator,
-            runner,
-            symbol_table,
-            get_optimizer(&Srcloc::start(&self.filename()), me.clone())?,
-        );
-        compile_pre_forms(&mut context_wrapper.context, me, &[sexp])
+        compile_pre_forms(context, me, &[sexp])
     }
 }
 
