@@ -136,6 +136,10 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 return;
             }
 
+	    // If the file is identified with a directory name, as a module usually will be, we'll
+	    // walk back down to the root of that relative path and choose the directory at the root
+	    // to add to chialisp.json.  This allows choice of the given file to lead to a correct
+	    // choice of directory to put into chialisp.json as we're working with a file selection.
             const filterDirectory = (targetDirectory: string, wantDirectory: string) => {
                 if (targetDirectory == '.' || wantDirectory == '.') {
                     return targetDirectory;
