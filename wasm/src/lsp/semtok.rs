@@ -273,7 +273,6 @@ fn process_body_code(
                             d.loc.clone(),
                         )),
                         Some(HelperForm::Defmacro(m)) => {
-                            eprintln!("got macro {}", decode_string(&m.name));
                             Some((
                                 SemanticTokenSortable {
                                     loc: l.clone(),

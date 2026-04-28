@@ -432,7 +432,6 @@ pub fn reparse_subset(
                             }
                         }
                         Ok(ParsedForm::ModuleExport(res)) => {
-                            eprintln!("export res {res:?}");
                             result.helpers.insert(
                                 hash.clone(),
                                 ReparsedHelper {
@@ -607,6 +606,13 @@ pub fn combine_new_with_old_parse(
             if let Some(name) = parsed.hash_to_name.get(h) {
                 remove_names.insert(name.clone());
             }
+            to_remove.insert(h.clone());
+        }
+    }
+
+    // Ensure that we catch when an include form disappeared.
+    for (h, _) in new_includes.iter() {
+        if !reparse.unparsed.contains_key(h) && !reparse.includes.contains_key(h) {
             to_remove.insert(h.clone());
         }
     }
