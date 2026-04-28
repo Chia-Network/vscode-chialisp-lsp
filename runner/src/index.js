@@ -6,9 +6,7 @@ import { StdinReader } from './stdin_reader.js';
 // clean 1:1 8-bit encoding.
 process.stdin.setEncoding('binary');
 
-const emptyWriteLog = (line) => {
-  fs.appendFileSync('/tmp/stderr.txt', line);
-};
+const emptyWriteLog = (line) => { };
 const log = {
 	write: emptyWriteLog
 };
