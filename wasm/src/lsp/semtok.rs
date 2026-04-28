@@ -298,18 +298,18 @@ fn process_body_code(
                         }
                     }
                 }
+            }
 
-                for a in args.iter().skip(1) {
-                    process_body_code(
-                        env,
-                        collected_tokens,
-                        gotodef,
-                        argcollection,
-                        varcollection,
-                        frontend,
-                        a.clone(),
-                    );
-                }
+            for a in args.iter().skip(1) {
+                process_body_code(
+                    env,
+                    collected_tokens,
+                    gotodef,
+                    argcollection,
+                    varcollection,
+                    frontend,
+                    a.clone(),
+                );
             }
 
             // Handle the rest_args
