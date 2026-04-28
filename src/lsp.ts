@@ -143,7 +143,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 let targetWithBasename = targetDirectory.replace(/[\/\\]$/, '');
                 let wantWithBasename = wantDirectory.replace(/[\/\\]$/, '');
                 let targetBasename = path.basename(targetWithBasename);
-                let wantBasename = path.basename(targetWithBasename);
+                let wantBasename = path.basename(wantWithBasename);
                 if (targetBasename == wantBasename) {
                     return filterDirectory(path.dirname(targetWithBasename), path.dirname(wantWithBasename));
                 }
