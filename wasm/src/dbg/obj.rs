@@ -486,7 +486,7 @@ fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, V
 }
 
 fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
+    for ext in [".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
         }

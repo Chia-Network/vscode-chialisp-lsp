@@ -124,7 +124,7 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
             // not be a valid expression.  This is special to defconstant ...
             // every other body is necesarily a BodyForm.  We can allow this
             // to be looser because it is in classic chialisp.
-            if matches!(result, Err(_)) {
+            if result.is_err() {
                 let amended_instr = enlist(
                     parsed.loc(),
                     &[
@@ -154,6 +154,7 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn reparse_subset(
     prims: &[Vec<u8>],
     opts: Rc<dyn CompilerOpts>,
@@ -364,7 +365,7 @@ pub fn reparse_subset(
                             let other_helpers: &[HelperForm] = &parsed.new_helpers;
 
                             let use_helper = if !typedefs.is_empty() {
-                                for h in other_helpers.into_iter() {
+                                for h in other_helpers.iter() {
                                     let new_hash = Hash::new(&sha256tree(h.to_sexp()));
                                     result.helpers.insert(
                                         new_hash.clone(),
@@ -413,7 +414,7 @@ pub fn reparse_subset(
                     });
                     match dc_result {
                         Ok(ParsedForm::Helper(res)) => {
-                            if let Some(h) = res.new_helpers.iter().next() {
+                            if let Some(h) = res.new_helpers.first() {
                                 if let HelperForm::Defnsref(import) = h {
                                     let nsref: &NamespaceRefData = import.borrow();
                                     result.includes.insert(

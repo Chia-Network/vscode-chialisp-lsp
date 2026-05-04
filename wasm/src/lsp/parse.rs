@@ -7,8 +7,8 @@ use lsp_types::Position;
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, FrontendOutput, HelperForm,
-    ImportLongName, LetData, LetFormKind, NamespaceRefData,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, HelperForm, LetData,
+    LetFormKind, NamespaceRefData,
 };
 #[cfg(test)]
 use chialisp::compiler::frontend::frontend;
@@ -493,7 +493,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
 
             let mut variables = HashSet::new();
-            add_bindings_to_set(&mut variables, &binding);
+            add_bindings_to_set(&mut variables, binding);
 
             let mut inner_scopes = Vec::new();
 
@@ -527,7 +527,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let mut name_set = HashSet::new();
             for b in letdata.bindings.iter() {
-                add_bindings_to_set(&mut name_set, &b);
+                add_bindings_to_set(&mut name_set, b);
             }
 
             let mut inner_scopes = Vec::new();
@@ -882,7 +882,6 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     let mut level = 0;
     let mut line = 0;
     let mut character = 0;
-    let mut first_range = true;
     let mut first_word_of_module = Vec::new();
 
     for i in DocVecByteIter::new(srctext) {
@@ -905,10 +904,6 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
             }
             character += 1;
         } else if i == b')' {
-            // First range is over.  This is watching for
-            // (import , (defun , etc.
-            first_range = false;
-
             // We expect to contain only one toplevel list, so other ends
             // are probably a misparse.
             if !in_comment && level > 0 {
@@ -970,8 +965,7 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
         "import",
     ]
     .iter()
-    .find(|w| w.as_bytes() == first_word)
-    .is_some();
+    .any(|w| w.as_bytes() == first_word);
 
     if ranges_0.len() == 1 && !is_module_form {
         (false, ranges_1)

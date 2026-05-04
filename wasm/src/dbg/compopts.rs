@@ -2,22 +2,17 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-use clvmr::allocator::Allocator;
-
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, get_bytes, split_text};
 use crate::lsp::types::DocData;
-use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
 use chialisp::compiler::comptypes::{
     CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation,
 };
 use chialisp::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
-use chialisp::compiler::optimize::get_optimizer;
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
 use chialisp::compiler::BasicCompileContext;
-use chialisp::compiler::CompileContextWrapper;
 
 #[derive(Clone)]
 pub struct DbgCompilerOpts {
@@ -69,7 +64,6 @@ impl HasCompilerOptsDelegation for DbgCompilerOpts {
         sexp: Rc<SExp>,
     ) -> Result<CompilerOutput, CompileErr> {
         let me = Rc::new(self.clone());
-        let runner = context.runner.clone();
         compile_pre_forms(context, me, &[sexp])
     }
 }

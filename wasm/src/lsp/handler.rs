@@ -16,9 +16,7 @@ use crate::lsp::completion::LSPCompletionRequestHandler;
 use crate::lsp::parse::IncludedFileSpec;
 use crate::lsp::patch::{compute_comment_lines, split_text, LSPServiceProviderApplyDocumentPatch};
 use crate::lsp::semtok::LSPSemtokRequestHandler;
-use crate::lsp::types::{
-    cast, ConfigJson, DocData, DocRange, IncludeData, InitState, LSPServiceProvider,
-};
+use crate::lsp::types::{cast, ConfigJson, DocData, DocRange, InitState, LSPServiceProvider};
 use chialisp::compiler::comptypes::LongNameTranslation;
 use chialisp::compiler::sexp::decode_string;
 use chialisp::compiler::srcloc::Srcloc;
@@ -99,12 +97,25 @@ impl LSPServiceProvider {
                         }
                     }
                     IncludedFileSpec::Import(_found, imp) => {
-                        let import_file = imp
-                            .longname
-                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
-                        if import_file == file_name {
-                            found_hash = Some(h.clone());
-                            break;
+                        // The import could resolve to a .clinc or a .clsp.  We have the parsed
+                        // filename here so we can get the extension.
+                        if let Some(ext_start) = file_name
+                            .iter()
+                            .copied()
+                            .enumerate()
+                            .rev()
+                            .find(|(_i, c)| *c == b'.')
+                            .map(|(i, _)| i)
+                        {
+                            let string_of_ext = decode_string(&file_name[ext_start..]);
+                            let import_name = imp
+                                .longname
+                                .as_u8_vec(LongNameTranslation::Filename(string_of_ext));
+                            eprintln!("update_include_state {}", decode_string(&import_name));
+                            if import_name == file_name {
+                                found_hash = Some(h.clone());
+                                break;
+                            }
                         }
                     }
                 }
@@ -160,7 +171,7 @@ impl LSPServiceProvider {
                     let mut found_include = false;
                     for path in self.config.include_paths.iter() {
                         let target_name = Path::new(&path)
-                            .join(&decode_string(&i.filename))
+                            .join(decode_string(&i.filename))
                             .to_str()
                             .map(|o| o.to_owned());
                         if let Some(target) = target_name {
@@ -178,12 +189,10 @@ impl LSPServiceProvider {
                 }
                 IncludedFileSpec::Import(found, imp) => {
                     let mut found_include = false;
-                    let target_file = imp
-                        .longname
-                        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+                    let target_file = self.get_filename_of_import(&imp.longname);
                     for path in self.config.include_paths.clone().iter() {
                         let target_name = Path::new(&path)
-                            .join(&decode_string(&target_file))
+                            .join(decode_string(&target_file))
                             .to_str()
                             .map(|o| o.to_owned());
                         if let Some(target) = target_name {
@@ -196,8 +205,7 @@ impl LSPServiceProvider {
 
                     self.update_include_state(parsed, &target_file, found_include);
                     if !found_include {
-                        ask_ui_for_resolution
-                            .push(IncludedFileSpec::Import(found.clone(), imp.clone()));
+                        ask_ui_for_resolution.push(IncludedFileSpec::Import(*found, imp.clone()));
                     }
                 }
             }
@@ -247,7 +255,7 @@ impl LSPServiceProvider {
                             title: "Locate include path".to_string(),
                             command: "chialisp.locateIncludePath".to_string(),
                             arguments: Some(vec![
-                                serde_json::to_value(&decode_string(&filename)).unwrap()
+                                serde_json::to_value(decode_string(&filename)).unwrap()
                             ]),
                         }),
                         is_preferred: None,
@@ -265,6 +273,8 @@ impl LSPServiceProvider {
         // Double check parsed state.
         self.ensure_parsed_document(&uristring);
 
+        let mut fixup_imports = Vec::new();
+
         if let Some(doc) = self.parsed_documents.get(&uristring) {
             for (_, inc) in doc.includes.iter() {
                 match inc {
@@ -276,14 +286,15 @@ impl LSPServiceProvider {
                         );
                     }
                     IncludedFileSpec::Import(_, imp) => {
-                        // XXX detect a clinc import vs a program import.
-                        let filename = imp
-                            .longname
-                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
-                        emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);
+                        fixup_imports.push(imp.clone());
                     }
                 }
             }
+        }
+
+        for imp in fixup_imports.into_iter() {
+            let filename = self.get_filename_of_import(&imp.longname);
+            emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);
         }
 
         if result_messages.is_empty() {

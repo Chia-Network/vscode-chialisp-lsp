@@ -22,9 +22,9 @@ use crate::lsp::{
 };
 use chialisp::compiler::clvm::sha256tree;
 use chialisp::compiler::comptypes::{
-    BindingPattern, BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
+    BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
 };
-use chialisp::compiler::sexp::{decode_string, SExp};
+use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
 
 #[derive(Clone, Debug)]
@@ -44,6 +44,7 @@ impl PartialEq for SemanticTokenSortable {
 
 impl Eq for SemanticTokenSortable {}
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for SemanticTokenSortable {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let cf = self.loc.file.cmp(other.loc.file.borrow());
@@ -124,7 +125,7 @@ fn process_body_code(
             }
             for b in letdata.bindings.iter() {
                 let mut bindings = HashSet::new();
-                add_bindings_to_set(&mut bindings, &b);
+                add_bindings_to_set(&mut bindings, b);
                 for item in bindings.iter() {
                     if let SExp::Atom(loc, _) = item.borrow() {
                         collected_tokens.push(SemanticTokenSortable {
@@ -157,7 +158,7 @@ fn process_body_code(
                     )
                 }
                 let mut bset = HashSet::new();
-                add_bindings_to_set(&mut bset, &b);
+                add_bindings_to_set(&mut bset, b);
                 for b in bset.iter() {
                     if let SExp::Atom(l, n) = b.borrow() {
                         bindings_vars.insert(n.clone(), l.clone());
@@ -272,16 +273,14 @@ fn process_body_code(
                             },
                             d.loc.clone(),
                         )),
-                        Some(HelperForm::Defmacro(m)) => {
-                            Some((
-                                SemanticTokenSortable {
-                                    loc: l.clone(),
-                                    token_type: TK_MACRO_IDX,
-                                    token_mod: 0,
-                                },
-                                m.loc.clone(),
-                            ))
-                        }
+                        Some(HelperForm::Defmacro(m)) => Some((
+                            SemanticTokenSortable {
+                                loc: l.clone(),
+                                token_type: TK_MACRO_IDX,
+                                token_mod: 0,
+                            },
+                            m.loc.clone(),
+                        )),
                         _ => None,
                     }
                 {
@@ -472,7 +471,7 @@ pub fn build_semantic_tokens(
                 });
                 match &nsref.specification {
                     ModuleImportSpec::Qualified(q) => {
-                        if let Some(target) = &q.target {
+                        if let Some(_target) = &q.target {
                             collected_tokens.push(SemanticTokenSortable {
                                 loc: q.kw.clone(),
                                 token_type: TK_KEYWORD_IDX,
@@ -485,7 +484,7 @@ pub fn build_semantic_tokens(
                             });
                         }
                     }
-                    ModuleImportSpec::Exposing(l, e) => {
+                    ModuleImportSpec::Exposing(_l, e) => {
                         for h in e.iter() {
                             collected_tokens.push(SemanticTokenSortable {
                                 loc: h.nl.clone(),
@@ -494,7 +493,7 @@ pub fn build_semantic_tokens(
                             });
                         }
                     }
-                    ModuleImportSpec::Hiding(l, e) => {
+                    ModuleImportSpec::Hiding(_l, e) => {
                         for h in e.iter() {
                             collected_tokens.push(SemanticTokenSortable {
                                 loc: h.nl.clone(),

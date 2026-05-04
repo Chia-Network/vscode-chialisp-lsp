@@ -33,7 +33,7 @@ use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::compiler::cldb::hex_to_modern_sexp;
 use chialisp::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
 use chialisp::compiler::compiler::DefaultCompilerOpts;
-use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, FrontendOutput};
+use chialisp::compiler::comptypes::{CompileErr, CompilerOpts, FrontendOutput};
 use chialisp::compiler::frontend::frontend;
 use chialisp::compiler::runtypes::RunFailure;
 use chialisp::compiler::sexp::{decode_string, parse_sexp, SExp};
@@ -697,7 +697,7 @@ fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, V
 }
 
 fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
+    for ext in [".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
         }

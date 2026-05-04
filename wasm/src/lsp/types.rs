@@ -31,9 +31,8 @@ use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset, ReparsedMo
 use crate::lsp::semtok::SemanticTokenSortable;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompilerOpts, Export, HelperForm, LongNameTranslation,
+    BodyForm, CompileErr, CompilerOpts, Export, HelperForm, ImportLongName, LongNameTranslation,
 };
-use chialisp::compiler::frontend::HelperFormResult;
 use chialisp::compiler::prims::prims;
 use chialisp::compiler::sexp::{decode_string, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -89,7 +88,7 @@ pub struct Hash {
 }
 
 impl Hash {
-    pub fn new(v: &Vec<u8>) -> Self {
+    pub fn new(v: &[u8]) -> Self {
         let len = min(v.len(), HASH_SIZE);
         let mut data: [u8; HASH_SIZE] = [0; 32];
         for i in 0..len {
@@ -463,7 +462,7 @@ impl DocRange {
     // This is likewise used in some of the configurations, but not all.
     #[allow(dead_code)]
     pub fn overlap(&self, other: &DocRange) -> bool {
-        let mut sortable = vec![
+        let mut sortable = [
             (self.start.clone(), 0),
             (self.end.clone(), 0),
             (other.start.clone(), 1),
@@ -669,9 +668,7 @@ impl LSPServiceProvider {
                 };
                 let filename = match i {
                     IncludedFileSpec::Include(i) => i.filename.clone(),
-                    IncludedFileSpec::Import(_, imp) => imp
-                        .longname
-                        .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string())),
+                    IncludedFileSpec::Import(_, imp) => self.get_filename_of_import(&imp.longname),
                 };
                 Diagnostic {
                     range: DocRange::from_srcloc(loc).to_range(),
@@ -739,7 +736,6 @@ impl LSPServiceProvider {
         &mut self,
         new_helpers: &mut ReparsedModule,
         target_filename: &[u8],
-        contained: bool,
     ) -> bool {
         let mut success = false;
 
@@ -748,7 +744,7 @@ impl LSPServiceProvider {
             self.fs.clone(),
             self.get_workspace_root(),
             &self.config.include_paths,
-            &decode_string(&target_filename),
+            &decode_string(target_filename),
         ) {
             if let Some(file_uri) = self
                 .get_workspace_root()
@@ -813,20 +809,11 @@ impl LSPServiceProvider {
                             continue;
                         }
 
-                        self.try_handle_incoming_file(&mut new_helpers, &incfile.filename, true);
+                        self.try_handle_incoming_file(&mut new_helpers, &incfile.filename);
                     }
                     IncludedFileSpec::Import(_, imp) => {
-                        let filename_inc = imp
-                            .longname
-                            .as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
-                        if !self.try_handle_incoming_file(&mut new_helpers, &filename_inc, false) {
-                            /* XXX implement me.
-                            let filename_clsp = imp.longname.as_u8_vec(LongNameTranslaction::Filename(".clsp".to_string()));
-                            // When read, the exports (or default export) match .program and
-                            // other imports.
-                            self.try_handle_incoming_file(&filename_clsp, false);
-                            */
-                        }
+                        let filename_inc = self.get_filename_of_import(&imp.longname);
+                        self.try_handle_incoming_file(&mut new_helpers, &filename_inc);
                     }
                 }
             }
@@ -914,12 +901,10 @@ impl LSPServiceProvider {
             goto_defs: HashMap::new(),
             thrown_errors: HashMap::new(),
 
-            workspace_file_extensions_to_resync_for: vec![
-                ".clsp", ".cl", ".clvm", ".clib", ".clinc",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+            workspace_file_extensions_to_resync_for: [".clsp", ".cl", ".clvm", ".clib", ".clinc"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             prims: clvm_prims,
         }
     }
@@ -992,7 +977,7 @@ impl LSPServiceProvider {
             self.fs.clone(),
             self.get_workspace_root(),
             &self.config.include_paths,
-            &filename,
+            filename,
         ) {
             if let Some(file_uri) = self
                 .get_workspace_root()
@@ -1005,6 +990,25 @@ impl LSPServiceProvider {
         }
 
         None
+    }
+
+    pub fn get_filename_of_import(&mut self, longname: &ImportLongName) -> Vec<u8> {
+        let imported_filename =
+            longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
+        if self
+            .get_file_uri_and_ensure_parsing(&decode_string(&imported_filename))
+            .is_some()
+        {
+            return imported_filename;
+        }
+        let clsp_name = longname.as_u8_vec(LongNameTranslation::Filename(".clsp".to_string()));
+        if self
+            .get_file_uri_and_ensure_parsing(&decode_string(&clsp_name))
+            .is_some()
+        {
+            return clsp_name;
+        }
+        imported_filename
     }
 }
 

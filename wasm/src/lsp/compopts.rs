@@ -4,22 +4,17 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use clvmr::allocator::Allocator;
-
 use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::patch::{compute_comment_lines, split_text};
 use crate::lsp::types::DocData;
-use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::compiler::compiler::{compile_pre_forms, STANDARD_MACROS};
 use chialisp::compiler::comptypes::{
     CompileErr, CompilerOpts, CompilerOutput, HasCompilerOptsDelegation,
 };
 use chialisp::compiler::dialect::{DialectDescription, KNOWN_DIALECTS};
-use chialisp::compiler::optimize::get_optimizer;
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
 use chialisp::compiler::BasicCompileContext;
-use chialisp::compiler::CompileContextWrapper;
 
 use super::patch::get_bytes;
 
