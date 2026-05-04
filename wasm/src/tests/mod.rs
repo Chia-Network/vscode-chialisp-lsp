@@ -2361,7 +2361,7 @@ fn test_sem_tok_for_module_program_import() {
         &file,
         1,
         indoc! {"
-        (import prog.program1 exposing (program as yetch))
+        (import prog.program2 exposing (program as yetch))
         (export (X) (yetch X))"}
         .to_string(),
     );

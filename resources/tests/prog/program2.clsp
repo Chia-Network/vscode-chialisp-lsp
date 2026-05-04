@@ -1,0 +1,3 @@
+(include *standard-cl-26*)
+
+(export (X Y) (+ X Y))
