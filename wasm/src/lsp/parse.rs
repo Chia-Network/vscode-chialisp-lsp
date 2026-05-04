@@ -6,6 +6,8 @@ use lsp_types::Position;
 
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
+#[cfg(test)]
+use chialisp::compiler::comptypes::FrontendOutput;
 use chialisp::compiler::comptypes::{
     Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, HelperForm, LetData,
     LetFormKind, NamespaceRefData,

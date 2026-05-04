@@ -449,16 +449,8 @@ pub fn build_semantic_tokens(
                     }
                 }
             }
-            IncludedFileSpec::Import(_, _) => {
+            IncludedFileSpec::Import(_, nsref) => {
                 // Handled in the helper personality.
-            }
-        }
-    }
-
-    for form in parsed.compiled.helpers.iter() {
-        match form {
-            HelperForm::Defnamespace(_) => {}
-            HelperForm::Defnsref(nsref) => {
                 collected_tokens.push(SemanticTokenSortable {
                     loc: nsref.kw.clone(),
                     token_type: TK_KEYWORD_IDX,
@@ -504,6 +496,13 @@ pub fn build_semantic_tokens(
                     }
                 }
             }
+        }
+    }
+
+    for form in parsed.compiled.helpers.iter() {
+        match form {
+            HelperForm::Defnamespace(_) => {}
+            HelperForm::Defnsref(_) => {}
             HelperForm::Defconstant(defc) => {
                 if let Some(kw) = &defc.kw {
                     collected_tokens.push(SemanticTokenSortable {
