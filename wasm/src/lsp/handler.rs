@@ -111,7 +111,6 @@ impl LSPServiceProvider {
                             let import_name = imp
                                 .longname
                                 .as_u8_vec(LongNameTranslation::Filename(string_of_ext));
-                            eprintln!("update_include_state {}", decode_string(&import_name));
                             if import_name == file_name {
                                 found_hash = Some(h.clone());
                                 break;
