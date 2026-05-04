@@ -11,3 +11,5 @@ vsc-extension-quickstart.md
 runner/node_modules
 wasm/src
 wasm/target
+config
+workspace

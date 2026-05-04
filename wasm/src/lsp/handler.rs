@@ -13,11 +13,11 @@ use lsp_types::{
 use lsp_server::{ErrorCode, Message, RequestId, Response};
 
 use crate::lsp::completion::LSPCompletionRequestHandler;
+use crate::lsp::parse::IncludedFileSpec;
 use crate::lsp::patch::{compute_comment_lines, split_text, LSPServiceProviderApplyDocumentPatch};
 use crate::lsp::semtok::LSPSemtokRequestHandler;
-use crate::lsp::types::{
-    cast, ConfigJson, DocData, DocRange, IncludeData, InitState, LSPServiceProvider,
-};
+use crate::lsp::types::{cast, ConfigJson, DocData, DocRange, InitState, LSPServiceProvider};
+use chialisp::compiler::comptypes::LongNameTranslation;
 use chialisp::compiler::sexp::decode_string;
 use chialisp::compiler::srcloc::Srcloc;
 
@@ -87,30 +87,68 @@ impl LSPServiceProvider {
     fn update_include_state(&mut self, parsed_file: &str, file_name: &[u8], file_found: bool) {
         if let Some(found) = self.parsed_documents.get_mut(parsed_file) {
             let mut found_hash = None;
+
             for (h, inc) in found.includes.iter() {
-                if inc.filename == file_name {
-                    found_hash = Some(h.clone());
-                    break;
+                match inc {
+                    IncludedFileSpec::Include(inc) => {
+                        if inc.filename == file_name {
+                            found_hash = Some(h.clone());
+                            break;
+                        }
+                    }
+                    IncludedFileSpec::Import(_found, imp) => {
+                        // The import could resolve to a .clinc or a .clsp.  We have the parsed
+                        // filename here so we can get the extension.
+                        if let Some(ext_start) = file_name
+                            .iter()
+                            .copied()
+                            .enumerate()
+                            .rev()
+                            .find(|(_i, c)| *c == b'.')
+                            .map(|(i, _)| i)
+                        {
+                            let string_of_ext = decode_string(&file_name[ext_start..]);
+                            let import_name = imp
+                                .longname
+                                .as_u8_vec(LongNameTranslation::Filename(string_of_ext));
+                            if import_name == file_name {
+                                found_hash = Some(h.clone());
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
-            if let Some(h) = &found_hash {
-                if let Some(inc) = found.includes.get_mut(h) {
-                    inc.found = Some(file_found);
+            if let Some(h) = found_hash {
+                match found.includes.get_mut(&h) {
+                    Some(IncludedFileSpec::Include(inc)) => {
+                        inc.found = Some(file_found);
+                    }
+                    Some(IncludedFileSpec::Import(found, _)) => {
+                        *found = Some(file_found);
+                    }
+                    _ => {}
                 }
             }
         }
     }
 
     // Return the includes that couldn't be resolved.
-    pub fn check_for_missing_include_files(&mut self, uristring: &str) -> Vec<IncludeData> {
+    pub fn check_for_missing_include_files(&mut self, uristring: &str) -> Vec<IncludedFileSpec> {
         let mut to_resolve = Vec::new();
 
         // Find includes we need to resolve
         if let Some(doc) = self.parsed_documents.get(uristring) {
             for (_, i) in doc.includes.iter() {
-                if i.found != Some(true) {
-                    to_resolve.push((uristring, i.clone()));
+                match i {
+                    IncludedFileSpec::Include(i) if i.found != Some(true) => {
+                        to_resolve.push((uristring, IncludedFileSpec::Include(i.clone())));
+                    }
+                    IncludedFileSpec::Import(found, imp) if *found != Some(true) => {
+                        to_resolve.push((uristring, IncludedFileSpec::Import(None, imp.clone())));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -118,33 +156,57 @@ impl LSPServiceProvider {
         // Errors is specifically the ones we tried to resolve and failed.
         let mut ask_ui_for_resolution = Vec::new();
 
-        let to_read_files: Vec<(String, IncludeData)> = to_resolve
+        let to_read_files: Vec<(String, IncludedFileSpec)> = to_resolve
             .iter()
             .map(|(parsed, i)| (parsed.to_string(), i.clone()))
             .collect();
         for (parsed, i) in to_read_files.iter() {
-            if i.filename.is_empty() || i.filename[0] == b'*' || i.found == Some(true) {
-                continue;
-            }
+            match i {
+                IncludedFileSpec::Include(i) => {
+                    if i.filename.is_empty() || i.filename[0] == b'*' {
+                        continue;
+                    }
 
-            let mut found_include = false;
-            for path in self.config.include_paths.iter() {
-                let target_name = Path::new(&path)
-                    .join(&decode_string(&i.filename))
-                    .to_str()
-                    .map(|o| o.to_owned());
-                if let Some(target) = target_name {
-                    if self.fs.read_content(&target).is_ok() {
-                        found_include = true;
-                        self.update_include_state(parsed, &i.filename, true);
-                        break;
+                    let mut found_include = false;
+                    for path in self.config.include_paths.iter() {
+                        let target_name = Path::new(&path)
+                            .join(decode_string(&i.filename))
+                            .to_str()
+                            .map(|o| o.to_owned());
+                        if let Some(target) = target_name {
+                            if self.fs.read_content(&target).is_ok() {
+                                found_include = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    self.update_include_state(parsed, &i.filename, found_include);
+                    if !found_include {
+                        ask_ui_for_resolution.push(IncludedFileSpec::Include(i.clone()));
                     }
                 }
-            }
+                IncludedFileSpec::Import(found, imp) => {
+                    let mut found_include = false;
+                    let target_file = self.get_filename_of_import(&imp.longname);
+                    for path in self.config.include_paths.clone().iter() {
+                        let target_name = Path::new(&path)
+                            .join(decode_string(&target_file))
+                            .to_str()
+                            .map(|o| o.to_owned());
+                        if let Some(target) = target_name {
+                            if self.fs.read_content(&target).is_ok() {
+                                found_include = true;
+                                break;
+                            }
+                        }
+                    }
 
-            if !found_include {
-                ask_ui_for_resolution.push(i.clone());
-                self.update_include_state(parsed, &i.filename, false);
+                    self.update_include_state(parsed, &target_file, found_include);
+                    if !found_include {
+                        ask_ui_for_resolution.push(IncludedFileSpec::Import(*found, imp.clone()));
+                    }
+                }
             }
         }
 
@@ -180,13 +242,9 @@ impl LSPServiceProvider {
     ) -> Result<Vec<Message>, String> {
         let uristring = params.text_document.uri.to_string();
         let mut result_messages = Vec::new();
-
-        // Double check parsed state.
-        self.ensure_parsed_document(&uristring);
-
-        if let Some(doc) = self.parsed_documents.get(&uristring) {
-            for (_, inc) in doc.includes.iter() {
-                if DocRange::from_srcloc(inc.name_loc.clone()).to_range() == params.range {
+        let emit_quick_fix_action =
+            |result_messages: &mut Vec<Message>, name_loc, filename: Vec<u8>| {
+                if DocRange::from_srcloc(name_loc).to_range() == params.range {
                     let code_action = vec![CodeActionOrCommand::CodeAction(CodeAction {
                         title: "Locate include path".to_string(),
                         kind: Some(CodeActionKind::QUICKFIX),
@@ -195,10 +253,9 @@ impl LSPServiceProvider {
                         command: Some(Command {
                             title: "Locate include path".to_string(),
                             command: "chialisp.locateIncludePath".to_string(),
-                            arguments: Some(vec![serde_json::to_value(&decode_string(
-                                &inc.filename,
-                            ))
-                            .unwrap()]),
+                            arguments: Some(vec![
+                                serde_json::to_value(decode_string(&filename)).unwrap()
+                            ]),
                         }),
                         is_preferred: None,
                         disabled: None,
@@ -210,7 +267,33 @@ impl LSPServiceProvider {
                         error: None,
                     }));
                 }
+            };
+
+        // Double check parsed state.
+        self.ensure_parsed_document(&uristring);
+
+        let mut fixup_imports = Vec::new();
+
+        if let Some(doc) = self.parsed_documents.get(&uristring) {
+            for (_, inc) in doc.includes.iter() {
+                match inc {
+                    IncludedFileSpec::Include(inc) => {
+                        emit_quick_fix_action(
+                            &mut result_messages,
+                            inc.name_loc.clone(),
+                            inc.filename.clone(),
+                        );
+                    }
+                    IncludedFileSpec::Import(_, imp) => {
+                        fixup_imports.push(imp.clone());
+                    }
+                }
             }
+        }
+
+        for imp in fixup_imports.into_iter() {
+            let filename = self.get_filename_of_import(&imp.longname);
+            emit_quick_fix_action(&mut result_messages, imp.nl.clone(), filename);
         }
 
         if result_messages.is_empty() {

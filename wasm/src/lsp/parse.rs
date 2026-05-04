@@ -6,8 +6,11 @@ use lsp_types::Position;
 
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
+#[cfg(test)]
+use chialisp::compiler::comptypes::FrontendOutput;
 use chialisp::compiler::comptypes::{
-    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, HelperForm, LetData, LetFormKind,
+    Binding, BindingPattern, BodyForm, CompileErr, CompileForm, Export, HelperForm, LetData,
+    LetFormKind, NamespaceRefData,
 };
 #[cfg(test)]
 use chialisp::compiler::frontend::frontend;
@@ -22,6 +25,12 @@ use crate::lsp::types::{
 };
 
 #[derive(Debug, Clone)]
+pub enum IncludedFileSpec {
+    Include(IncludeData),
+    Import(Option<bool>, NamespaceRefData),
+}
+
+#[derive(Debug, Clone)]
 // A parsed document.
 pub struct ParsedDoc {
     // Ignored means that it didn't look like chialisp language, possibly it's
@@ -32,6 +41,8 @@ pub struct ParsedDoc {
     // it.  CompileForm is the result of frontend and is used for analyzing
     // chialisp in many different tools deriving from chialisp.
     pub compiled: CompileForm,
+    // Exports if module style.
+    pub exports: HashMap<Hash, Export>,
     // The scope stack for this file.
     pub scopes: ParseScope,
     // Helpers in ReparsedHelper form.  We pulled these indiviually by identifying
@@ -40,7 +51,7 @@ pub struct ParsedDoc {
     // If present, the main expression in ReparsedExp form.
     pub exp: Option<ReparsedExp>,
     // Includes in the various files, indexed by included file.
-    pub includes: HashMap<Hash, IncludeData>,
+    pub includes: HashMap<Hash, IncludedFileSpec>,
     // Index of hashed ranges (as Reparsed* data) to the names they bind.
     pub hash_to_name: HashMap<Hash, Vec<u8>>,
     // Chialisp frontend errors encountered while parsing.
@@ -71,6 +82,7 @@ impl ParsedDoc {
                 containing: Default::default(),
             },
             helpers: Default::default(),
+            exports: Default::default(),
             exp: None,
             includes: Default::default(),
             hash_to_name: Default::default(),
@@ -122,6 +134,12 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
 
     for h in fe.helpers.iter() {
         match h {
+            HelperForm::Defnamespace(_) => {
+                // XXX
+            }
+            HelperForm::Defnsref(_) => {
+                // XXX
+            }
             HelperForm::Defun(_, d) => {
                 toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
@@ -393,10 +411,10 @@ fn test_not_is_first_in_list_next_word() {
 }
 
 // Given a position, return the identifier at that position.  Relies on find_ident.
-pub fn get_positional_text(text: &[Rc<Vec<u8>>], position: &Position) -> Option<Vec<u8>> {
+pub fn get_positional_text(lines: &[Rc<Vec<u8>>], position: &Position) -> Option<Vec<u8>> {
     let pl = position.line as usize;
-    if pl < text.len() {
-        let line = text[pl].clone();
+    if pl < lines.len() {
+        let line = lines[pl].clone();
         find_ident(line, position.character)
     } else {
         None
@@ -477,7 +495,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             };
 
             let mut variables = HashSet::new();
-            add_bindings_to_set(&mut variables, &binding);
+            add_bindings_to_set(&mut variables, binding);
 
             let mut inner_scopes = Vec::new();
 
@@ -511,7 +529,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let mut name_set = HashSet::new();
             for b in letdata.bindings.iter() {
-                add_bindings_to_set(&mut name_set, &b);
+                add_bindings_to_set(&mut name_set, b);
             }
 
             let mut inner_scopes = Vec::new();
@@ -588,7 +606,7 @@ fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
 }
 
 #[cfg(test)]
-fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> CompileForm {
+fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> FrontendOutput {
     let sl = Srcloc::start(file);
     let parsed = parse_sexp(sl, DocVecByteIter::new(prog)).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new(file));
@@ -596,15 +614,16 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
 }
 
 #[cfg(test)]
-fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, ParseScope) {
+fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (FrontendOutput, ParseScope) {
     let compiled = get_test_program_for_scope_tests(file, prog);
     (
         compiled.clone(),
         ParseScope {
-            region: compiled.loc.clone(),
+            region: compiled.compileform().loc.clone(),
             kind: ScopeKind::Module,
             variables: Default::default(),
             functions: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| {
@@ -618,6 +637,7 @@ fn make_test_program_scope(file: &str, prog: &[Rc<Vec<u8>>]) -> (CompileForm, Pa
                 })
                 .collect(),
             containing: compiled
+                .compileform()
                 .helpers
                 .iter()
                 .filter_map(|h| make_helper_scope(&h))
@@ -640,13 +660,15 @@ fn make_scope_stack_simple() {
     let (compiled, program_scope) = make_test_program_scope(file, &doc.text);
     assert_eq!(program_scope.functions.len(), 2);
     assert_eq!(program_scope.containing.len(), 2);
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test1")));
-    assert!(program_scope
-        .functions
-        .contains(&SExp::atom_from_string(compiled.loc.clone(), "test2")));
-    let filename_rc = compiled.loc.file.clone();
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test1"
+    )));
+    assert!(program_scope.functions.contains(&SExp::atom_from_string(
+        compiled.compileform().loc.clone(),
+        "test2"
+    )));
+    let filename_rc = compiled.compileform().loc.file.clone();
     assert_eq!(
         program_scope.containing[0].region,
         Srcloc::new(filename_rc.clone(), 2, 3).ext(&Srcloc::new(filename_rc.clone(), 2, 25))
@@ -850,13 +872,19 @@ fn test_make_arg_set() {
 // Source files in chialisp are for legacy reasons all expected to contain only
 // one toplevel element, so the areas of interest that may move or change are at
 // the second level.
-pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
-    let mut ranges = Vec::new();
+//
+// In module style, there is no outside container.  We should detect which the
+// source file is and act accordingly.
+pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
+    let mut ranges_1 = Vec::new();
+    let mut ranges_0 = Vec::new();
     let mut in_comment = false;
-    let mut start = None;
+    let mut start_1 = None;
+    let mut start_0 = None;
     let mut level = 0;
     let mut line = 0;
     let mut character = 0;
+    let mut first_word_of_module = Vec::new();
 
     for i in DocVecByteIter::new(srctext) {
         if i == b';' {
@@ -868,8 +896,11 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
             in_comment = false;
         } else if i == b'(' {
             if !in_comment {
-                if level == 1 && start.is_none() {
-                    start = Some(DocPosition { line, character });
+                if level == 1 && start_1.is_none() {
+                    start_1 = Some(DocPosition { line, character });
+                }
+                if level == 0 {
+                    start_0 = Some(DocPosition { line, character });
                 }
                 level += 1;
             }
@@ -881,25 +912,68 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> Vec<DocRange> {
                 level -= 1;
 
                 if level == 1 {
-                    if let Some(s) = start.clone() {
-                        ranges.push(DocRange {
+                    if let Some(s) = start_1.clone() {
+                        ranges_1.push(DocRange {
                             start: s,
                             end: DocPosition {
                                 line,
                                 character: character + 1,
                             },
                         });
-                        start = None;
+                        start_1 = None;
+                    }
+                }
+                if level == 0 {
+                    if let Some(s) = start_0.clone() {
+                        ranges_0.push(DocRange {
+                            start: s,
+                            end: DocPosition {
+                                line,
+                                character: character + 1,
+                            },
+                        });
+                        start_0 = None;
                     }
                 }
             }
             character += 1;
         } else {
+            if level == 1 && first_word_of_module.len() < 20 {
+                first_word_of_module.push(i);
+            }
             character += 1;
         }
     }
 
-    ranges
+    // XXX improve this detection.
+    // Module style should match when there's 1 range if:
+    // The single form starts with 'export' or a word that begins a helper:
+    // embed, import, defconst, defconstant, defun, defun-inline, defmacro
+
+    let first_word: Vec<u8> = first_word_of_module
+        .iter()
+        .take_while(|c| **c >= b'a' && **c <= b'z' || **c == b'-')
+        .copied()
+        .collect();
+    let is_module_form = [
+        "defconst",
+        "defconstant",
+        "defmac",
+        "defmacro",
+        "defun",
+        "defun-inline",
+        "embed",
+        "export",
+        "import",
+    ]
+    .iter()
+    .any(|w| w.as_bytes() == first_word);
+
+    if ranges_0.len() == 1 && !is_module_form {
+        (false, ranges_1)
+    } else {
+        (true, ranges_0)
+    }
 }
 
 #[test]
@@ -915,57 +989,60 @@ fn test_make_simple_ranges_1() {
     ];
     assert_eq!(
         make_simple_ranges(test_data),
-        vec![
-            DocRange {
-                start: DocPosition {
-                    line: 0,
-                    character: 2
+        (
+            false,
+            vec![
+                DocRange {
+                    start: DocPosition {
+                        line: 0,
+                        character: 2
+                    },
+                    end: DocPosition {
+                        line: 0,
+                        character: 8
+                    }
                 },
-                end: DocPosition {
-                    line: 0,
-                    character: 8
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 0,
-                    character: 9
+                DocRange {
+                    start: DocPosition {
+                        line: 0,
+                        character: 9
+                    },
+                    end: DocPosition {
+                        line: 0,
+                        character: 16
+                    }
                 },
-                end: DocPosition {
-                    line: 0,
-                    character: 16
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 2,
-                    character: 3
+                DocRange {
+                    start: DocPosition {
+                        line: 2,
+                        character: 3
+                    },
+                    end: DocPosition {
+                        line: 3,
+                        character: 40
+                    }
                 },
-                end: DocPosition {
-                    line: 3,
-                    character: 40
-                }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 4,
-                    character: 0
+                DocRange {
+                    start: DocPosition {
+                        line: 4,
+                        character: 0
+                    },
+                    end: DocPosition {
+                        line: 4,
+                        character: 10
+                    }
                 },
-                end: DocPosition {
-                    line: 4,
-                    character: 10
+                DocRange {
+                    start: DocPosition {
+                        line: 5,
+                        character: 2
+                    },
+                    end: DocPosition {
+                        line: 5,
+                        character: 4
+                    }
                 }
-            },
-            DocRange {
-                start: DocPosition {
-                    line: 5,
-                    character: 2
-                },
-                end: DocPosition {
-                    line: 5,
-                    character: 4
-                }
-            }
-        ]
+            ]
+        )
     );
 }

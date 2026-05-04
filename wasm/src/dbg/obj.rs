@@ -18,9 +18,7 @@ use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::classic::platform::argparse::ArgumentValue;
 use chialisp::compiler::cldb::hex_to_modern_sexp;
-use chialisp::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose,
-};
+use chialisp::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
@@ -406,8 +404,14 @@ fn test_simple_find_location_classic_symbols_1() {
         line: 2,
         log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
-        .expect("should be found");
+    let (hash, _) = find_location(
+        symbols,
+        &Some(compiled.compileform().clone()),
+        log,
+        "fact.clsp",
+        &breakpoint_spec,
+    )
+    .expect("should be found");
     assert_eq!(
         hash,
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
@@ -482,7 +486,7 @@ fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, V
 }
 
 fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
+    for ext in [".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
         }
@@ -500,7 +504,7 @@ fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
         )),
         SExp::Atom(l, _) => {
             let vrange = DocRange::from_srcloc(l.clone()).to_range();
-            if let Some(replacement) = get_positional_text(lines, &vrange.start) {
+            if let Some(replacement) = get_positional_text(&lines, &vrange.start) {
                 Rc::new(SExp::Atom(l.clone(), replacement.to_vec()))
             } else {
                 sexp.clone()
@@ -632,7 +636,7 @@ fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(Some(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled.compileform().clone()));
     }
 
     let mut parsed_program = if inputs.is_hex {
