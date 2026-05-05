@@ -21,6 +21,14 @@ use crate::lsp::types::{
     ScopeKind,
 };
 
+#[cfg(test)]
+fn frontend_to_compile_form(fe: chialisp::compiler::comptypes::FrontendOutput) -> CompileForm {
+    match fe {
+        chialisp::compiler::comptypes::FrontendOutput::CompileForm(cf) => cf,
+        chialisp::compiler::comptypes::FrontendOutput::Module(cf, _) => cf,
+    }
+}
+
 #[derive(Debug, Clone)]
 // A parsed document.
 pub struct ParsedDoc {
@@ -122,6 +130,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
 
     for h in fe.helpers.iter() {
         match h {
+            HelperForm::Defnamespace(_) | HelperForm::Defnsref(_) => {}
             HelperForm::Defun(_, d) => {
                 toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
@@ -592,7 +601,7 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
     let sl = Srcloc::start(file);
     let parsed = parse_sexp(sl, DocVecByteIter::new(prog)).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new(file));
-    frontend(opts, &parsed).expect("should compile")
+    frontend_to_compile_form(frontend(opts, &parsed).expect("should compile"))
 }
 
 #[cfg(test)]

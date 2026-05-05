@@ -2,10 +2,13 @@ var path = require('path');
 var webpack = require('webpack');
 
 module.exports = {
-    entry: './src/runner.js',
+    entry: {
+        runner: './src/runner.js',
+        gdb_runner: './src/gdb_runner.js'
+    },
     output: {
         path: path.resolve(__dirname, 'build'),
-        filename: 'runner.js'
+        filename: '[name].js'
     },
     target: 'node',
     loader: {
