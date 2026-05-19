@@ -8,9 +8,7 @@ use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
 use chialisp::compiler::clvm::sha256tree_from_atom;
-use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
-};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
 use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
