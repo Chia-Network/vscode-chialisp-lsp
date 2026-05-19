@@ -2,16 +2,17 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::mem::swap;
+use std::path::Path;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use chialisp::classic::clvm_tools::stages::stage_0::{DefaultProgramRunner, TRunProgram};
-use chialisp::compiler::compiler::{compile_file, DefaultCompilerOpts};
-use chialisp::compiler::comptypes::CompilerOpts;
+use chialisp::compiler::compiler::{compile_file, DefaultCompilerOpts, STANDARD_MACROS};
+use chialisp::compiler::comptypes::{CompileErr, CompilerOpts, HasCompilerOptsDelegation};
 use chialisp::compiler::debug::build_symbol_table_mut;
-use chialisp::compiler::dialect::AcceptedDialect;
+use chialisp::compiler::dialect::{AcceptedDialect, DialectDescription, KNOWN_DIALECTS};
 use chialisp::compiler::frontend::frontend;
 use chialisp::compiler::sexp::{decode_string, parse_sexp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -28,6 +29,88 @@ thread_local! {
     static ARM_GDB_STUBS: RefCell<HashMap<i32, RefCell<CallbackGdbStub>>> = {
         RefCell::new(HashMap::new())
     };
+}
+
+#[derive(Clone)]
+struct ArmGdbCompilerOpts {
+    opts: Rc<dyn CompilerOpts>,
+    include_paths: Vec<String>,
+    file_reader: js_sys::Function,
+    known_dialects: Rc<HashMap<String, DialectDescription>>,
+}
+
+impl ArmGdbCompilerOpts {
+    fn read_file(&self, name: &str) -> Option<String> {
+        self.file_reader
+            .call1(&JsValue::null(), &JsValue::from_str(name))
+            .ok()
+            .and_then(|value| {
+                if value.is_null() || value.is_undefined() {
+                    None
+                } else {
+                    value.as_string()
+                }
+            })
+    }
+}
+
+impl HasCompilerOptsDelegation for ArmGdbCompilerOpts {
+    fn compiler_opts(&self) -> Rc<dyn CompilerOpts> {
+        self.opts.clone()
+    }
+
+    fn update_compiler_opts<F: FnOnce(Rc<dyn CompilerOpts>) -> Rc<dyn CompilerOpts>>(
+        &self,
+        f: F,
+    ) -> Rc<dyn CompilerOpts> {
+        Rc::new(ArmGdbCompilerOpts {
+            opts: f(self.opts.clone()),
+            ..self.clone()
+        })
+    }
+
+    fn override_read_new_file(
+        &self,
+        inc_from: String,
+        filename: String,
+    ) -> Result<(String, Vec<u8>), CompileErr> {
+        if filename == "*macros*" {
+            return Ok((filename, STANDARD_MACROS.clone().into()));
+        } else if let Some(content) = self.known_dialects.get(&filename) {
+            return Ok((filename, content.content.as_bytes().to_vec()));
+        }
+
+        if Path::new(&filename).is_absolute() {
+            if let Some(content) = self.read_file(&filename) {
+                return Ok((filename, content.into_bytes()));
+            }
+        }
+
+        for include_path in self.include_paths.iter() {
+            if let Some(candidate) = Path::new(include_path)
+                .join(&filename)
+                .to_str()
+                .map(|s| s.to_string())
+            {
+                if let Some(content) = self.read_file(&candidate) {
+                    return Ok((candidate, content.into_bytes()));
+                }
+            }
+        }
+
+        Err(CompileErr(
+            Srcloc::start(&inc_from),
+            format!("could not find {filename} to include"),
+        ))
+    }
+
+    fn override_set_search_paths(&self, new_paths: &[String]) -> Rc<dyn CompilerOpts> {
+        Rc::new(ArmGdbCompilerOpts {
+            opts: self.opts.set_search_paths(new_paths),
+            include_paths: new_paths.to_vec(),
+            ..self.clone()
+        })
+    }
 }
 
 fn next_arm_gdb_id() -> i32 {
@@ -47,6 +130,8 @@ fn build_elf(
     program_path: &str,
     program: &str,
     run_arg: &str,
+    include_paths: Vec<String>,
+    file_reader: js_sys::Function,
     elf_output_name: &str,
 ) -> Result<(Vec<u8>, Rc<HashMap<String, String>>), String> {
     let srcloc = Srcloc::start(program_path);
@@ -59,7 +144,6 @@ fn build_elf(
     let mut allocator = Allocator::new();
     let mut symbol_table = HashMap::new();
     let runner: Rc<dyn TRunProgram> = Rc::new(DefaultProgramRunner::new());
-    let search_paths = vec![];
     let opts = Rc::new(DefaultCompilerOpts::new(program_path))
         .set_dialect(AcceptedDialect {
             stepping: Some(23),
@@ -68,8 +152,14 @@ fn build_elf(
             extra_numeric_constants: false,
         })
         .set_optimize(true)
-        .set_search_paths(&search_paths)
+        .set_search_paths(&include_paths)
         .set_frontend_opt(false);
+    let opts: Rc<dyn CompilerOpts> = Rc::new(ArmGdbCompilerOpts {
+        opts,
+        include_paths,
+        file_reader,
+        known_dialects: Rc::new(KNOWN_DIALECTS.clone()),
+    });
 
     let parsed_program = parse_sexp(srcloc.clone(), program.bytes())
         .map_err(|(loc, e)| format!("failed to parse chialisp program at {loc}: {e}"))?;
@@ -107,10 +197,24 @@ pub fn arm_gdb_build_program(
     program_path: String,
     program: String,
     run_arg: String,
+    include_paths_json: String,
+    file_reader: &JsValue,
     elf_output_name: String,
 ) -> Result<JsValue, JsValue> {
-    let (elf, symbols) =
-        build_elf(&program_path, &program, &run_arg, &elf_output_name).map_err(js_error)?;
+    let include_paths: Vec<String> = serde_json::from_str(&include_paths_json).map_err(js_error)?;
+    let file_reader = file_reader
+        .dyn_ref::<js_sys::Function>()
+        .ok_or_else(|| js_error("file_reader must be a function"))?
+        .clone();
+    let (elf, symbols) = build_elf(
+        &program_path,
+        &program,
+        &run_arg,
+        include_paths,
+        file_reader,
+        &elf_output_name,
+    )
+    .map_err(js_error)?;
     let symbols_json = serde_json::to_string(symbols.as_ref()).map_err(js_error)?;
     let result = Object::new();
 

@@ -53,6 +53,54 @@ function getRunArg(runArgsJson) {
     return '()';
 }
 
+function readChialispJson(workspace) {
+    const configPath = path.join(workspace, 'chialisp.json');
+    try {
+        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {
+        if (e && e.code === 'ENOENT') {
+            return {};
+        }
+
+        throw e;
+    }
+}
+
+function getIncludePaths(workspace, programPath) {
+    const config = readChialispJson(workspace);
+    const configuredPaths = Array.isArray(config.include_paths) ? config.include_paths : [];
+    const includePaths = [path.dirname(programPath)];
+
+    for (const includePath of configuredPaths) {
+        if (typeof includePath !== 'string') {
+            continue;
+        }
+
+        if (path.isAbsolute(includePath)) {
+            includePaths.push(includePath);
+        } else {
+            includePaths.push(path.resolve(workspace, includePath));
+        }
+    }
+
+    return Array.from(new Set(includePaths));
+}
+
+function makeFileReader(workspace) {
+    return (filename) => {
+        const candidates = path.isAbsolute(filename) ? [filename] : [path.resolve(workspace, filename)];
+        for (const candidate of candidates) {
+            try {
+                return fs.readFileSync(candidate, 'utf8');
+            } catch (_e) {
+                // Try the next candidate.
+            }
+        }
+
+        return null;
+    };
+}
+
 function requiredArgs(args) {
     for (const required of ['workspace', 'program', 'run-args-json', 'elf-out', 'port']) {
         if (!args[required]) {
@@ -64,7 +112,15 @@ function requiredArgs(args) {
 function writeGeneratedElf(wasm, args) {
     const program = fs.readFileSync(args.program, 'utf8');
     const runArg = getRunArg(args['run-args-json']);
-    const built = wasm.arm_gdb_build_program(args.program, program, runArg, args['elf-out']);
+    const includePaths = getIncludePaths(args.workspace, args.program);
+    const built = wasm.arm_gdb_build_program(
+        args.program,
+        program,
+        runArg,
+        JSON.stringify(includePaths),
+        makeFileReader(args.workspace),
+        args['elf-out']
+    );
     const elf = Buffer.from(built.elf);
 
     fs.mkdirSync(path.dirname(args['elf-out']), { recursive: true });
