@@ -21,6 +21,7 @@ import {
 import { TextDecoder, TextEncoder } from 'util';
 import { languageActivate, languageDeactivate } from './lsp';
 import { debuggerActivate, debuggerDeactivate } from './dbg';
+import { armGdbDebugActivate } from './armGdbDebug';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the c`ommand is executed
@@ -47,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.workspace.registerTextDocumentContentProvider('chialisp-schema', new SchemaProvider());
     languageActivate(context);
     debuggerActivate(context);
+    armGdbDebugActivate(context);
 }
 
 // this method is called when your extension is deactivated

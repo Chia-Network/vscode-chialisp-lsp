@@ -15,6 +15,7 @@
     "activationEvents": [
         "onLanguage:chialisp",
         "onCommand:chialisp.startDebug",
+        "onCommand:chialisp.prepareArmGdbDebug",
         "onDebug",
         "onDebugResolve:chialisp",
         "workspaceContains:chialisp.json",
@@ -71,6 +72,11 @@
             {
                 "command": "chialisp.startDebug",
                 "title": "Start Chialisp Debug"
+            },
+            {
+                "command": "chialisp.prepareArmGdbDebug",
+                "title": "Prepare ARM GDB Chialisp Debug",
+                "category": "Chialisp"
             }
         ],
         "menus": {
@@ -78,6 +84,10 @@
                 {
                     "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
                     "command": "chialisp.startDebug"
+                },
+                {
+                    "when": "resourceFilename =~ /\\.clsp$/ || resourceFilename =~ /\\.clvm$/",
+                    "command": "chialisp.prepareArmGdbDebug"
                 }
             ]
         },
