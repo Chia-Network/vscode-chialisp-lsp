@@ -307,6 +307,8 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         request: 'launch',
         program: elfWorkspacePath,
         cwd: workspaceVar,
+        // cppdbg requires this exact launch.json spelling.
+        // eslint-disable-next-line @typescript-eslint/naming-convention
         MIMode: 'gdb',
         miDebuggerPath: 'node',
         miDebuggerArgs,
