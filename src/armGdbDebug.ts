@@ -260,7 +260,10 @@ function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbCo
             cwd: armContext.workspaceRoot,
             env: {
                 ...process.env,
+                // Electron uses these exact environment variable names to run as Node.
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 ELECTRON_RUN_AS_NODE: '1',
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
             },
         });
