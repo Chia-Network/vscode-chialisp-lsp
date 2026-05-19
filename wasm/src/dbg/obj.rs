@@ -398,7 +398,10 @@ fn test_simple_find_location_classic_symbols_1() {
         "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
     let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
-    let compiled = frontend(opts, &parsed).expect("should compile");
+    let compiled = frontend(opts, &parsed)
+        .expect("should compile")
+        .compileform()
+        .clone();
     let breakpoint_spec = SourceBreakpoint {
         column: Some(0),
         condition: None,
@@ -632,7 +635,7 @@ fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(Some(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled.compileform().clone()));
     }
 
     let mut parsed_program = if inputs.is_hex {

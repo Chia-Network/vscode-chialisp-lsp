@@ -177,7 +177,8 @@ pub fn arm_gdb_stub_incoming_data(stub_id: i32, data: Vec<u8>) -> Result<(), JsV
         let stub = borrowed
             .get(&stub_id)
             .ok_or_else(|| js_error(format!("unknown ARM GDB stub id {stub_id}")))?;
-        stub.borrow_mut().incoming_data(&data).map_err(js_error)
+        let result = stub.borrow_mut().incoming_data(&data).map_err(js_error);
+        result
     })
 }
 
@@ -188,7 +189,8 @@ pub fn arm_gdb_stub_interrupt(stub_id: i32) -> Result<(), JsValue> {
         let stub = borrowed
             .get(&stub_id)
             .ok_or_else(|| js_error(format!("unknown ARM GDB stub id {stub_id}")))?;
-        stub.borrow_mut().interrupt().map_err(js_error)
+        let result = stub.borrow_mut().interrupt().map_err(js_error);
+        result
     })
 }
 
@@ -199,10 +201,11 @@ pub fn arm_gdb_stub_disconnected(stub_id: i32) -> Result<Option<String>, JsValue
         let stub = borrowed
             .get(&stub_id)
             .ok_or_else(|| js_error(format!("unknown ARM GDB stub id {stub_id}")))?;
-        Ok(stub
+        let result = Ok(stub
             .borrow()
             .disconnected()
-            .map(|reason| format!("{reason:?}")))
+            .map(|reason| format!("{reason:?}")));
+        result
     })
 }
 

@@ -537,6 +537,7 @@ pub fn build_semantic_tokens(
                     mac.program.exp.clone(),
                 );
             }
+            HelperForm::Defnamespace(_) | HelperForm::Defnsref(_) => {}
         }
     }
 

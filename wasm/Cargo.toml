@@ -17,8 +17,8 @@ crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-chialisp = "0.4.4"
-clvmr = "0.16.4"
+chialisp = "=0.4.4"
+clvmr = "=0.16.4"
 clvm_to_arm_chialisp = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
 clvm_to_arm_emulate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
 clvm_to_arm_generate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
