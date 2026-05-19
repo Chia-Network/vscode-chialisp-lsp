@@ -8,7 +8,6 @@ import { extensionName, publisher } from './constants';
 import { log } from './logger';
 
 const WEB_GDB_NODE_REPO = 'https://github.com/prozacchiwawa/web-gdb-node.git';
-const CLVM_ARM_JIT_REPO = 'https://github.com/prozacchiwawa/clvm_arm_jit.git';
 const DEBUG_WORK_DIR = '.chialisp-debug';
 
 interface ChialispJson {
@@ -22,7 +21,6 @@ interface ArmGdbContext {
     workspaceRoot: string;
     workDir: string;
     webGdbDir: string;
-    armJitDir: string;
     buildDir: string;
     elfPath: string;
     port: number;
@@ -180,7 +178,6 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
 
     const workDir = path.join(workspaceRoot, DEBUG_WORK_DIR);
     const webGdbDir = path.join(workDir, 'web-gdb-node');
-    const armJitDir = path.join(workDir, 'clvm_arm_jit');
     const buildDir = path.join(workDir, 'build');
     const safeBaseName = path.basename(programPath).replace(/[^a-zA-Z0-9_.-]/g, '_');
     const elfPath = path.join(buildDir, `${safeBaseName}.arm.elf`);
@@ -188,7 +185,6 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
 
     await fs.promises.mkdir(buildDir, { recursive: true });
     await ensureRepo(webGdbDir, WEB_GDB_NODE_REPO, workDir);
-    await ensureRepo(armJitDir, CLVM_ARM_JIT_REPO, workDir);
 
     return {
         folder,
@@ -196,7 +192,6 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
         workspaceRoot,
         workDir,
         webGdbDir,
-        armJitDir,
         buildDir,
         elfPath,
         port,
@@ -215,8 +210,6 @@ function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbCo
         servicePath,
         '--workspace',
         armContext.workspaceRoot,
-        '--clvm-arm-jit',
-        armContext.armJitDir,
         '--program',
         armContext.programPath,
         '--run-args-json',
@@ -384,7 +377,7 @@ export function armGdbDebugActivate(context: vscode.ExtensionContext) {
                 title: 'Preparing Chialisp ARM GDB debug launch',
                 cancellable: false,
             }, async (progress) => {
-                progress.report({ message: 'Downloading helper repositories' });
+                progress.report({ message: 'Downloading web-gdb-node' });
                 const armContext = await prepareContext(folder, selectedUri.fsPath);
                 if (!armContext) {
                     return undefined;
