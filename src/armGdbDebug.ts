@@ -23,6 +23,7 @@ interface ArmGdbContext {
     webGdbDir: string;
     buildDir: string;
     elfPath: string;
+    nodeWrapperPath: string;
     port: number;
     runArgs: string[];
 }
@@ -40,6 +41,10 @@ function getOutputChannel(): vscode.OutputChannel {
 
 function quoteArg(value: string): string {
     return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+function quoteSh(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function toWorkspaceSlashPath(workspaceRoot: string, filePath: string): string {
@@ -115,6 +120,34 @@ async function ensureRepo(repoPath: string, repoUrl: string, parentDir: string):
     await runProcess('git', ['-C', repoPath, 'submodule', 'update', '--init', '--recursive'], parentDir);
 }
 
+async function writeNodeWrapper(workDir: string): Promise<string> {
+    const wrapperPath = path.join(workDir, process.platform === 'win32' ? 'vscode-node.cmd' : 'vscode-node');
+    const executable = process.execPath;
+
+    if (process.platform === 'win32') {
+        const content = [
+            '@echo off',
+            'set ELECTRON_RUN_AS_NODE=1',
+            'set ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
+            `"${executable}" %*`,
+            '',
+        ].join('\r\n');
+        await fs.promises.writeFile(wrapperPath, content, 'utf8');
+    } else {
+        const content = [
+            '#!/bin/sh',
+            'export ELECTRON_RUN_AS_NODE=1',
+            'export ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
+            `exec ${quoteSh(executable)} "$@"`,
+            '',
+        ].join('\n');
+        await fs.promises.writeFile(wrapperPath, content, { encoding: 'utf8', mode: 0o755 });
+        await fs.promises.chmod(wrapperPath, 0o755);
+    }
+
+    return wrapperPath;
+}
+
 async function readChialispJson(jsonPath: string): Promise<ChialispJson> {
     try {
         const content = await fs.promises.readFile(jsonPath, 'utf8');
@@ -184,6 +217,7 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
     const port = await reservePort();
 
     await fs.promises.mkdir(buildDir, { recursive: true });
+    const nodeWrapperPath = await writeNodeWrapper(workDir);
     await ensureRepo(webGdbDir, WEB_GDB_NODE_REPO, workDir);
 
     return {
@@ -194,6 +228,7 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
         webGdbDir,
         buildDir,
         elfPath,
+        nodeWrapperPath,
         port,
         runArgs,
     };
@@ -223,7 +258,11 @@ function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbCo
     return new Promise((resolve, reject) => {
         const child = spawn(process.execPath, args, {
             cwd: armContext.workspaceRoot,
-            env: process.env,
+            env: {
+                ...process.env,
+                ELECTRON_RUN_AS_NODE: '1',
+                ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
+            },
         });
         runningStub = child;
 
@@ -282,6 +321,7 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
     const elfWorkspacePath = `${workspaceVar}/${elfRel}`;
     const guestElfPath = `/mnt/${elfRel}`;
     const runnerPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, path.join(armContext.webGdbDir, 'src', 'runner.js'))}`;
+    const nodeWrapperPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, armContext.nodeWrapperPath)}`;
     const name = `Chialisp ARM GDB: ${path.basename(armContext.programPath)}`;
     const miDebuggerArgs = [
         quoteArg(runnerPath),
@@ -303,7 +343,7 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         // cppdbg requires this exact launch.json spelling.
         // eslint-disable-next-line @typescript-eslint/naming-convention
         MIMode: 'gdb',
-        miDebuggerPath: 'node',
+        miDebuggerPath: nodeWrapperPath,
         miDebuggerArgs,
         stopAtEntry: true,
         externalConsole: false,
