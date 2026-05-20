@@ -148,8 +148,20 @@ function startTcpBridge(wasm, args, built) {
         throw new Error(`invalid --port ${args.port}`);
     }
 
+    let shuttingDown = false;
     const server = net.createServer((socket) => {
         let stubId;
+        let exitCode = 0;
+        const shutdown = () => {
+            if (shuttingDown) {
+                return;
+            }
+
+            shuttingDown = true;
+            destroyStub(wasm, stubId);
+            server.close(() => process.exit(exitCode));
+            setTimeout(() => process.exit(exitCode), 1000).unref();
+        };
         const writeToSocket = (bytes) => {
             if (!socket.destroyed) {
                 socket.write(Buffer.from(bytes));
@@ -160,6 +172,7 @@ function startTcpBridge(wasm, args, built) {
             stubId = wasm.create_arm_gdb_stub(built.elf, built.symbolsJson, writeToSocket);
         } catch (e) {
             console.error(e && e.stack ? e.stack : String(e));
+            exitCode = 1;
             socket.destroy();
             return;
         }
@@ -169,17 +182,18 @@ function startTcpBridge(wasm, args, built) {
                 wasm.arm_gdb_stub_incoming_data(stubId, chunk);
             } catch (e) {
                 console.error(e && e.stack ? e.stack : String(e));
+                exitCode = 1;
                 socket.destroy();
             }
         });
 
         socket.on('close', () => {
-            destroyStub(wasm, stubId);
+            shutdown();
         });
 
         socket.on('error', (e) => {
             console.error(e && e.stack ? e.stack : String(e));
-            destroyStub(wasm, stubId);
+            exitCode = 1;
         });
     });
 
