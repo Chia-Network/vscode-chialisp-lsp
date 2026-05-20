@@ -11,6 +11,10 @@ license = "MIT"
 keywords = ["chia", "chialisp", "clvm"]
 categories = ["command-line-utilities"]
 
+[package.metadata.wasm-pack.profile.release]
+# Option 1: Disable completely
+wasm-opt = false
+
 [lib]
 name = "clvm_tools_lsp"
 crate-type = ["cdylib"]
