@@ -102,7 +102,7 @@ function makeFileReader(workspace) {
 }
 
 function requiredArgs(args) {
-    for (const required of ['workspace', 'program', 'run-args-json', 'elf-out', 'port']) {
+    for (const required of ['workspace', 'program', 'run-args-json', 'elf-out', 'synthetic-source-out', 'port']) {
         if (!args[required]) {
             throw new Error(`missing --${required}`);
         }
@@ -122,12 +122,16 @@ function writeGeneratedElf(wasm, args) {
         args['elf-out']
     );
     const elf = Buffer.from(built.elf);
+    const syntheticSource = built.syntheticSource || '';
 
     fs.mkdirSync(path.dirname(args['elf-out']), { recursive: true });
     fs.writeFileSync(args['elf-out'], elf);
+    fs.mkdirSync(path.dirname(args['synthetic-source-out']), { recursive: true });
+    fs.writeFileSync(args['synthetic-source-out'], syntheticSource, 'utf8');
 
     return {
         elf,
+        syntheticSource,
         symbolsJson: built.symbolsJson,
     };
 }

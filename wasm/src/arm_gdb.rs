@@ -133,7 +133,7 @@ fn build_elf(
     include_paths: Vec<String>,
     file_reader: js_sys::Function,
     elf_output_name: &str,
-) -> Result<(Vec<u8>, Rc<HashMap<String, String>>), String> {
+) -> Result<(Vec<u8>, String, Rc<HashMap<String, String>>), String> {
     let srcloc = Srcloc::start(program_path);
     let env_parsed = parse_sexp(srcloc.clone(), run_arg.bytes())
         .map_err(|(loc, e)| format!("failed to parse run_args at {loc}: {e}"))?;
@@ -189,7 +189,7 @@ fn build_elf(
     )?;
     let elf_data = generator.to_elf(elf_output_name)?;
 
-    Ok((elf_data.object_file, symbols))
+    Ok((elf_data.object_file, elf_data.synthetic_source, symbols))
 }
 
 #[wasm_bindgen]
@@ -206,7 +206,7 @@ pub fn arm_gdb_build_program(
         .dyn_ref::<js_sys::Function>()
         .ok_or_else(|| js_error("file_reader must be a function"))?
         .clone();
-    let (elf, symbols) = build_elf(
+    let (elf, synthetic_source, symbols) = build_elf(
         &program_path,
         &program,
         &run_arg,
@@ -227,6 +227,11 @@ pub fn arm_gdb_build_program(
         &result,
         &JsValue::from_str("symbolsJson"),
         &JsValue::from_str(&symbols_json),
+    )?;
+    Reflect::set(
+        &result,
+        &JsValue::from_str("syntheticSource"),
+        &JsValue::from_str(&synthetic_source),
     )?;
 
     Ok(result.into())

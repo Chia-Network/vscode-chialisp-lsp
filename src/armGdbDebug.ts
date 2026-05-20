@@ -23,6 +23,7 @@ interface ArmGdbContext {
     webGdbDir: string;
     buildDir: string;
     elfPath: string;
+    syntheticSourcePath: string;
     nodeWrapperPath: string;
     port: number;
     runArgs: string[];
@@ -214,6 +215,7 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
     const buildDir = path.join(workDir, 'build');
     const safeBaseName = path.basename(programPath).replace(/[^a-zA-Z0-9_.-]/g, '_');
     const elfPath = path.join(buildDir, `${safeBaseName}.arm.elf`);
+    const syntheticSourcePath = `${elfPath}.clsp`;
     const port = await reservePort();
 
     await fs.promises.mkdir(buildDir, { recursive: true });
@@ -228,6 +230,7 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
         webGdbDir,
         buildDir,
         elfPath,
+        syntheticSourcePath,
         nodeWrapperPath,
         port,
         runArgs,
@@ -251,6 +254,8 @@ function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbCo
         JSON.stringify(armContext.runArgs),
         '--elf-out',
         armContext.elfPath,
+        '--synthetic-source-out',
+        armContext.syntheticSourcePath,
         '--port',
         armContext.port.toString(),
     ];
@@ -319,9 +324,11 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
     const vscodeDir = path.join(armContext.workspaceRoot, '.vscode');
     const launchPath = path.join(vscodeDir, 'launch.json');
     const elfRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.elfPath);
+    const syntheticSourceRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.syntheticSourcePath);
     const programRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.programPath);
     const workspaceVar = '${workspaceFolder}';
     const elfWorkspacePath = `${workspaceVar}/${elfRel}`;
+    const syntheticSourceWorkspacePath = `${workspaceVar}/${syntheticSourceRel}`;
     const guestElfPath = `/mnt/${elfRel}`;
     const runnerPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, path.join(armContext.webGdbDir, 'src', 'runner.js'))}`;
     const nodeWrapperPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, armContext.nodeWrapperPath)}`;
@@ -334,6 +341,8 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         quoteArg(workspaceVar),
         '--import-file',
         quoteArg(elfWorkspacePath),
+        '--import-file',
+        quoteArg(syntheticSourceWorkspacePath),
         '--interpreter=mi',
     ].join(' ');
 
