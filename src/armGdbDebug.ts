@@ -41,7 +41,7 @@ function getOutputChannel(): vscode.OutputChannel {
 }
 
 function quoteArg(value: string): string {
-    return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+    return value; // `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
 function quoteSh(value: string): string {
@@ -343,7 +343,6 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         quoteArg(elfWorkspacePath),
         '--import-file',
         quoteArg(syntheticSourceWorkspacePath),
-        '--interpreter=mi',
     ].join(' ');
 
     const configuration: vscode.DebugConfiguration = {
