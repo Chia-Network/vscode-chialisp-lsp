@@ -43,11 +43,29 @@ function getOutputChannel(): vscode.OutputChannel {
 }
 
 function quoteArg(value: string): string {
-    if (!/[\s"]/.test(value)) {
+    if (value.length > 0 && !/[\s"]/.test(value)) {
         return value;
     }
 
-    return `"${value.replace(/"/g, '\\"')}"`;
+    let result = '"';
+    let backslashes = 0;
+    for (const char of value) {
+        if (char === '\\') {
+            backslashes += 1;
+        } else if (char === '"') {
+            result += '\\'.repeat(backslashes * 2 + 1);
+            result += char;
+            backslashes = 0;
+        } else {
+            result += '\\'.repeat(backslashes);
+            result += char;
+            backslashes = 0;
+        }
+    }
+
+    result += '\\'.repeat(backslashes * 2);
+    result += '"';
+    return result;
 }
 
 function quoteSh(value: string): string {
