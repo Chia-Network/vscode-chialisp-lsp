@@ -9,7 +9,8 @@ import { log } from './logger';
 
 const WEB_GDB_NODE_REPO = 'https://github.com/prozacchiwawa/web-gdb-node.git';
 const DEBUG_WORK_DIR = '.chialisp-debug';
-const GDB_SCRIPT_RESOURCE_PATH = path.join('wasm', 'resources', 'gdb.sh');
+const GDB_SEXP_PRINTER_RESOURCE_PATH = path.join('wasm', 'resources', 'gdb_print_sexp.py');
+const GDB_SEXP_PRINTER_GUEST_PATH = '/mnt/gdb_print_sexp.py';
 
 interface ChialispJson {
     run_args?: string[] | string; // eslint-disable-line @typescript-eslint/naming-convention
@@ -354,7 +355,7 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
     const elfRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.elfPath);
     const syntheticSourceRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.syntheticSourcePath);
     const programRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.programPath);
-    const gdbScriptResourcePath = path.join(extensionPath, GDB_SCRIPT_RESOURCE_PATH);
+    const gdbSexpPrinterResourcePath = path.join(extensionPath, GDB_SEXP_PRINTER_RESOURCE_PATH);
     const workspaceVar = '${workspaceFolder}';
     const elfWorkspacePath = `${workspaceVar}/${elfRel}`;
     const syntheticSourceWorkspacePath = `${workspaceVar}/${syntheticSourceRel}`;
@@ -373,10 +374,11 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
         '--import-file',
         quoteArg(syntheticSourceWorkspacePath),
         '--import-file',
-        quoteArg(gdbScriptResourcePath),
+        quoteArg(gdbSexpPrinterResourcePath),
     ];
     const gdbExCommands = [
         `file ${guestElfPath}`,
+        `source ${GDB_SEXP_PRINTER_GUEST_PATH}`,
         'dir /mnt',
         'target remote /dev/ttyS1',
     ];
