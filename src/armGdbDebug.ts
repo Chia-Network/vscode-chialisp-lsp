@@ -9,6 +9,7 @@ import { log } from './logger';
 
 const WEB_GDB_NODE_REPO = 'https://github.com/prozacchiwawa/web-gdb-node.git';
 const DEBUG_WORK_DIR = '.chialisp-debug';
+const GDB_SCRIPT_RESOURCE_PATH = path.join('wasm', 'resources', 'gdb.sh');
 
 interface ChialispJson {
     run_args?: string[] | string; // eslint-disable-line @typescript-eslint/naming-convention
@@ -41,7 +42,11 @@ function getOutputChannel(): vscode.OutputChannel {
 }
 
 function quoteArg(value: string): string {
-    return value; // `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+    if (!/[\s"]/.test(value)) {
+        return value;
+    }
+
+    return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function quoteSh(value: string): string {
@@ -128,9 +133,23 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
     if (process.platform === 'win32') {
         const content = [
             '@echo off',
+            'setlocal EnableExtensions EnableDelayedExpansion',
             'set ELECTRON_RUN_AS_NODE=1',
             'set ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
-            `"${executable}" %*`,
+            `set "NODE_EXECUTABLE=${executable}"`,
+            'set "FILTERED_ARGS="',
+            ':filter_args',
+            'if "%~1"=="" goto run_node',
+            'if "%~1"=="--interpreter=mi" (',
+            '    shift',
+            '    goto filter_args',
+            ')',
+            'set "FILTERED_ARGS=!FILTERED_ARGS! ^"%~1^""',
+            'shift',
+            'goto filter_args',
+            ':run_node',
+            '"%NODE_EXECUTABLE%" %FILTERED_ARGS%',
+            'exit /b %ERRORLEVEL%',
             '',
         ].join('\r\n');
         await fs.promises.writeFile(wrapperPath, content, 'utf8');
@@ -139,6 +158,15 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
             '#!/bin/sh',
             'export ELECTRON_RUN_AS_NODE=1',
             'export ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
+            'arg_count=$#',
+            'while [ "$arg_count" -gt 0 ]; do',
+            '    arg=$1',
+            '    shift',
+            '    arg_count=$((arg_count - 1))',
+            '    if [ "$arg" != "--interpreter=mi" ]; then',
+            '        set -- "$@" "$arg"',
+            '    fi',
+            'done',
             `exec ${quoteSh(executable)} "$@"`,
             '',
         ].join('\n');
@@ -320,20 +348,21 @@ function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbCo
     });
 }
 
-async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugConfiguration> {
+async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string): Promise<vscode.DebugConfiguration> {
     const vscodeDir = path.join(armContext.workspaceRoot, '.vscode');
     const launchPath = path.join(vscodeDir, 'launch.json');
     const elfRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.elfPath);
     const syntheticSourceRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.syntheticSourcePath);
     const programRel = toWorkspaceSlashPath(armContext.workspaceRoot, armContext.programPath);
+    const gdbScriptResourcePath = path.join(extensionPath, GDB_SCRIPT_RESOURCE_PATH);
     const workspaceVar = '${workspaceFolder}';
     const elfWorkspacePath = `${workspaceVar}/${elfRel}`;
     const syntheticSourceWorkspacePath = `${workspaceVar}/${syntheticSourceRel}`;
-    const guestElfPath = `/mnt/${elfRel}`;
+    const guestElfPath = `/mnt/${path.basename(armContext.elfPath)}`;
     const runnerPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, path.join(armContext.webGdbDir, 'src', 'runner.js'))}`;
     const nodeWrapperPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, armContext.nodeWrapperPath)}`;
     const name = `Chialisp ARM GDB: ${path.basename(armContext.programPath)}`;
-    const miDebuggerArgs = [
+    const miDebuggerArgsParts = [
         quoteArg(runnerPath),
         '--gdb-server',
         `localhost:${armContext.port}`,
@@ -343,7 +372,18 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         quoteArg(elfWorkspacePath),
         '--import-file',
         quoteArg(syntheticSourceWorkspacePath),
-    ].join(' ');
+        '--import-file',
+        quoteArg(gdbScriptResourcePath),
+    ];
+    const gdbExCommands = [
+        `file ${guestElfPath}`,
+        'dir /mnt',
+        'target remote /dev/ttyS1',
+    ];
+    for (const command of gdbExCommands) {
+        miDebuggerArgsParts.push('--ex', quoteArg(command));
+    }
+    const miDebuggerArgs = miDebuggerArgsParts.join(' ');
 
     const configuration: vscode.DebugConfiguration = {
         name,
@@ -358,11 +398,8 @@ async function writeLaunchJson(armContext: ArmGdbContext): Promise<vscode.DebugC
         miDebuggerArgs,
         stopAtEntry: true,
         externalConsole: false,
-        customLaunchSetupCommands: [
-            { text: '-gdb-set architecture arm', description: 'Select ARM architecture' },
-            { text: `-file-exec-and-symbols ${guestElfPath}`, description: 'Load generated Chialisp ARM ELF symbols' },
-            { text: '-target-select remote /dev/ttyS1', description: 'Connect to web-gdb-node serial GDB bridge' },
-        ],
+        // GDB starts inside web-gdb-node with --ex commands, so cppdbg should not send a second launch sequence.
+        customLaunchSetupCommands: [],
         launchCompleteCommand: 'None',
         chialispProgram: `${workspaceVar}/${programRel}`,
         chialispRunArgs: armContext.runArgs,
@@ -438,7 +475,7 @@ export function armGdbDebugActivate(context: vscode.ExtensionContext) {
                 await startStubService(context, armContext);
 
                 progress.report({ message: 'Writing .vscode/launch.json' });
-                return writeLaunchJson(armContext);
+                return writeLaunchJson(armContext, context.extensionPath);
             });
 
             if (configuration) {
