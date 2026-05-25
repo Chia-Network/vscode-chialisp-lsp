@@ -241,6 +241,13 @@ async function ensureWebGdbRepo(runnerPath) {
     await runProcess('git', ['-C', repoPath, 'submodule', 'update', '--init', '--recursive'], parentDir);
 }
 
+function electronNodeEnv() {
+    const env = { ...process.env };
+    env.ELECTRON_RUN_AS_NODE = '1';
+    env.ATOM_SHELL_INTERNAL_RUN_AS_NODE = '1';
+    return env;
+}
+
 function startStubService(metadata, requestedPort) {
     const servicePath = path.join(__dirname, 'gdb_stub_service.js');
     const args = [
@@ -261,11 +268,7 @@ function startStubService(metadata, requestedPort) {
 
     const child = childProcess.spawn(process.execPath, args, {
         cwd: metadata.workspace,
-        env: {
-            ...process.env,
-            ELECTRON_RUN_AS_NODE: '1',
-            ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
-        },
+        env: electronNodeEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -386,11 +389,7 @@ function buildWebGdbArgs(parsed, endpoint) {
 function spawnDebugger(command, args, cwd) {
     return childProcess.spawn(command, args, {
         cwd,
-        env: {
-            ...process.env,
-            ELECTRON_RUN_AS_NODE: '1',
-            ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
-        },
+        env: electronNodeEnv(),
         stdio: 'inherit',
     });
 }
