@@ -139,6 +139,7 @@ function runProcess(command: string, args: string[], cwd: string): Promise<void>
 async function ensureRepo(repoPath: string, repoUrl: string, parentDir: string): Promise<void> {
     if (!repoExists(repoPath)) {
         await runProcess('git', ['clone', '--recurse-submodules', repoUrl, repoPath], parentDir);
+	await runProcess('git', ['checkout', '20260525-test-mi-interp'], `${parentDir}/web-gdb-node`);
         return;
     }
 
@@ -167,7 +168,7 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
             'shift',
             'goto filter_args',
             ':run_node',
-            '"%NODE_EXECUTABLE%" %FILTERED_ARGS%',
+            '"%NODE_EXECUTABLE%" %FILTERED_ARGS% --interpreter=mi',
             'exit /b %ERRORLEVEL%',
             '',
         ].join('\r\n');
@@ -175,6 +176,11 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
     } else {
         const content = [
             '#!/bin/sh',
+            'WHICH_GDB= \`which gdb-multiarch\`',
+            'if [ "x${WHICH_GDB}" != x ] ; then',
+            '    exec "${WHICH_GDB}" "${@}"',
+            'fi',
+            '',
             'export ELECTRON_RUN_AS_NODE=1',
             'export ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
             'arg_count=$#',
@@ -186,7 +192,7 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
             '        set -- "$@" "$arg"',
             '    fi',
             'done',
-            `exec ${quoteSh(executable)} "$@"`,
+            `exec ${quoteSh(executable)} "$@" "--interpreter=mi"`,
             '',
         ].join('\n');
         await fs.promises.writeFile(wrapperPath, content, { encoding: 'utf8', mode: 0o755 });
