@@ -144,7 +144,7 @@ function destroyStub(wasm, stubId) {
 
 function startTcpBridge(wasm, args, built) {
     const port = Number.parseInt(args.port, 10);
-    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
         throw new Error(`invalid --port ${args.port}`);
     }
 
@@ -203,7 +203,9 @@ function startTcpBridge(wasm, args, built) {
     });
 
     server.listen(port, '127.0.0.1', () => {
-        console.log(`CHIALISP_GDB_STUB_READY ${port}`);
+        const address = server.address();
+        const readyPort = address && typeof address !== 'string' ? address.port : port;
+        console.log(`CHIALISP_GDB_STUB_READY ${readyPort}`);
     });
 
     process.on('SIGTERM', () => server.close(() => process.exit(0)));

@@ -1,16 +1,13 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as net from 'net';
 import * as path from 'path';
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 
 import { extensionName, publisher } from './constants';
-import { log } from './logger';
 
-const WEB_GDB_NODE_REPO = 'https://github.com/prozacchiwawa/web-gdb-node.git';
 const DEBUG_WORK_DIR = '.chialisp-debug';
 const GDB_SEXP_PRINTER_RESOURCE_PATH = path.join('wasm', 'resources', 'gdb_print_sexp.py');
 const GDB_SEXP_PRINTER_GUEST_PATH = '/mnt/gdb_print_sexp.py';
+const GDB_DEBUG_LAUNCHER_PATH = path.join('scripts', 'arm-gdb', 'gdb_debug_launcher.js');
 
 interface ChialispJson {
     run_args?: string[] | string; // eslint-disable-line @typescript-eslint/naming-convention
@@ -27,11 +24,9 @@ interface ArmGdbContext {
     elfPath: string;
     syntheticSourcePath: string;
     nodeWrapperPath: string;
-    port: number;
     runArgs: string[];
 }
 
-let runningStub: ChildProcessWithoutNullStreams | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 
 function getOutputChannel(): vscode.OutputChannel {
@@ -105,50 +100,10 @@ function parseJsonWithLineComments(content: string): any {
     return JSON.parse(content.replace(/^\s*\/\/.*$/gm, ''));
 }
 
-function runProcess(command: string, args: string[], cwd: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {
-            cwd,
-            env: process.env,
-        });
-        let output = '';
-
-        child.stdout.on('data', (chunk: Buffer) => {
-            const text = chunk.toString('utf8');
-            output += text;
-            getOutputChannel().append(text);
-        });
-
-        child.stderr.on('data', (chunk: Buffer) => {
-            const text = chunk.toString('utf8');
-            output += text;
-            getOutputChannel().append(text);
-        });
-
-        child.once('error', reject);
-        child.once('exit', (code) => {
-            if (code === 0) {
-                resolve();
-            } else {
-                reject(new Error(`${command} ${args.join(' ')} exited with ${code}: ${output}`));
-            }
-        });
-    });
-}
-
-async function ensureRepo(repoPath: string, repoUrl: string, parentDir: string): Promise<void> {
-    if (!repoExists(repoPath)) {
-        await runProcess('git', ['clone', '--recurse-submodules', repoUrl, repoPath], parentDir);
-	await runProcess('git', ['checkout', '20260525-test-mi-interp'], `${parentDir}/web-gdb-node`);
-        return;
-    }
-
-    await runProcess('git', ['-C', repoPath, 'submodule', 'update', '--init', '--recursive'], parentDir);
-}
-
-async function writeNodeWrapper(workDir: string): Promise<string> {
+async function writeNodeWrapper(workDir: string, extensionPath: string): Promise<string> {
     const wrapperPath = path.join(workDir, process.platform === 'win32' ? 'vscode-node.cmd' : 'vscode-node');
     const executable = process.execPath;
+    const launcherPath = path.join(extensionPath, GDB_DEBUG_LAUNCHER_PATH);
 
     if (process.platform === 'win32') {
         const content = [
@@ -157,103 +112,20 @@ async function writeNodeWrapper(workDir: string): Promise<string> {
             'set ELECTRON_RUN_AS_NODE=1',
             'set ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
             `set "NODE_EXECUTABLE=${executable}"`,
-            'set "FILTERED_ARGS="',
-            ':filter_args',
-            'if "%~1"=="" goto run_node',
-            'if "%~1"=="--interpreter=mi" (',
-            '    shift',
-            '    goto filter_args',
-            ')',
-            'set "FILTERED_ARGS=!FILTERED_ARGS! ^"%~1^""',
-            'shift',
-            'goto filter_args',
-            ':run_node',
-            '"%NODE_EXECUTABLE%" %FILTERED_ARGS% --interpreter=mi',
+            `set "CHIALISP_GDB_LAUNCHER=${launcherPath}"`,
+            '"%NODE_EXECUTABLE%" "%CHIALISP_GDB_LAUNCHER%" %*',
             'exit /b %ERRORLEVEL%',
             '',
-        ].join('\r\n');
+        ].join(String.fromCharCode(13, 10));
         await fs.promises.writeFile(wrapperPath, content, 'utf8');
     } else {
         const content = [
             '#!/bin/sh',
-            'WHICH_GDB=$(command -v gdb-multiarch || true)',
-            'if [ -n "${WHICH_GDB}" ]; then',
-            '    gdb_server=',
-            '    arg_count=$#',
-            '    first_arg=1',
-            '    while [ "$arg_count" -gt 0 ]; do',
-            '        arg=$1',
-            '        shift',
-            '        arg_count=$((arg_count - 1))',
-            '        if [ "$first_arg" -eq 1 ]; then',
-            '            first_arg=0',
-            '            case "$arg" in',
-            '                */runner.js|runner.js)',
-            '                    continue',
-            '                    ;;',
-            '            esac',
-            '        fi',
-            '        case "$arg" in',
-            '            --gdb-server)',
-            '                if [ "$arg_count" -gt 0 ]; then',
-            '                    gdb_server=$1',
-            '                    shift',
-            '                    arg_count=$((arg_count - 1))',
-            '                fi',
-            '                ;;',
-            '            --gdb-server=*)',
-            '                gdb_server=${arg#--gdb-server=}',
-            '                ;;',
-            '            --workspace|--import-file)',
-            '                if [ "$arg_count" -gt 0 ]; then',
-            '                    shift',
-            '                    arg_count=$((arg_count - 1))',
-            '                fi',
-            '                ;;',
-            '            --workspace=*|--import-file=*)',
-            '                ;;',
-            '            --ex)',
-            '                if [ "$arg_count" -gt 0 ]; then',
-            '                    ex_command=$1',
-            '                    shift',
-            '                    arg_count=$((arg_count - 1))',
-            '                    if [ "$ex_command" = "target remote /dev/ttyS1" ] && [ -n "$gdb_server" ]; then',
-            '                        ex_command="target remote ${gdb_server}"',
-            '                    fi',
-            '                    set -- "$@" "--ex" "$ex_command"',
-            '                else',
-            '                    set -- "$@" "$arg"',
-            '                fi',
-            '                ;;',
-            '            --ex=*)',
-            '                ex_command=${arg#--ex=}',
-            '                if [ "$ex_command" = "target remote /dev/ttyS1" ] && [ -n "$gdb_server" ]; then',
-            '                    ex_command="target remote ${gdb_server}"',
-            '                fi',
-            '                set -- "$@" "--ex" "$ex_command"',
-            '                ;;',
-            '            *)',
-            '                set -- "$@" "$arg"',
-            '                ;;',
-            '        esac',
-            '    done',
-            '    exec "${WHICH_GDB}" "$@"',
-            'fi',
-            '',
             'export ELECTRON_RUN_AS_NODE=1',
             'export ATOM_SHELL_INTERNAL_RUN_AS_NODE=1',
-            'arg_count=$#',
-            'while [ "$arg_count" -gt 0 ]; do',
-            '    arg=$1',
-            '    shift',
-            '    arg_count=$((arg_count - 1))',
-            '    if [ "$arg" != "--interpreter=mi" ]; then',
-            '        set -- "$@" "$arg"',
-            '    fi',
-            'done',
-            `exec ${quoteSh(executable)} "$@" "--interpreter=mi"`,
+            `exec ${quoteSh(executable)} ${quoteSh(launcherPath)} "$@"`,
             '',
-        ].join('\n');
+        ].join(String.fromCharCode(10));
         await fs.promises.writeFile(wrapperPath, content, { encoding: 'utf8', mode: 0o755 });
         await fs.promises.chmod(wrapperPath, 0o755);
     }
@@ -298,24 +170,7 @@ async function getRunArgs(workspaceRoot: string): Promise<string[] | undefined> 
     return [input];
 }
 
-function reservePort(): Promise<number> {
-    return new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-            const address = server.address();
-            if (!address || typeof address === 'string') {
-                server.close(() => reject(new Error('could not reserve local TCP port')));
-                return;
-            }
-
-            const port = address.port;
-            server.close(() => resolve(port));
-        });
-    });
-}
-
-async function prepareContext(folder: vscode.WorkspaceFolder, programPath: string): Promise<ArmGdbContext | undefined> {
+async function prepareContext(folder: vscode.WorkspaceFolder, programPath: string, extensionPath: string): Promise<ArmGdbContext | undefined> {
     const workspaceRoot = folder.uri.fsPath;
     const runArgs = await getRunArgs(workspaceRoot);
     if (!runArgs) {
@@ -328,11 +183,13 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
     const safeBaseName = path.basename(programPath).replace(/[^a-zA-Z0-9_.-]/g, '_');
     const elfPath = path.join(buildDir, `${safeBaseName}.arm.elf`);
     const syntheticSourcePath = `${elfPath}.clsp`;
-    const port = await reservePort();
-
     await fs.promises.mkdir(buildDir, { recursive: true });
-    const nodeWrapperPath = await writeNodeWrapper(workDir);
-    await ensureRepo(webGdbDir, WEB_GDB_NODE_REPO, workDir);
+    // cppdbg can validate the program path before invoking the wrapper; the launcher overwrites these.
+    await Promise.all([
+        fs.promises.open(elfPath, 'a').then((file) => file.close()),
+        fs.promises.open(syntheticSourcePath, 'a').then((file) => file.close()),
+    ]);
+    const nodeWrapperPath = await writeNodeWrapper(workDir, extensionPath);
 
     return {
         folder,
@@ -344,92 +201,8 @@ async function prepareContext(folder: vscode.WorkspaceFolder, programPath: strin
         elfPath,
         syntheticSourcePath,
         nodeWrapperPath,
-        port,
         runArgs,
     };
-}
-
-function startStubService(context: vscode.ExtensionContext, armContext: ArmGdbContext): Promise<void> {
-    if (runningStub) {
-        runningStub.kill();
-        runningStub = undefined;
-    }
-
-    const servicePath = path.join(context.extensionPath, 'scripts', 'arm-gdb', 'gdb_stub_service.js');
-    const args = [
-        servicePath,
-        '--workspace',
-        armContext.workspaceRoot,
-        '--program',
-        armContext.programPath,
-        '--run-args-json',
-        JSON.stringify(armContext.runArgs),
-        '--elf-out',
-        armContext.elfPath,
-        '--synthetic-source-out',
-        armContext.syntheticSourcePath,
-        '--port',
-        armContext.port.toString(),
-    ];
-
-    return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, args, {
-            cwd: armContext.workspaceRoot,
-            env: {
-                ...process.env,
-                // Electron uses these exact environment variable names to run as Node.
-                // eslint-disable-next-line @typescript-eslint/naming-convention
-                ELECTRON_RUN_AS_NODE: '1',
-                // eslint-disable-next-line @typescript-eslint/naming-convention
-                ATOM_SHELL_INTERNAL_RUN_AS_NODE: '1',
-            },
-        });
-        runningStub = child;
-
-        let settled = false;
-        const timeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                reject(new Error('timed out waiting for the ARM GDB stub to become ready'));
-            }
-        }, 10 * 60 * 1000);
-
-        const finishReady = () => {
-            if (!settled) {
-                settled = true;
-                clearTimeout(timeout);
-                resolve();
-            }
-        };
-
-        const fail = (message: string) => {
-            if (!settled) {
-                settled = true;
-                clearTimeout(timeout);
-                reject(new Error(message));
-            }
-        };
-
-        child.stdout.on('data', (chunk: Buffer) => {
-            const text = chunk.toString('utf8');
-            getOutputChannel().append(text);
-            if (text.includes('CHIALISP_GDB_STUB_READY')) {
-                finishReady();
-            }
-        });
-
-        child.stderr.on('data', (chunk: Buffer) => {
-            getOutputChannel().append(chunk.toString('utf8'));
-        });
-
-        child.once('error', (err) => fail(err.message));
-        child.once('exit', (code) => {
-            runningStub = undefined;
-            if (code !== 0) {
-                fail(`ARM GDB stub exited with ${code}`);
-            }
-        });
-    });
 }
 
 async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string): Promise<vscode.DebugConfiguration> {
@@ -449,7 +222,19 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
     const miDebuggerArgsParts = [
         quoteArg(runnerPath),
         '--gdb-server',
-        `localhost:${armContext.port}`,
+        '127.0.0.1:0',
+        '--chialisp-workspace',
+        quoteArg(workspaceVar),
+        '--chialisp-program',
+        quoteArg(`${workspaceVar}/${programRel}`),
+        '--chialisp-run-args-json',
+        quoteArg(JSON.stringify(armContext.runArgs)),
+        '--chialisp-elf-out',
+        quoteArg(elfWorkspacePath),
+        '--chialisp-synthetic-source-out',
+        quoteArg(syntheticSourceWorkspacePath),
+        '--chialisp-gdb-printer',
+        quoteArg(gdbSexpPrinterResourcePath),
         '--workspace',
         quoteArg(workspaceVar),
         '--import-file',
@@ -516,15 +301,6 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
 }
 
 export function armGdbDebugActivate(context: vscode.ExtensionContext) {
-    context.subscriptions.push({
-        dispose: () => {
-            if (runningStub) {
-                runningStub.kill();
-                runningStub = undefined;
-            }
-        },
-    });
-
     context.subscriptions.push(
         vscode.commands.registerCommand(`${extensionName}.prepareArmGdbDebug`, async (uri?: vscode.Uri) => {
             const selectedUri = uri ?? vscode.window.activeTextEditor?.document.uri;
@@ -550,14 +326,11 @@ export function armGdbDebugActivate(context: vscode.ExtensionContext) {
                 title: 'Preparing Chialisp ARM GDB debug launch',
                 cancellable: false,
             }, async (progress) => {
-                progress.report({ message: 'Downloading web-gdb-node' });
-                const armContext = await prepareContext(folder, selectedUri.fsPath);
+                progress.report({ message: 'Preparing debug launch files' });
+                const armContext = await prepareContext(folder, selectedUri.fsPath, context.extensionPath);
                 if (!armContext) {
                     return undefined;
                 }
-
-                progress.report({ message: 'Building ELF and starting GDB stub' });
-                await startStubService(context, armContext);
 
                 progress.report({ message: 'Writing .vscode/launch.json' });
                 return writeLaunchJson(armContext, context.extensionPath);
@@ -565,7 +338,7 @@ export function armGdbDebugActivate(context: vscode.ExtensionContext) {
 
             if (configuration) {
                 void vscode.window.showInformationMessage(
-                    `Wrote ${configuration.name} and started the ARM GDB stub. Start that launch configuration to enter gdb-multiarch.`
+                    `Wrote ${configuration.name}. Start that launch configuration to build the ARM debug target and attach GDB.`
                 );
             }
         })
