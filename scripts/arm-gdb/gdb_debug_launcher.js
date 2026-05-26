@@ -293,7 +293,7 @@ function startStubService(metadata, requestedPort) {
 
         child.stdout.on('data', (chunk) => {
             stdout += chunk.toString('utf8');
-            const match = stdout.match(new RegExp(`${READY_PREFIX}\\\\s+(\\\\d+)`));
+            const match = stdout.match(new RegExp(`${READY_PREFIX}\\s+(\\d+)`));
             if (match && !settled) {
                 settled = true;
                 clearTimeout(timeout);
