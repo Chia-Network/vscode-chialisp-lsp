@@ -11,14 +11,21 @@ license = "MIT"
 keywords = ["chia", "chialisp", "clvm"]
 categories = ["command-line-utilities"]
 
+[package.metadata.wasm-pack.profile.release]
+# Option 1: Disable completely
+wasm-opt = false
+
 [lib]
 name = "clvm_tools_lsp"
 crate-type = ["cdylib"]
 path = "src/mod.rs"
 
 [dependencies]
-chialisp = "=0.4.1"
-clvmr = "0.16.0"
+chialisp = "=0.4.4"
+clvmr = "=0.16.4"
+clvm_to_arm_chialisp = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
+clvm_to_arm_emulate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
+clvm_to_arm_generate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
 wasm-bindgen = "=0.2.100"
 wasm-bindgen-test = "=0.3.50"
 js-sys = "0.3.60"

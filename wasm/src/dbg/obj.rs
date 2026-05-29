@@ -18,9 +18,7 @@ use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::classic::platform::argparse::ArgumentValue;
 use chialisp::compiler::cldb::hex_to_modern_sexp;
-use chialisp::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose,
-};
+use chialisp::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
@@ -398,7 +396,10 @@ fn test_simple_find_location_classic_symbols_1() {
         "(mod (X)\n  (defun fact (X) (if (= X 1) 1 (* X (fact (- X 1)))))\n  (fact 5)\n  )";
     let parsed = parse_sexp(Srcloc::start("fact.clsp"), program.bytes()).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new("fact.clsp"));
-    let compiled = frontend(opts, &parsed).expect("should compile");
+    let compiled = frontend(opts, &parsed)
+        .expect("should compile")
+        .compileform()
+        .clone();
     let breakpoint_spec = SourceBreakpoint {
         column: Some(0),
         condition: None,
@@ -632,7 +633,7 @@ fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(Some(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled.compileform().clone()));
     }
 
     let mut parsed_program = if inputs.is_hex {
