@@ -40,14 +40,8 @@ jobs:
       - name: Build pre-release extension
         id: package_name_pre
         run: |
-          wasm-pack --version
-          rustc --version
-
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
-
-          which wasm-opt
-          wasm-opt --version
       - name: Runner test
         run: |
           cd runner
