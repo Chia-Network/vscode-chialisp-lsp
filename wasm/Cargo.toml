@@ -23,9 +23,9 @@ path = "src/mod.rs"
 [dependencies]
 chialisp = "=0.4.4"
 clvmr = "=0.16.4"
-clvm_to_arm_chialisp = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
-clvm_to_arm_emulate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
-clvm_to_arm_generate = { git = "https://github.com/prozacchiwawa/clvm_arm_jit.git" }
+clvm_to_arm_chialisp = { path = "../../clvm_arm_jit/clvm_to_arm_chialisp" }
+clvm_to_arm_emulate = { path = "../../clvm_arm_jit/clvm_to_arm_emulate" }
+clvm_to_arm_generate = { path = "../../clvm_arm_jit/clvm_to_arm_generate" }
 wasm-bindgen = "=0.2.100"
 wasm-bindgen-test = "=0.3.50"
 js-sys = "0.3.60"

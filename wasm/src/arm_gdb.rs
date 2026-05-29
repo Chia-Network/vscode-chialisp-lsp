@@ -22,6 +22,9 @@ use clvm_to_arm_generate::code::{Program, TARGET_ADDR};
 use clvmr::Allocator;
 use js_sys::{Object, Reflect, Uint8Array};
 
+use crate::interfaces::IFileReader;
+use crate::jsinterface::JSFileReader;
+
 thread_local! {
     static NEXT_ARM_GDB_ID: RefCell<i32> = {
         RefCell::new(0)
@@ -35,22 +38,13 @@ thread_local! {
 struct ArmGdbCompilerOpts {
     opts: Rc<dyn CompilerOpts>,
     include_paths: Vec<String>,
-    file_reader: js_sys::Function,
+    file_reader: Rc<dyn IFileReader>,
     known_dialects: Rc<HashMap<String, DialectDescription>>,
 }
 
 impl ArmGdbCompilerOpts {
-    fn read_file(&self, name: &str) -> Option<String> {
-        self.file_reader
-            .call1(&JsValue::null(), &JsValue::from_str(name))
-            .ok()
-            .and_then(|value| {
-                if value.is_null() || value.is_undefined() {
-                    None
-                } else {
-                    value.as_string()
-                }
-            })
+    fn read_file(&self, name: &str) -> Result<String, String> {
+        self.file_reader.read_content(name)
     }
 }
 
@@ -81,7 +75,7 @@ impl HasCompilerOptsDelegation for ArmGdbCompilerOpts {
         }
 
         if Path::new(&filename).is_absolute() {
-            if let Some(content) = self.read_file(&filename) {
+            if let Ok(content) = self.read_file(&filename) {
                 return Ok((filename, content.into_bytes()));
             }
         }
@@ -92,7 +86,7 @@ impl HasCompilerOptsDelegation for ArmGdbCompilerOpts {
                 .to_str()
                 .map(|s| s.to_string())
             {
-                if let Some(content) = self.read_file(&candidate) {
+                if let Ok(content) = self.read_file(&candidate) {
                     return Ok((candidate, content.into_bytes()));
                 }
             }
@@ -126,12 +120,12 @@ fn js_error(message: impl ToString) -> JsValue {
     JsValue::from_str(&message.to_string())
 }
 
-fn build_elf(
+pub fn build_elf(
     program_path: &str,
     program: &str,
     run_arg: &str,
     include_paths: Vec<String>,
-    file_reader: js_sys::Function,
+    file_reader: Rc<dyn IFileReader>,
     elf_output_name: &str,
 ) -> Result<(Vec<u8>, String, Rc<HashMap<String, String>>), String> {
     let srcloc = Srcloc::start(program_path);
@@ -202,16 +196,12 @@ pub fn arm_gdb_build_program(
     elf_output_name: String,
 ) -> Result<JsValue, JsValue> {
     let include_paths: Vec<String> = serde_json::from_str(&include_paths_json).map_err(js_error)?;
-    let file_reader = file_reader
-        .dyn_ref::<js_sys::Function>()
-        .ok_or_else(|| js_error("file_reader must be a function"))?
-        .clone();
     let (elf, synthetic_source, symbols) = build_elf(
         &program_path,
         &program,
         &run_arg,
         include_paths,
-        file_reader,
+        Rc::new(JSFileReader::new(file_reader)),
         &elf_output_name,
     )
     .map_err(js_error)?;
