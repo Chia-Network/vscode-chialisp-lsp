@@ -88,6 +88,7 @@ function getIncludePaths(workspace, programPath) {
 
 function makeFileReader(workspace) {
     return (filename) => {
+      fs.appendFileSync('/tmp/gen.log', `try to read ${filename} from ${workspace}`);
         const candidates = path.isAbsolute(filename) ? [filename] : [path.resolve(workspace, filename)];
         for (const candidate of candidates) {
             try {
@@ -110,6 +111,7 @@ function requiredArgs(args) {
 }
 
 function writeGeneratedElf(wasm, args) {
+    fs.appendFileSync('/tmp/gdb.txt', 'writeGeneratedElf');
     const program = fs.readFileSync(args.program, 'utf8');
     const runArg = getRunArg(args['run-args-json']);
     const includePaths = getIncludePaths(args.workspace, args.program);

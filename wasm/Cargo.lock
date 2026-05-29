@@ -267,7 +267,7 @@ dependencies = [
 [[package]]
 name = "clvm_to_arm_chialisp"
 version = "0.1.0"
-source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#1a85a9f769e605f1803e3e25b515b2c356c41c4f"
+source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#eb397028ec00d4604a508eb8eac64a12d6cb07b7"
 dependencies = [
  "chialisp",
  "clvm_to_arm_emulate",
@@ -279,7 +279,7 @@ dependencies = [
 [[package]]
 name = "clvm_to_arm_emulate"
 version = "0.1.0"
-source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#1a85a9f769e605f1803e3e25b515b2c356c41c4f"
+source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#eb397028ec00d4604a508eb8eac64a12d6cb07b7"
 dependencies = [
  "armv4t_emu",
  "clvm_to_arm_generate",
@@ -297,7 +297,7 @@ dependencies = [
 [[package]]
 name = "clvm_to_arm_generate"
 version = "0.1.0"
-source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#1a85a9f769e605f1803e3e25b515b2c356c41c4f"
+source = "git+https://github.com/prozacchiwawa/clvm_arm_jit.git#eb397028ec00d4604a508eb8eac64a12d6cb07b7"
 dependencies = [
  "armv4t_emu",
  "clvmr",
