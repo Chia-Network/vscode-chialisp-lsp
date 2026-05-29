@@ -16,9 +16,6 @@ name = "clvm_tools_lsp"
 crate-type = ["cdylib"]
 path = "src/mod.rs"
 
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false # ["-Oz", "--enable-mutable-globals", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
-
 [dependencies]
 chialisp = "0.4.4"
 clvmr = "0.16.0"
