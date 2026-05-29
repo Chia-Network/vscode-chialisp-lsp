@@ -134,12 +134,6 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
 
     for h in fe.helpers.iter() {
         match h {
-            HelperForm::Defnamespace(_) => {
-                // XXX
-            }
-            HelperForm::Defnsref(_) => {
-                // XXX
-            }
             HelperForm::Defun(_, d) => {
                 toplevel_funs.insert(Rc::new(SExp::Atom(d.loc.clone(), d.name.clone())));
             }
@@ -149,6 +143,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             HelperForm::Defconstant(c) => {
                 toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
             }
+            _ => { }
         }
 
         let f = h.loc().file.clone();

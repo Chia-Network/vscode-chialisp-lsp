@@ -58,6 +58,9 @@ impl HasCompilerOptsDelegation for DbgCompilerOpts {
         Ok((computed_filename, get_bytes(&content.text)))
     }
 
+    // This is an override for a method that's part of the CompilerOpts public interface.
+    // as such, we can't dictate how we arrive here, so even though this body is simple, it's
+    // needed to provide the right abstraction.
     fn override_compile_program(
         &self,
         context: &mut BasicCompileContext,

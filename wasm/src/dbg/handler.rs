@@ -105,6 +105,8 @@ pub struct StoredScope {
 
 #[derive(Clone, Debug)]
 struct RecognizedBreakpoint {
+    // Commented out due to clippy.  It might be nice to have this in the future,
+    // so i'm keeping the commented out member as a reminder.
     // hash: String, // Future: break by hash (clippy)
     spec: Breakpoint,
 }
