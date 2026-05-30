@@ -8,17 +8,22 @@ use lsp_types::{SemanticToken, SemanticTokens, SemanticTokensParams};
 
 use crate::interfaces::ILogWriter;
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{add_bindings_to_set, add_sexp_bindings, recover_scopes, ParsedDoc};
+use crate::lsp::parse::{
+    add_bindings_to_set, add_sexp_bindings, recover_scopes, IncludedFileSpec, ParsedDoc,
+};
+use crate::lsp::resolve::HelperResolver;
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ReparsedExp,
-    ReparsedHelper,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm,
+    ReparsedExp, ReparsedHelper,
 };
 use crate::lsp::{
     TK_COMMENT_IDX, TK_DEFINITION_BIT, TK_FUNCTION_IDX, TK_KEYWORD_IDX, TK_MACRO_IDX,
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use chialisp::compiler::clvm::sha256tree;
-use chialisp::compiler::comptypes::{BodyForm, CompileForm, HelperForm, LetFormKind};
+use chialisp::compiler::comptypes::{
+    BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
+};
 use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::srcloc::Srcloc;
 
@@ -39,6 +44,7 @@ impl PartialEq for SemanticTokenSortable {
 
 impl Eq for SemanticTokenSortable {}
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for SemanticTokenSortable {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let cf = self.loc.file.cmp(other.loc.file.borrow());
@@ -89,55 +95,8 @@ fn collect_arg_tokens(
     }
 }
 
-fn find_call_token(
-    prims: &[Vec<u8>],
-    frontend: &CompileForm,
-    l: &Srcloc,
-    name: &Vec<u8>,
-) -> Option<(SemanticTokenSortable, Srcloc)> {
-    for f in frontend.helpers.iter() {
-        match f {
-            HelperForm::Defun(_inline, defun) => {
-                if &defun.name == name {
-                    let st = SemanticTokenSortable {
-                        loc: l.clone(),
-                        token_type: TK_FUNCTION_IDX,
-                        token_mod: 0,
-                    };
-                    return Some((st, defun.nl.clone()));
-                }
-            }
-            HelperForm::Defmacro(mac) => {
-                if &mac.name == name {
-                    let st = SemanticTokenSortable {
-                        loc: l.clone(),
-                        token_type: TK_MACRO_IDX,
-                        token_mod: 0,
-                    };
-                    return Some((st, mac.nl.clone()));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    for p in prims.iter() {
-        if p == name {
-            return Some((
-                SemanticTokenSortable {
-                    loc: l.clone(),
-                    token_type: TK_FUNCTION_IDX,
-                    token_mod: 0,
-                },
-                l.clone(),
-            ));
-        }
-    }
-
-    None
-}
-
 pub struct DocumentProcessingDescription<'a> {
+    pub resolver: &'a mut dyn HelperResolver,
     pub prims: &'a [Vec<u8>],
     pub log: Rc<dyn ILogWriter>,
     pub id: RequestId,
@@ -146,7 +105,7 @@ pub struct DocumentProcessingDescription<'a> {
 }
 
 fn process_body_code(
-    env: &DocumentProcessingDescription,
+    env: &mut DocumentProcessingDescription,
     collected_tokens: &mut Vec<SemanticTokenSortable>,
     gotodef: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
     argcollection: &HashMap<Vec<u8>, Srcloc>,
@@ -166,7 +125,7 @@ fn process_body_code(
             }
             for b in letdata.bindings.iter() {
                 let mut bindings = HashSet::new();
-                add_bindings_to_set(&mut bindings, &b);
+                add_bindings_to_set(&mut bindings, b);
                 for item in bindings.iter() {
                     if let SExp::Atom(loc, _) = item.borrow() {
                         collected_tokens.push(SemanticTokenSortable {
@@ -199,7 +158,7 @@ fn process_body_code(
                     )
                 }
                 let mut bset = HashSet::new();
-                add_bindings_to_set(&mut bset, &b);
+                add_bindings_to_set(&mut bset, b);
                 for b in bset.iter() {
                     if let SExp::Atom(l, n) = b.borrow() {
                         bindings_vars.insert(n.clone(), l.clone());
@@ -304,9 +263,39 @@ fn process_body_code(
 
             let head: &BodyForm = args[0].borrow();
             if let BodyForm::Value(SExp::Atom(l, a)) = head {
-                if let Some((call_token, location)) = find_call_token(env.prims, frontend, l, a) {
+                if let Some((call_token, location)) =
+                    match env.resolver.resolve_helper_reference(frontend, a) {
+                        Some(HelperForm::Defun(_, d)) => Some((
+                            SemanticTokenSortable {
+                                loc: l.clone(),
+                                token_type: TK_FUNCTION_IDX,
+                                token_mod: 0,
+                            },
+                            d.loc.clone(),
+                        )),
+                        Some(HelperForm::Defmacro(m)) => Some((
+                            SemanticTokenSortable {
+                                loc: l.clone(),
+                                token_type: TK_MACRO_IDX,
+                                token_mod: 0,
+                            },
+                            m.loc.clone(),
+                        )),
+                        _ => None,
+                    }
+                {
                     collected_tokens.push(call_token.clone());
                     gotodef.insert(call_token, location);
+                } else {
+                    for p in env.prims.iter() {
+                        if p == a {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: l.clone(),
+                                token_type: TK_FUNCTION_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
                 }
             }
 
@@ -321,6 +310,7 @@ fn process_body_code(
                     a.clone(),
                 );
             }
+
             // Handle the rest_args
             if let Some(tail) = rest_args {
                 process_body_code(
@@ -344,7 +334,7 @@ fn process_body_code(
                     ReparsedHelper {
                         hash: Hash::new(&hash),
                         range: DocRange::from_srcloc(h.loc()),
-                        parsed: Ok(h.clone()),
+                        parsed: Ok(ParsedForm::Helper(h.clone())),
                     },
                 );
             }
@@ -365,14 +355,14 @@ fn process_body_code(
                 let hashed = Hash::new(&sha256tree(i.to_sexp()));
                 includes.insert(
                     hashed,
-                    IncludeData {
+                    IncludedFileSpec::Include(IncludeData {
                         loc: i.kw.clone(),
                         name_loc: i.nl.clone(),
                         kw_loc: i.kw.clone(),
                         kind: IncludeKind::Include,
                         filename: i.name.clone(),
                         found: None,
-                    },
+                    }),
                 );
             }
 
@@ -381,6 +371,7 @@ fn process_body_code(
                 ignored: false,
                 mod_kw: Some(l.clone()),
                 compiled: m.clone(),
+                exports: HashMap::default(),
                 scopes,
                 helpers,
                 exp: Some(reparsed_exp),
@@ -406,7 +397,7 @@ fn process_body_code(
 }
 
 pub fn build_semantic_tokens(
-    env: &DocumentProcessingDescription,
+    env: &mut DocumentProcessingDescription,
     comments: &HashMap<usize, usize>,
     goto_def: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
     parsed: &ParsedDoc,
@@ -423,42 +414,95 @@ pub fn build_semantic_tokens(
     }
 
     for (_, incl) in parsed.includes.iter() {
-        collected_tokens.push(SemanticTokenSortable {
-            loc: incl.kw_loc.clone(),
-            token_type: TK_KEYWORD_IDX,
-            token_mod: 0,
-        });
-        collected_tokens.push(SemanticTokenSortable {
-            loc: incl.name_loc.clone(),
-            token_type: TK_STRING_IDX,
-            token_mod: 0,
-        });
-        match &incl.kind {
-            IncludeKind::Include => {}
-            IncludeKind::CompileFile(il) => {
+        match incl {
+            IncludedFileSpec::Include(incl) => {
                 collected_tokens.push(SemanticTokenSortable {
-                    loc: il.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: TK_DEFINITION_BIT,
-                });
-            }
-            IncludeKind::EmbedFile(il, kl) => {
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: il.clone(),
-                    token_type: TK_VARIABLE_IDX,
-                    token_mod: TK_DEFINITION_BIT,
-                });
-                collected_tokens.push(SemanticTokenSortable {
-                    loc: kl.clone(),
+                    loc: incl.kw_loc.clone(),
                     token_type: TK_KEYWORD_IDX,
                     token_mod: 0,
                 });
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: incl.name_loc.clone(),
+                    token_type: TK_STRING_IDX,
+                    token_mod: 0,
+                });
+                match &incl.kind {
+                    IncludeKind::Include => {}
+                    IncludeKind::CompileFile(il) => {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: il.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: TK_DEFINITION_BIT,
+                        });
+                    }
+                    IncludeKind::EmbedFile(il, kl) => {
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: il.clone(),
+                            token_type: TK_VARIABLE_IDX,
+                            token_mod: TK_DEFINITION_BIT,
+                        });
+                        collected_tokens.push(SemanticTokenSortable {
+                            loc: kl.clone(),
+                            token_type: TK_KEYWORD_IDX,
+                            token_mod: 0,
+                        });
+                    }
+                }
+            }
+            IncludedFileSpec::Import(_, nsref) => {
+                // Handled in the helper personality.
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: nsref.kw.clone(),
+                    token_type: TK_KEYWORD_IDX,
+                    token_mod: 0,
+                });
+                collected_tokens.push(SemanticTokenSortable {
+                    loc: nsref.nl.clone(),
+                    token_type: TK_VARIABLE_IDX,
+                    token_mod: 0,
+                });
+                match &nsref.specification {
+                    ModuleImportSpec::Qualified(q) => {
+                        if let Some(_target) = &q.target {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: q.kw.clone(),
+                                token_type: TK_KEYWORD_IDX,
+                                token_mod: 0,
+                            });
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: q.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                    ModuleImportSpec::Exposing(_l, e) => {
+                        for h in e.iter() {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: h.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                    ModuleImportSpec::Hiding(_l, e) => {
+                        for h in e.iter() {
+                            collected_tokens.push(SemanticTokenSortable {
+                                loc: h.nl.clone(),
+                                token_type: TK_VARIABLE_IDX,
+                                token_mod: 0,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
 
     for form in parsed.compiled.helpers.iter() {
         match form {
+            HelperForm::Defnamespace(_) => {}
+            HelperForm::Defnsref(_) => {}
             HelperForm::Defconstant(defc) => {
                 if let Some(kw) = &defc.kw {
                     collected_tokens.push(SemanticTokenSortable {
@@ -540,6 +584,54 @@ pub fn build_semantic_tokens(
         }
     }
 
+    for (_, export) in parsed.exports.iter() {
+        match export {
+            Export::MainProgram(p) => {
+                collect_arg_tokens(&mut collected_tokens, &mut argcollection, p.args.clone());
+                if let Some(kw_loc) = p.kw_loc.as_ref() {
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: kw_loc.clone(),
+                        token_type: TK_KEYWORD_IDX,
+                        token_mod: 0,
+                    });
+                }
+                process_body_code(
+                    env,
+                    &mut collected_tokens,
+                    goto_def,
+                    &argcollection,
+                    &varcollection,
+                    &CompileForm {
+                        loc: p.loc.clone(),
+                        exp: p.expr.clone(),
+                        ..parsed.compiled.clone()
+                    },
+                    p.expr.clone(),
+                );
+            }
+            Export::Function(f) => {
+                for (kind, loc) in [
+                    (TK_KEYWORD_IDX, f.kw_loc.as_ref()),
+                    (TK_KEYWORD_IDX, f.as_loc.as_ref()),
+                    (TK_VARIABLE_IDX, f.name.loc.as_ref()),
+                    (
+                        TK_VARIABLE_IDX,
+                        f.as_name.as_ref().and_then(|n| n.loc.as_ref()),
+                    ),
+                ]
+                .iter()
+                .filter_map(|(k, l)| l.map(|l| (k, l)))
+                {
+                    collected_tokens.push(SemanticTokenSortable {
+                        loc: loc.clone(),
+                        token_type: *kind,
+                        token_mod: 0,
+                    })
+                }
+            }
+        }
+    }
+
     collect_arg_tokens(
         &mut collected_tokens,
         &mut argcollection,
@@ -583,7 +675,7 @@ pub fn build_semantic_tokens(
 }
 
 fn do_semantic_tokens(
-    env: &DocumentProcessingDescription,
+    env: &mut DocumentProcessingDescription,
     comments: &HashMap<usize, usize>,
     goto_def: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
     parsed: &ParsedDoc,
@@ -638,10 +730,12 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
         if let (Some(doc), Some(frontend)) = (self.get_doc(&uristring), self.get_parsed(&uristring))
         {
             let mut our_goto_defs = BTreeMap::new();
+            let log = self.log.clone();
             let resp = do_semantic_tokens(
-                &DocumentProcessingDescription {
+                &mut DocumentProcessingDescription {
+                    resolver: self,
                     prims: &PRIM_NAMES,
-                    log: self.log.clone(),
+                    log,
                     id,
                     uristring: &uristring,
                     lines: &doc.text,

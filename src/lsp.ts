@@ -110,8 +110,9 @@ export function languageActivate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("chialisp.locateIncludePath", function(value) {
         console.log('locateIncludePath', JSON.stringify(value));
         // Open a file selector to find the included file.
+        let shortName = path.basename(value);
         vscode.window.showOpenDialog({
-            title: `Chialisp include file ${value}`,
+            title: `Chialisp include file ${shortName}`,
             filters: {
                 // This is part of the user interface
                 // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -135,6 +136,24 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 return;
             }
 
+	    // If the file is identified with a directory name, as a module usually will be, we'll
+	    // walk back down to the root of that relative path and choose the directory at the root
+	    // to add to chialisp.json.  This allows choice of the given file to lead to a correct
+	    // choice of directory to put into chialisp.json as we're working with a file selection.
+            const filterDirectory = (targetDirectory: string, wantDirectory: string) => {
+                if (targetDirectory == '.' || wantDirectory == '.') {
+                    return targetDirectory;
+                }
+                let targetWithBasename = targetDirectory.replace(/[\/\\]$/, '');
+                let wantWithBasename = wantDirectory.replace(/[\/\\]$/, '');
+                let targetBasename = path.basename(targetWithBasename);
+                let wantBasename = path.basename(wantWithBasename);
+                if (targetBasename == wantBasename) {
+                    return filterDirectory(path.dirname(targetWithBasename), path.dirname(wantWithBasename));
+                }
+                return targetDirectory;
+            };
+
             const updateChialispJson = (chialispJson: any, newFile: vscode.Uri) => {
                 let targetDirectory = path.dirname(newFile.fsPath);
                 let relativePath = vscode.workspace.asRelativePath(newFile);
@@ -145,6 +164,9 @@ export function languageActivate(context: vscode.ExtensionContext) {
                     }
                 }
 
+                // Check for matching parents in value vs selected path.
+                let finalPath = filterDirectory(targetDirectory, path.dirname(value));
+
                 // Try to enforce correct structure.
                 if (chialispJson.include_paths === undefined || !chialispJson.include_paths.length) {
                     chialispJson.include_paths = [];
@@ -152,13 +174,13 @@ export function languageActivate(context: vscode.ExtensionContext) {
 
                 // Try not to duplicate.
                 for (var i = 0; i < chialispJson.include_paths; i++) {
-                    if (targetDirectory === chialispJson.include_paths[i]) {
+                    if (finalPath === chialispJson.include_paths[i]) {
                         return;
                     }
                 }
 
                 // We have a new include path to put in.
-                chialispJson.include_paths.push(targetDirectory);
+                chialispJson.include_paths.push(finalPath);
 
                 return chialispJson;
             };
