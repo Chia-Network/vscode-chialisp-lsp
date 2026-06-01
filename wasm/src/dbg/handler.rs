@@ -41,6 +41,7 @@ use chialisp::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
 use crate::dbg::types::MessageHandler;
+use crate::dbg::source::parse_srcloc;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};
@@ -741,80 +742,6 @@ struct LaunchArgs<'a> {
     program: &'a str,
     args_for_program: &'a [String],
     stop_on_entry: bool,
-}
-
-/// A simple parser for srcloc for recovering them from messages and symbols.
-pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
-    let parse_one_loc = |skip| {
-        let mut parse_state = SrclocParseAction::ReadingFileName;
-        for (i, ch) in s.as_bytes().iter().skip(skip).copied().enumerate() {
-            match (&parse_state, ch) {
-                (SrclocParseAction::ReadingFileName, b'(') => {
-                    parse_state = SrclocParseAction::ReadingLineNumber(i, 0);
-                }
-                (SrclocParseAction::ReadingFileName, _) => {}
-                (SrclocParseAction::ReadingLineNumber(eof, l), b')') => {
-                    parse_state = SrclocParseAction::AfterLineNumber(*eof, *l);
-                }
-                (SrclocParseAction::ReadingLineNumber(eof, l), ch) => {
-                    if !ch.is_ascii_digit() {
-                        return None;
-                    }
-                    parse_state = SrclocParseAction::ReadingLineNumber(
-                        *eof,
-                        10 * *l + ((ch - b'0') as usize),
-                    );
-                }
-                (SrclocParseAction::AfterLineNumber(eof, l), b':') => {
-                    parse_state = SrclocParseAction::ReadingColumn(*eof, *l, 0, None);
-                }
-                (SrclocParseAction::AfterLineNumber(_, _), _) => {
-                    return None;
-                }
-                (SrclocParseAction::ReadingColumn(eof, l, c, _), b'-') => {
-                    parse_state = SrclocParseAction::ReadingColumn(*eof, *l, *c, Some(i + 1));
-                }
-                (SrclocParseAction::ReadingColumn(eof, l, c, e), ch) => {
-                    if !ch.is_ascii_digit() {
-                        return None;
-                    }
-                    parse_state = SrclocParseAction::ReadingColumn(
-                        *eof,
-                        *l,
-                        10 * *c + ((ch - b'0') as usize),
-                        *e,
-                    );
-                }
-            }
-        }
-
-        if let SrclocParseAction::ReadingColumn(f, line, col, ext) = parse_state {
-            Some(ParsedSrclocPart {
-                file: s.as_bytes().iter().copied().take(f).collect(),
-                line,
-                col,
-                ext,
-            })
-        } else {
-            None
-        }
-    };
-
-    parse_one_loc(0).and_then(|parsed| {
-        let filename_rc = Rc::new(decode_string(&parsed.file));
-        let loc = Srcloc::new(filename_rc.clone(), parsed.line, parsed.col);
-        if let Some(ext) = parsed.ext {
-            parse_one_loc(ext).map(|second| {
-                if second.file != parsed.file {
-                    // Incomplete range, treat the head as a marker.
-                    return loc;
-                }
-                loc.ext(&Srcloc::new(filename_rc, second.line, second.col))
-            })
-        } else {
-            Some(loc)
-        }
-    })
 }
 
 impl Debugger {
