@@ -173,7 +173,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 }
 
                 // Try not to duplicate.
-                for (var i = 0; i < chialispJson.include_paths; i++) {
+                for (var i = 0; i < chialispJson.include_paths.length; i++) {
                     if (finalPath === chialispJson.include_paths[i]) {
                         return;
                     }
