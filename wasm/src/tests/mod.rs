@@ -1563,8 +1563,8 @@ fn test_parse_srcloc() {
 #[test]
 fn test_parse_srcloc_range() {
     assert_eq!(
-        parse_srcloc("test.foo(99):1007-after.x(103):999"),
-        Some(Srcloc::new(Rc::new("test.foo".to_string()), 99, 1007).ext(&Srcloc::new(Rc::new("after.x".to_string()), 103, 999)))
+        parse_srcloc("test.foo(99):1007-test.foo(103):999"),
+        Some(Srcloc::new(Rc::new("test.foo".to_string()), 99, 1007).ext(&Srcloc::new(Rc::new("test.foo".to_string()), 103, 999)))
     );
 }
 

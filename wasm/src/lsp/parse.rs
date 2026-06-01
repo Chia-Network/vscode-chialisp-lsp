@@ -960,6 +960,7 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
         "embed",
         "export",
         "import",
+        "include"
     ]
     .iter()
     .any(|w| w.as_bytes() == first_word);
