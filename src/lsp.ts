@@ -141,7 +141,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
 	    // to add to chialisp.json.  This allows choice of the given file to lead to a correct
 	    // choice of directory to put into chialisp.json as we're working with a file selection.
             const filterDirectory = (targetDirectory: string, wantDirectory: string) => {
-                if (targetDirectory == '.' || wantDirectory == '.') {
+                if (wantDirectory == '.') {
                     return targetDirectory;
                 }
                 let targetWithBasename = targetDirectory.replace(/[\/\\]$/, '');
