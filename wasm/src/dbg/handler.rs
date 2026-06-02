@@ -40,8 +40,8 @@ use chialisp::compiler::sexp::{decode_string, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
 
 use crate::dbg::compopts::DbgCompilerOpts;
-use crate::dbg::types::MessageHandler;
 use crate::dbg::source::parse_srcloc;
+use crate::dbg::types::MessageHandler;
 #[cfg(test)]
 use crate::interfaces::EPrintWriter;
 use crate::interfaces::{IFileReader, ILogWriter};

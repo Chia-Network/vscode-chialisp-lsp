@@ -143,7 +143,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             HelperForm::Defconstant(c) => {
                 toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
             }
-            _ => { }
+            _ => {}
         }
 
         let f = h.loc().file.clone();
@@ -960,7 +960,7 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
         "embed",
         "export",
         "import",
-        "include"
+        "include",
     ]
     .iter()
     .any(|w| w.as_bytes() == first_word);
