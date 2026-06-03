@@ -1553,6 +1553,37 @@ fn test_lsp_heap_exhaustion_1() {
 }
 
 #[test]
+fn test_lsp_should_not_get_error() {
+    let mut lsp = LSPServiceProvider::new(
+        Rc::new(FSFileReader::new()),
+        Rc::new(EPrintWriter::new()),
+        true,
+    );
+    lsp.set_workspace_root(PathBuf::from(r"."));
+    lsp.set_config(ConfigJson {
+        include_paths: vec!["../resources/tests".to_string()],
+    });
+    let file_data = fs::read_to_string("resources/tests/wrong_not_found_error.txt")
+        .expect("should be able to read this file");
+    let in_messages: Vec<Message> = file_data
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("#"))
+        .map(|l| {
+            let parsed: Message = serde_json::from_str(l).expect("should parse");
+            parsed
+        })
+        .collect();
+    let out_msgs = run_lsp(&mut lsp, &in_messages).expect("should be able to run this traffic");
+
+    assert!(!out_msgs.iter().any(|m| {
+        if let Message::Notification(n) = m {
+            return format!("{:?}", n.params).contains("No such function");
+        }
+        false
+    }));
+}
+
+#[test]
 fn test_parse_srcloc() {
     assert_eq!(
         parse_srcloc("test.foo(99):1007"),

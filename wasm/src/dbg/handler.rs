@@ -908,7 +908,7 @@ impl Debugger {
         if launch_args.stop_on_entry {
             seq_nr += 1;
             out_messages.push(ProtocolMessage {
-                seq: self.msg_seq,
+                seq: self.msg_seq + 1,
                 message: MessageKind::Event(Event {
                     body: Some(EventBody::Stopped(StoppedEvent {
                         reason: StoppedReason::Entry,

@@ -334,7 +334,7 @@ fn process_body_code(
                     ReparsedHelper {
                         hash: Hash::new(&hash),
                         range: DocRange::from_srcloc(h.loc()),
-                        parsed: Ok(ParsedForm::Helper(h.clone())),
+                        parsed: Ok(ParsedForm::Helper(vec![h.clone()])),
                     },
                 );
             }

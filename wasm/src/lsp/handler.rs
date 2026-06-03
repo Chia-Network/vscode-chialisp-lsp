@@ -214,6 +214,7 @@ impl LSPServiceProvider {
     }
 
     pub fn reconfigure(&mut self) -> Option<ConfigJson> {
+        self.log.log(&format!("config path {:?}", self.get_config_path()));
         self.get_config_path()
             .and_then(|config_path| self.fs.read_content(&config_path).ok())
             .and_then(|config_data| serde_json::from_str(&config_data).ok())
@@ -402,6 +403,7 @@ impl LSPServiceMessageHandler for LSPServiceProvider {
 
                             if doc_id.ends_with("chialisp.json") {
                                 matching_file_for_resync = true;
+                                self.log.log(&format!("resync chialisp.json"));
                                 if let Some(config) = self.reconfigure() {
                                     // We have a config file and can read the filesystem.
                                     self.log.log("reconfigured");

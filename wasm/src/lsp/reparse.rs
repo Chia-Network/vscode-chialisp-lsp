@@ -137,7 +137,7 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
                 return compile_helperform(opts.clone(), Rc::new(amended_instr))
-                    .map(|o| o.map(ParsedForm::Helper));
+                    .map(|o| o.map(|h| ParsedForm::Helper(vec![h])));
             }
         }
     }
@@ -145,7 +145,7 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
     // Not a proper list so not the kind of thing we're looking for.
     match compile_helperform(opts.clone(), parsed.clone()).map(|o| {
         o.filter(|h| !h.new_helpers.is_empty())
-            .map(ParsedForm::Helper)
+            .map(|h| ParsedForm::Helper(vec![h]))
     }) {
         Err(e) => match_export_form(opts.clone(), parsed.clone())
             .map(|o| o.map(ParsedForm::ModuleExport))
@@ -372,7 +372,7 @@ pub fn reparse_subset(
                                         ReparsedHelper {
                                             hash: new_hash,
                                             range: r.clone(),
-                                            parsed: Ok(ParsedForm::Helper(h.clone())),
+                                            parsed: Ok(ParsedForm::Helper(vec![h.clone()])),
                                         },
                                     );
                                 }
@@ -414,20 +414,22 @@ pub fn reparse_subset(
                     });
                     match dc_result {
                         Ok(ParsedForm::Helper(res)) => {
-                            if let Some(h) = res.new_helpers.first() {
-                                if let HelperForm::Defnsref(import) = h {
-                                    let nsref: &NamespaceRefData = import.borrow();
-                                    result.includes.insert(
-                                        hash.clone(),
-                                        IncludedFileSpec::Import(None, nsref.clone()),
-                                    );
+                            for resh in res.iter() {
+                                for h in resh.new_helpers.iter() {
+                                    if let HelperForm::Defnsref(import) = h {
+                                        let nsref: &NamespaceRefData = import.borrow();
+                                        result.includes.insert(
+                                            hash.clone(),
+                                            IncludedFileSpec::Import(None, nsref.clone()),
+                                        );
+                                    }
                                 }
                                 result.helpers.insert(
                                     hash.clone(),
                                     ReparsedHelper {
-                                        hash,
+                                        hash: hash.clone(),
                                         range: r.clone(),
-                                        parsed: Ok(ParsedForm::Helper(h.clone())),
+                                        parsed: Ok(ParsedForm::Helper(resh.new_helpers.clone())),
                                     },
                                 );
                             }
@@ -497,6 +499,7 @@ pub fn check_live_helper_calls(
             // Try to make sense of the list head
             if let BodyForm::Value(s) = v[0].borrow() {
                 if !find_function_in_scopes(prims, scopes, s) {
+                    todo!();
                     return Some(CompileErr(
                         s.loc(),
                         format!("No such function found: {}", s),
@@ -648,9 +651,11 @@ pub fn combine_new_with_old_parse(
                 out_errors.push(e.clone());
             }
             Ok(ParsedForm::Helper(parsed_helper)) => {
-                hash_to_name.insert(h.clone(), parsed_helper.name().clone());
-                extracted_helpers.push(parsed_helper.clone());
-                new_helpers.insert(h.clone(), p.clone());
+                for ph in parsed_helper.iter() {
+                    hash_to_name.insert(h.clone(), ph.name().clone());
+                    extracted_helpers.push(ph.clone());
+                    new_helpers.insert(h.clone(), p.clone());
+                }
             }
             Ok(ParsedForm::ModuleExport(Export::MainProgram(p))) => {
                 let name = b"__export__main".to_vec();

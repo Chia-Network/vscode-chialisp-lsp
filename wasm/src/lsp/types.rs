@@ -954,6 +954,7 @@ impl LSPServiceProvider {
     }
 
     pub fn get_config_path(&self) -> Option<String> {
+        self.log.log(&format!("workspace root {:?}", self.get_workspace_root()));
         self.get_workspace_root().and_then(|r| {
             let p = Path::new(&r).join("chialisp.json");
             p.to_str().map(|s| s.to_owned())
@@ -1205,7 +1206,7 @@ pub struct IncludeData {
 #[derive(Debug, Clone)]
 pub enum ParsedForm<H> {
     ModuleExport(Export),
-    Helper(H),
+    Helper(Vec<H>),
 }
 
 #[derive(Debug, Clone)]

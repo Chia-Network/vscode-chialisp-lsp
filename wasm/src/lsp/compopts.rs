@@ -90,7 +90,8 @@ pub fn get_file_content(
     include_paths: &[String],
     name: &str,
 ) -> Result<(String, DocData), String> {
-    log.log(&format!("get_file_content {}", name));
+    log.log(&format!("get_file_content {name}"));
+    log.log(&format!("include_paths {include_paths:?}"));
     for find_path in include_paths.iter() {
         let joined_find_to_root = if let Some(ref r) = ws_root {
             r.join(find_path).to_path_buf()
