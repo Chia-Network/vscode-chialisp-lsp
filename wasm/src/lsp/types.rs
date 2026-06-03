@@ -27,11 +27,15 @@ use crate::interfaces::{IFileReader, ILogWriter};
 use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
 use crate::lsp::parse::{make_simple_ranges, IncludedFileSpec, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
-use crate::lsp::reparse::{combine_new_with_old_parse, reparse_subset, ReparsedModule};
+use crate::lsp::reparse::{
+    combine_new_with_old_parse_with_imports, reparse_subset, ReparsedModule,
+};
+use crate::lsp::resolve::HelperResolver;
 use crate::lsp::semtok::SemanticTokenSortable;
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompilerOpts, Export, HelperForm, ImportLongName, LongNameTranslation,
+    BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, ImportLongName,
+    LongNameTranslation,
 };
 use chialisp::compiler::prims::prims;
 use chialisp::compiler::sexp::{decode_string, SExp};
@@ -818,7 +822,19 @@ impl LSPServiceProvider {
                 }
             }
 
-            let new_parse = combine_new_with_old_parse(uristring, &doc.text, &output, &new_helpers);
+            let mut resolve_imported_helper = |frontend: &CompileForm, name: &[u8]| {
+                matches!(
+                    self.resolve_helper_reference(frontend, name),
+                    Some(HelperForm::Defun(_, _) | HelperForm::Defmacro(_))
+                )
+            };
+            let new_parse = combine_new_with_old_parse_with_imports(
+                uristring,
+                &doc.text,
+                &output,
+                &new_helpers,
+                &mut resolve_imported_helper,
+            );
 
             self.set_error_list(
                 uristring,

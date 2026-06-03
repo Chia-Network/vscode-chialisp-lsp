@@ -476,9 +476,20 @@ pub fn reparse_subset(
 }
 
 // Only the top scope is relevant for now.
-fn find_function_in_scopes(prims: &[Vec<u8>], scopes: &ParseScope, name: &SExp) -> bool {
+fn find_function_in_scopes<F>(
+    prims: &[Vec<u8>],
+    scopes: &ParseScope,
+    frontend: &CompileForm,
+    name: &SExp,
+    imported_helper_resolver: &mut F,
+) -> bool
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
     if let SExp::Atom(_, a) = name {
-        scopes.functions.contains(name) || prims.iter().any(|p| p == a)
+        scopes.functions.contains(name)
+            || prims.iter().any(|p| p == a)
+            || imported_helper_resolver(frontend, a)
     } else {
         false
     }
@@ -488,8 +499,23 @@ fn find_function_in_scopes(prims: &[Vec<u8>], scopes: &ParseScope, name: &SExp) 
 pub fn check_live_helper_calls(
     prims: &[Vec<u8>],
     scopes: &ParseScope,
+    frontend: &CompileForm,
     exp: &BodyForm,
 ) -> Option<CompileErr> {
+    let mut no_imported_helpers = |_frontend: &CompileForm, _name: &[u8]| false;
+    check_live_helper_calls_with_imports(prims, scopes, frontend, exp, &mut no_imported_helpers)
+}
+
+fn check_live_helper_calls_with_imports<F>(
+    prims: &[Vec<u8>],
+    scopes: &ParseScope,
+    frontend: &CompileForm,
+    exp: &BodyForm,
+    imported_helper_resolver: &mut F,
+) -> Option<CompileErr>
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
     match exp {
         BodyForm::Call(l, v, rest_args) => {
             if v.is_empty() {
@@ -498,7 +524,7 @@ pub fn check_live_helper_calls(
 
             // Try to make sense of the list head
             if let BodyForm::Value(s) = v[0].borrow() {
-                if !find_function_in_scopes(prims, scopes, s) {
+                if !find_function_in_scopes(prims, scopes, frontend, s, imported_helper_resolver) {
                     return Some(CompileErr(
                         s.loc(),
                         format!("No such function found: {}", s),
@@ -512,23 +538,47 @@ pub fn check_live_helper_calls(
             }
 
             for b in v.iter().skip(1) {
-                if let Some(e) = check_live_helper_calls(prims, scopes, b) {
+                if let Some(e) = check_live_helper_calls_with_imports(
+                    prims,
+                    scopes,
+                    frontend,
+                    b,
+                    imported_helper_resolver,
+                ) {
                     return Some(e);
                 }
             }
 
             if let Some(tail) = rest_args {
-                if let Some(e) = check_live_helper_calls(prims, scopes, tail) {
+                if let Some(e) = check_live_helper_calls_with_imports(
+                    prims,
+                    scopes,
+                    frontend,
+                    tail,
+                    imported_helper_resolver,
+                ) {
                     return Some(e);
                 }
             }
         }
         BodyForm::Let(_kind, letdata) => {
-            return check_live_helper_calls(prims, scopes, letdata.body.borrow());
+            return check_live_helper_calls_with_imports(
+                prims,
+                scopes,
+                frontend,
+                letdata.body.borrow(),
+                imported_helper_resolver,
+            );
         }
 
         BodyForm::Lambda(ldata) => {
-            return check_live_helper_calls(prims, scopes, ldata.body.borrow());
+            return check_live_helper_calls_with_imports(
+                prims,
+                scopes,
+                frontend,
+                ldata.body.borrow(),
+                imported_helper_resolver,
+            );
         }
 
         _ => {}
@@ -586,6 +636,26 @@ pub fn combine_new_with_old_parse(
     parsed: &ParsedDoc,
     reparse: &ReparsedModule,
 ) -> ParsedDoc {
+    let mut no_imported_helpers = |_frontend: &CompileForm, _name: &[u8]| false;
+    combine_new_with_old_parse_with_imports(
+        uristring,
+        text,
+        parsed,
+        reparse,
+        &mut no_imported_helpers,
+    )
+}
+
+pub fn combine_new_with_old_parse_with_imports<F>(
+    uristring: &str,
+    text: &[Rc<Vec<u8>>],
+    parsed: &ParsedDoc,
+    reparse: &ReparsedModule,
+    imported_helper_resolver: &mut F,
+) -> ParsedDoc
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
     let mut new_includes = parsed.includes.clone();
     let mut new_helpers = parsed.helpers.clone();
     let mut extracted_helpers = Vec::new();
@@ -697,16 +767,26 @@ pub fn combine_new_with_old_parse(
 
     for h in compile_with_dead_helpers_removed.helpers.iter() {
         if let HelperForm::Defun(_, d) = h {
-            if let Some(error) = check_live_helper_calls(&PRIM_NAMES, &scopes, &d.body) {
+            if let Some(error) = check_live_helper_calls_with_imports(
+                &PRIM_NAMES,
+                &scopes,
+                &compile_with_dead_helpers_removed,
+                &d.body,
+                imported_helper_resolver,
+            ) {
                 out_errors.push(error);
             }
         }
     }
 
     // Check whether functions called in exp are live
-    if let Some(error) =
-        check_live_helper_calls(&PRIM_NAMES, &scopes, &compile_with_dead_helpers_removed.exp)
-    {
+    if let Some(error) = check_live_helper_calls_with_imports(
+        &PRIM_NAMES,
+        &scopes,
+        &compile_with_dead_helpers_removed,
+        &compile_with_dead_helpers_removed.exp,
+        imported_helper_resolver,
+    ) {
         out_errors.push(error);
     }
 
