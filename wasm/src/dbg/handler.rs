@@ -841,10 +841,15 @@ impl Debugger {
                     })?;
 
                 // in module programs, the output is a summary, not the program data itelf.
+                // The hex data is written alongside simultaneously in that scenario by the
+                // compile_clvm_text above.  If an error wasn't returne,d then the hex file
+                // will be present.
                 let bin =
                     if is_module_program(&parsed_program) {
+                        // Module style drops hex file on disk.
                         self.read_program_hex_output(opts.clone(), &name)?
                     } else {
+                        // Non module style returns the program's code literally.
                         sexp_as_bin(allocator, clvm_res).hex()
                     };
 
