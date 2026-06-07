@@ -83,6 +83,10 @@ fn final_export_name(bf: &ExportFunctionDesc) -> &[u8] {
     &bf.name.value
 }
 
+fn function_export_name_matches(bf: &ExportFunctionDesc, imported_name: &[u8]) -> bool {
+    final_export_name(bf) == imported_name || bf.name.value == imported_name
+}
+
 impl HelperResolver for LSPServiceProvider {
     fn resolve_helper_reference<'a>(
         &mut self,
@@ -123,7 +127,9 @@ impl HelperResolver for LSPServiceProvider {
                                     }),
                                 ));
                             }
-                            Export::Function(bf) if final_export_name(bf) == imported_name => {
+                            Export::Function(bf)
+                                if function_export_name_matches(bf, &imported_name) =>
+                            {
                                 let nil = SExp::Nil(bf.loc.clone());
                                 let nil_rc = Rc::new(nil.clone());
                                 return Some(HelperForm::Defun(
@@ -167,5 +173,39 @@ impl HelperResolver for LSPServiceProvider {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use chialisp::compiler::comptypes::NameAndLoc;
+    use chialisp::compiler::srcloc::Srcloc;
+
+    fn name_and_loc(name: &str) -> NameAndLoc {
+        NameAndLoc {
+            value: name.as_bytes().to_vec(),
+            loc: None,
+        }
+    }
+
+    fn export_function_desc(name: &str, as_name: Option<&str>) -> ExportFunctionDesc {
+        ExportFunctionDesc {
+            loc: Srcloc::start("*test*"),
+            kw_loc: None,
+            name: name_and_loc(name),
+            as_loc: None,
+            as_name: as_name.map(name_and_loc),
+        }
+    }
+
+    #[test]
+    fn function_export_name_matches_source_and_final_names() {
+        let desc = export_function_desc("original", Some("exported"));
+
+        assert!(function_export_name_matches(&desc, b"original"));
+        assert!(function_export_name_matches(&desc, b"exported"));
+        assert!(!function_export_name_matches(&desc, b"other"));
     }
 }
