@@ -112,7 +112,7 @@ impl HelperResolver for LSPServiceProvider {
                                 return Some(HelperForm::Defun(
                                     false,
                                     Box::new(DefunData {
-                                        name: b"program".to_vec(),
+                                        name: imported_name.clone(),
                                         nl: desc.loc.clone(),
                                         kw: desc.kw_loc.clone(),
                                         loc: desc.loc.clone(),
