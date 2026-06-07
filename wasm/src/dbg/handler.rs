@@ -564,16 +564,32 @@ fn get_initialize_response() -> InitializeResponse {
     }
 }
 
-fn is_mod(sexp: Rc<SExp>) -> bool {
+// All current clvm operators that could go at the top level are < 3 bytes, no keywords
+// are.
+fn is_clvm_expr(sexp: Rc<SExp>) -> bool {
     if let SExp::Cons(_, a, _) = sexp.borrow() {
-        if let SExp::Atom(_, n) = a.borrow() {
-            n == b"mod"
-        } else {
-            false
+        if let SExp::Atom(_, n) = a.atomize().borrow() {
+            return n.len() < 3;
         }
-    } else {
-        false
     }
+
+    false
+}
+
+// True if the program is a module program.  It is if it contains at least one toplevel
+// form with an export keyword.
+fn is_module_program(forms: &[Rc<SExp>]) -> bool {
+    for f in forms.iter() {
+        if let SExp::Cons(_, a, _) = f.borrow() {
+            if let SExp::Atom(_, n) = a.atomize().borrow() {
+                if n == b"export" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 fn is_hex_file(filedata: &[u8]) -> bool {
@@ -721,6 +737,20 @@ impl Debugger {
         Ok(decoded_chialisp_json)
     }
 
+    /// Return the contents of the hex output corresponding to the program we compiled
+    /// if it exists.  The file extension changes from .clsp to .hex so we can find the
+    /// target file.
+    fn read_program_hex_output(
+        &self,
+        opts: Rc<dyn CompilerOpts>,
+        name: &str
+    ) -> Result<String, String> {
+        let mut pb = PathBuf::from(name);
+        pb.set_extension("hex");
+        let target_file = pb.display().to_string();
+        self.fs.read_content(&target_file).map_err(|e| format!("error reading {name}: {e:?}"))
+    }
+
     /// Try to obtain anything we're able to locate related to the chialisp program
     /// or clvm hex that was launched.
     fn read_program_data(
@@ -757,7 +787,7 @@ impl Debugger {
             compiled = Some(frontend_compiled);
         }
 
-        let mut parsed_program = if is_hex {
+        let parsed_program = if is_hex {
             let prog_srcloc = Srcloc::start(name);
 
             // Synthesize content by disassembling the file.
@@ -769,13 +799,15 @@ impl Debugger {
                     HashMap::new()
                 };
 
-            hex_to_modern_sexp(
-                allocator,
-                &use_symbol_table,
-                prog_srcloc,
-                &decode_string(read_in_file),
-            )
-            .map_err(run_err_map)?
+            vec![
+                hex_to_modern_sexp(
+                    allocator,
+                    &use_symbol_table,
+                    prog_srcloc,
+                    &decode_string(read_in_file),
+                )
+                    .map_err(run_err_map)?
+            ]
         } else {
             let parsed = parse_sexp(Srcloc::start(name), read_in_file.iter().copied())
                 .map_err(parse_err_map)?;
@@ -784,38 +816,49 @@ impl Debugger {
                 return Err(format!("Empty program file {name}"));
             }
 
-            parsed[0].clone()
+            parsed
         };
 
-        if is_mod(parsed_program.clone()) {
-            // Compile program.
-            let clvm_res = compile_clvm_text(
-                allocator,
-                opts.clone(),
-                &mut use_symbol_table,
-                &decode_string(read_in_file),
-                name,
-                true,
-            )
-            .map_err(|e| {
-                let formatted = match e {
-                    CompileError::Classic(_x, y) => y,
-                    CompileError::Modern(l, v) => format!("{l}: {v}"),
-                };
-                self.log.log(&format!("error compiling: {formatted}"));
-                formatted
-            })?;
-            let bin = sexp_as_bin(allocator, clvm_res).hex();
-            parsed_program =
+        // Empty was handled above.
+        let program_to_run =
+            if !is_hex && !is_clvm_expr(parsed_program[0].clone()) {
+                // Compile program.
+                let clvm_res = compile_clvm_text(
+                    allocator,
+                    opts.clone(),
+                    &mut use_symbol_table,
+                    &decode_string(read_in_file),
+                    name,
+                    true,
+                )
+                    .map_err(|e| {
+                        let formatted = match e {
+                            CompileError::Classic(_x, y) => y,
+                            CompileError::Modern(l, v) => format!("{l}: {v}"),
+                        };
+                        self.log.log(&format!("error compiling: {formatted}"));
+                        formatted
+                    })?;
+
+                // in module programs, the output is a summary, not the program data itelf.
+                let bin =
+                    if is_module_program(&parsed_program) {
+                        self.read_program_hex_output(opts.clone(), &name)?
+                    } else {
+                        sexp_as_bin(allocator, clvm_res).hex()
+                    };
+
                 hex_to_modern_sexp(allocator, &use_symbol_table, Srcloc::start(name), &bin)
-                    .map_err(run_err_map)?;
-        };
+                    .map_err(run_err_map)?
+            } else {
+                parsed_program[0].clone()
+            };
 
-        let arguments = Rc::new(SExp::Nil(parsed_program.loc()));
+        let arguments = Rc::new(SExp::Nil(parsed_program[0].loc()));
 
         Ok(RunStartData {
             source_file: name.to_owned(),
-            program: parsed_program,
+            program: program_to_run,
             program_lines,
             arguments,
             symbols: use_symbol_table,
