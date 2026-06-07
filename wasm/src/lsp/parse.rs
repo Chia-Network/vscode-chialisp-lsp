@@ -967,8 +967,10 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
 
     if ranges_0.len() == 1 && !is_module_form {
         (false, ranges_1)
-    } else {
+    } else if !ranges_0.is_empty() {
         (true, ranges_0)
+    } else {
+        (false, ranges_1)
     }
 }
 
