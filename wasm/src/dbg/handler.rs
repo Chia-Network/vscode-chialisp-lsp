@@ -821,7 +821,7 @@ impl Debugger {
 
         // Empty was handled above.
         let program_to_run =
-            if !is_clvm_expr(parsed_program[0].clone()) {
+            if !is_hex && !is_clvm_expr(parsed_program[0].clone()) {
                 // Compile program.
                 let clvm_res = compile_clvm_text(
                     allocator,
