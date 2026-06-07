@@ -12,9 +12,9 @@ use debug_types::requests::{
     InitializeRequestArguments, LaunchRequestArguments, RequestCommand, SourceArguments,
 };
 use debug_types::responses::{
-    InitializeResponse, Response, ResponseBody, ScopesResponse, SetBreakpointsResponse,
-    SetExceptionBreakpointsResponse, SourceResponse, StackTraceResponse, ThreadsResponse,
-    VariablesResponse,
+    ContinueResponse, InitializeResponse, Response, ResponseBody, ScopesResponse,
+    SetBreakpointsResponse, SetExceptionBreakpointsResponse, SourceResponse, StackTraceResponse,
+    ThreadsResponse, VariablesResponse,
 };
 use debug_types::types::{
     Breakpoint, Capabilities, ChecksumAlgorithm, Scope, Source, SourceBreakpoint, StackFrame,
@@ -1496,7 +1496,9 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             request_seq: pm.seq,
                             success: true,
                             message: Some("run continue".to_string()),
-                            body: Some(ResponseBody::StepOut),
+                            body: Some(ResponseBody::Continue(ContinueResponse {
+                                all_threads_continued: Some(true),
+                            })),
                         }),
                     });
 
