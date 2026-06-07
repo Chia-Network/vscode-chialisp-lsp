@@ -1496,7 +1496,7 @@ impl MessageHandler<ProtocolMessage> for Debugger {
                             request_seq: pm.seq,
                             success: true,
                             message: Some("run continue".to_string()),
-                            body: Some(ResponseBody::StepOut),
+                            body: Some(ResponseBody::Continue),
                         }),
                     });
 
