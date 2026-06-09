@@ -78,7 +78,6 @@ function stopStepper() {
 function deliverMessage(m) {
     let messages = [];
     try {
-        processCommand(JSON.parse(m));
         log.write(`input msg ${m}`);
         messages = clvm_tools_rs.dbg_service_handle_msg(dbg_id, m);
     } catch (e) {
@@ -120,7 +119,12 @@ function processCommand(cmd) {
     log.write(JSON.stringify(cmd));
 }
 
-const stdinReader = new StdinReader(deliverMessage);
+function deliverStdinMessage(m) {
+    processCommand(JSON.parse(m));
+    deliverMessage(m);
+}
+
+const stdinReader = new StdinReader(deliverStdinMessage);
 
 process.stdin.on('data', function(chunk) {
     stdinReader.processChunk(log, chunk);
