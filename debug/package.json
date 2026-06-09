@@ -1,7 +1,8 @@
 {
   "name": "chialisp-lsp-runner",
   "scripts": {
-    "build": "webpack"
+    "build": "webpack",
+    "test": "node --test test/*.test.js"
   },
   "devDependencies": {
     "webpack": "^5.105.2",

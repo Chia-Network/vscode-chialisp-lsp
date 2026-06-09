@@ -2,15 +2,10 @@ let clvm_tools_rs = require('../build/clvm_tools_lsp');
 let process = require('process');
 let path = require('path');
 let fs = require('fs');
+let {StdinReader} = require('./stdin_reader');
 
 // clean 1:1 8-bit encoding.
 process.stdin.setEncoding('binary');
-
-const START_HEADER = 0;
-const EOL_RETURN = 1;
-const FIRST_EOL = 2;
-const MAYBE_SECOND_EOL = 3;
-const MESSAGE_READ = 4;
 
 var workspaceFolder = process.env.WORKSPACE_FOLDER ? process.env.WORKSPACE_FOLDER : ".";
 
@@ -43,7 +38,6 @@ let dbg_id = clvm_tools_rs.create_dbg_service(function(name) {
 });
 
 var stepper_tick = undefined;
-let stdin_reader = {};
 
 // We don't have threads in wasm so we depend on a ticker at this layer to cause
 // the debugger to auto-step, keeping control coming from one consistent source.
@@ -56,7 +50,7 @@ function startStepper() {
     }
 
     stepper_tick = setInterval(() => {
-        stdin_reader.deliver_msg(JSON.stringify({
+        deliverMessage(JSON.stringify({
             seq:0,
             type:"request",
             command:"stepIn",
@@ -76,16 +70,12 @@ function stopStepper() {
     stepper_tick = undefined;
 }
 
-stdin_reader.mode = START_HEADER;
-stdin_reader.message_header = '';
-stdin_reader.message_payload = '';
-stdin_reader.remaining_bytes = 0;
 // When a full message is captured and parsed, it's delivered here.  The API
 // entry point receives the message in json format.
 //
 // We recognize the debug service indicating that it wants the runner to start
 // automatically stepping and events that cause it to stop.
-stdin_reader.deliver_msg = function(m) {
+function deliverMessage(m) {
     let messages = [];
     try {
         log.write(`input msg ${m}`);
@@ -110,7 +100,7 @@ stdin_reader.deliver_msg = function(m) {
             process.stdout.write(message);
         }
     }
-};
+}
 
 function processCommand(cmd) {
     log.write(`process command ${JSON.stringify(cmd)}`);
@@ -129,70 +119,15 @@ function processCommand(cmd) {
     log.write(JSON.stringify(cmd));
 }
 
-// Fairly complicated but the goal here is to implement a state machine that
-// parses the http-header-like message protocol used by the debug adapter and
-// lsp.  Ultimately, the goal is to call processCommand 
-process.stdin.on('data', function(chunk) {
-    for (var i = 0; i < chunk.length; ) {
-        let ch = chunk[i];
-        let do_inc = 1;
-        if (stdin_reader.mode === START_HEADER) {
-            if (ch === '\r' || ch === '\n') {
-                let line = stdin_reader.message_header.split(':');
-                stdin_reader.message_header = '';
-                if (line[0].match(/[Cc]ontent-[Ll]ength/) && line.length > 1) {
-                    stdin_reader.remaining_bytes = parseInt(line[1].trim());
-                }
-                if (ch === '\r') {
-                    stdin_reader.mode = EOL_RETURN;
-                } else {
-                    stdin_reader.mode = FIRST_EOL;
-                }
-            } else {
-                stdin_reader.message_header += ch;
-            }
-        } else if (stdin_reader.mode == EOL_RETURN) {
-            if (ch === '\n') {
-                stdin_reader.mode = FIRST_EOL;
-            }
-        } else if (stdin_reader.mode == FIRST_EOL) {
-            if (ch === '\r') {
-                stdin_reader.mode = MAYBE_SECOND_EOL;
-            } else if (ch === '\n') {
-                stdin_reader.mode = MESSAGE_READ;
-            } else {
-                stdin_reader.mode = START_HEADER;
-                stdin_reader.message_header += ch;
-            }
-        } else if (stdin_reader.mode == MAYBE_SECOND_EOL) {
-            if (ch === '\n') {
-                stdin_reader.mode = MESSAGE_READ;
-            }
-        } else { // MESSAGE_READ
-            do_inc = 0;
-            if (chunk.length >= stdin_reader.remaining_bytes) {
-                let message = chunk.substr(i, stdin_reader.remaining_bytes);
-                i += stdin_reader.remaining_bytes;
-                stdin_reader.remaining_bytes = 0;
-                stdin_reader.mode = START_HEADER;
-                try {
-                    if (stdin_reader.deliver_msg) {
-                        processCommand(JSON.parse(message));
-                        stdin_reader.deliver_msg(message);
-                    }
-                } catch (e) {
-                    log.write('exception ' + e);
-                }
-            } else {
-                stdin_reader.message_payload += chunk.substr(i);
-                let can_use_bytes = chunk.length - i;
-                stdin_reader.remaining_bytes -= can_use_bytes;
-                i += can_use_bytes; // end
-            }
-        }
+function deliverStdinMessage(m) {
+    processCommand(JSON.parse(m));
+    deliverMessage(m);
+}
 
-        i += do_inc;
-    }
+const stdinReader = new StdinReader(deliverStdinMessage);
+
+process.stdin.on('data', function(chunk) {
+    stdinReader.processChunk(log, chunk);
 });
 
 process.stdin.on('end', function() {
