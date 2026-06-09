@@ -1,4 +1,5 @@
 pub mod obj;
+pub mod elf;
 
 use regex::Regex;
 use std::collections::HashMap;
