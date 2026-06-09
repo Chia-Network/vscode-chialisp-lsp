@@ -1,0 +1,8 @@
+;; test
+(import std.reverse exposing (reverse as rev))
+
+(include *standard-cl-25*)
+
+(defun F (X) (+ X 1))
+
+(export (X Y) (rev (F X)))

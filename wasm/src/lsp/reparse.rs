@@ -3,15 +3,18 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::lsp::completion::PRIM_NAMES;
-use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, ParsedDoc};
+use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, IncludedFileSpec, ParsedDoc};
 use crate::lsp::types::{
-    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
+    DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ParsedForm, ReparsedExp,
+    ReparsedHelper,
 };
-use chialisp::compiler::clvm::sha256tree_from_atom;
+use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
 use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
+    BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData,
 };
-use chialisp::compiler::frontend::{compile_bodyform, compile_helperform};
+use chialisp::compiler::frontend::{
+    compile_bodyform, compile_helperform, compile_nsref, match_export_form, HelperFormResult,
+};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -27,11 +30,11 @@ pub struct ReparsedModule {
     pub helpers: HashMap<Hash, ReparsedHelper>,
     pub exp: Option<ReparsedExp>,
     pub unparsed: HashMap<Hash, DocRange>,
-    pub includes: HashMap<Hash, IncludeData>,
+    pub includes: HashMap<Hash, IncludedFileSpec>,
     pub errors: Vec<CompileErr>,
 }
 
-pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
+pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludedFileSpec> {
     // Match include with quoted or unquoted argument.
     let matches_include = |l: &[SExp]| {
         if let (SExp::Atom(kl, incl), SExp::Atom(nl, fname)) = (l[0].borrow(), l[1].borrow()) {
@@ -49,14 +52,14 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
         if l.len() == 2 {
             if let Some((kl, incl, nl, fname)) = matches_include(&l) {
                 if incl == b"include" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl,
                         name_loc: nl,
                         kind: IncludeKind::Include,
                         filename: fname,
                         found: None,
-                    });
+                    }));
                 }
             }
         } else if l.len() == 3 {
@@ -64,14 +67,14 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
                 (l[0].borrow(), l[1].borrow(), l[2].borrow())
             {
                 if incl == b"compile-file" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl.clone(),
                         name_loc: nl.clone(),
                         kind: IncludeKind::CompileFile(il.clone()),
                         filename: fname.clone(),
                         found: None,
-                    });
+                    }));
                 }
             }
         } else if l.len() == 4 {
@@ -83,26 +86,28 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludeData> {
             ) = (l[0].borrow(), l[1].borrow(), l[2].borrow(), l[3].borrow())
             {
                 if incl == b"embed-file" {
-                    return Some(IncludeData {
+                    return Some(IncludedFileSpec::Include(IncludeData {
                         loc: sexp.loc(),
                         kw_loc: kl.clone(),
                         name_loc: nl.clone(),
                         kind: IncludeKind::EmbedFile(il.clone(), tl.clone()),
                         filename: fname.clone(),
                         found: None,
-                    });
+                    }));
                 }
             }
+        } else if let Ok(HelperForm::Defnsref(imp)) = compile_nsref(sexp.loc(), &l) {
+            return Some(IncludedFileSpec::Import(None, *imp.clone()));
         }
 
         None
     })
 }
 
-fn compile_helperform_with_loose_defconstant(
+fn compile_helperform_with_loose_defconstant_and_module_forms(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>,
-) -> Result<Option<HelperForm>, CompileErr> {
+) -> Result<Option<ParsedForm<HelperFormResult>>, CompileErr> {
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -119,7 +124,7 @@ fn compile_helperform_with_loose_defconstant(
             // not be a valid expression.  This is special to defconstant ...
             // every other body is necesarily a BodyForm.  We can allow this
             // to be looser because it is in classic chialisp.
-            if matches!(result, Err(_)) {
+            if result.is_err() {
                 let amended_instr = enlist(
                     parsed.loc(),
                     &[
@@ -131,20 +136,31 @@ fn compile_helperform_with_loose_defconstant(
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
-                return compile_helperform(opts, Rc::new(amended_instr));
+                return compile_helperform(opts.clone(), Rc::new(amended_instr))
+                    .map(|o| o.map(|h| ParsedForm::Helper(vec![h])));
             }
         }
     }
 
     // Not a proper list so not the kind of thing we're looking for.
-    compile_helperform(opts, parsed)
+    match compile_helperform(opts.clone(), parsed.clone()).map(|o| {
+        o.filter(|h| !h.new_helpers.is_empty())
+            .map(|h| ParsedForm::Helper(vec![h]))
+    }) {
+        Err(e) => match_export_form(opts.clone(), parsed.clone())
+            .map(|o| o.map(ParsedForm::ModuleExport))
+            .map_err(|_| e),
+        r => r,
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn reparse_subset(
     prims: &[Vec<u8>],
     opts: Rc<dyn CompilerOpts>,
     doc: &[Rc<Vec<u8>>],
     uristring: &str,
+    module_style: bool,
     simple_ranges: &[DocRange],
     compiled: &CompileForm,
     prev_helpers: &HashMap<Hash, ReparsedHelper>,
@@ -254,7 +270,7 @@ pub fn reparse_subset(
         }
     }
 
-    if break_end == suffix_text.len() {
+    if break_end == suffix_text.len() && !module_style {
         result.errors.push(CompileErr(
             DocRange {
                 start: suffix_start.clone(),
@@ -341,24 +357,104 @@ pub fn reparse_subset(
                         continue;
                     }
 
-                    result.helpers.insert(
-                        hash.clone(),
-                        ReparsedHelper {
-                            hash,
-                            range: r.clone(),
-                            parsed: compile_helperform_with_loose_defconstant(
-                                opts.clone(),
-                                parsed[0].clone(),
-                            )
-                            .and_then(|mh| {
-                                if let Some(h) = mh {
-                                    Ok(h)
-                                } else {
-                                    Err(CompileErr(loc, "must be a helper form".to_string()))
+                    let compiled_result = compile_helperform(opts.clone(), parsed[0].clone());
+
+                    let _ = match compiled_result {
+                        Ok(Some(parsed)) => {
+                            let typedefs: Vec<&HelperForm> = vec![];
+                            let other_helpers: &[HelperForm] = &parsed.new_helpers;
+
+                            let use_helper = if !typedefs.is_empty() {
+                                for h in other_helpers.iter() {
+                                    let new_hash = Hash::new(&sha256tree(h.to_sexp()));
+                                    result.helpers.insert(
+                                        new_hash.clone(),
+                                        ReparsedHelper {
+                                            hash: new_hash,
+                                            range: r.clone(),
+                                            parsed: Ok(ParsedForm::Helper(vec![h.clone()])),
+                                        },
+                                    );
                                 }
-                            }),
-                        },
-                    );
+                                Some(typedefs[0])
+                            } else if !parsed.new_helpers.is_empty() {
+                                Some(&parsed.new_helpers[0])
+                            } else {
+                                None
+                            };
+
+                            let new_parsed = if let Some(h) = use_helper {
+                                Ok(h)
+                            } else {
+                                Err(CompileErr(
+                                    loc.clone(),
+                                    "helper form was parsed but it wasn't understood by the LSP"
+                                        .to_string(),
+                                ))
+                            };
+
+                            new_parsed.cloned()
+                        }
+                        Ok(None) => {
+                            Err(CompileErr(loc.clone(), "must be a helper form".to_string()))
+                        }
+                        Err(e) => Err(e),
+                    };
+
+                    let dc_result = compile_helperform_with_loose_defconstant_and_module_forms(
+                        opts.clone(),
+                        parsed[0].clone(),
+                    )
+                    .and_then(|mh| {
+                        if let Some(h) = mh {
+                            Ok(h)
+                        } else {
+                            Err(CompileErr(loc, "must be a helper form".to_string()))
+                        }
+                    });
+                    match dc_result {
+                        Ok(ParsedForm::Helper(res)) => {
+                            for resh in res.iter() {
+                                for h in resh.new_helpers.iter() {
+                                    if let HelperForm::Defnsref(import) = h {
+                                        let nsref: &NamespaceRefData = import.borrow();
+                                        result.includes.insert(
+                                            hash.clone(),
+                                            IncludedFileSpec::Import(None, nsref.clone()),
+                                        );
+                                    }
+                                }
+                                result.helpers.insert(
+                                    hash.clone(),
+                                    ReparsedHelper {
+                                        hash: hash.clone(),
+                                        range: r.clone(),
+                                        parsed: Ok(ParsedForm::Helper(resh.new_helpers.clone())),
+                                    },
+                                );
+                            }
+                        }
+                        Ok(ParsedForm::ModuleExport(res)) => {
+                            result.helpers.insert(
+                                hash.clone(),
+                                ReparsedHelper {
+                                    hash,
+                                    range: r.clone(),
+                                    parsed: Ok(ParsedForm::ModuleExport(res.clone())),
+                                },
+                            );
+                        }
+                        Err(e) => {
+                            result.helpers.insert(
+                                hash.clone(),
+                                ReparsedHelper {
+                                    hash,
+                                    range: r.clone(),
+                                    parsed: Err(e),
+                                },
+                            );
+                        }
+                    }
                 }
                 Err((l, s)) => {
                     result.helpers.insert(
@@ -380,9 +476,20 @@ pub fn reparse_subset(
 }
 
 // Only the top scope is relevant for now.
-fn find_function_in_scopes(prims: &[Vec<u8>], scopes: &ParseScope, name: &SExp) -> bool {
+fn find_function_in_scopes<F>(
+    prims: &[Vec<u8>],
+    scopes: &ParseScope,
+    frontend: &CompileForm,
+    name: &SExp,
+    imported_helper_resolver: &mut F,
+) -> bool
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
     if let SExp::Atom(_, a) = name {
-        scopes.functions.contains(name) || prims.iter().any(|p| p == a)
+        scopes.functions.contains(name)
+            || prims.iter().any(|p| p == a)
+            || imported_helper_resolver(frontend, a)
     } else {
         false
     }
@@ -392,8 +499,23 @@ fn find_function_in_scopes(prims: &[Vec<u8>], scopes: &ParseScope, name: &SExp) 
 pub fn check_live_helper_calls(
     prims: &[Vec<u8>],
     scopes: &ParseScope,
+    frontend: &CompileForm,
     exp: &BodyForm,
 ) -> Option<CompileErr> {
+    let mut no_imported_helpers = |_frontend: &CompileForm, _name: &[u8]| false;
+    check_live_helper_calls_with_imports(prims, scopes, frontend, exp, &mut no_imported_helpers)
+}
+
+fn check_live_helper_calls_with_imports<F>(
+    prims: &[Vec<u8>],
+    scopes: &ParseScope,
+    frontend: &CompileForm,
+    exp: &BodyForm,
+    imported_helper_resolver: &mut F,
+) -> Option<CompileErr>
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
     match exp {
         BodyForm::Call(l, v, rest_args) => {
             if v.is_empty() {
@@ -402,7 +524,7 @@ pub fn check_live_helper_calls(
 
             // Try to make sense of the list head
             if let BodyForm::Value(s) = v[0].borrow() {
-                if !find_function_in_scopes(prims, scopes, s) {
+                if !find_function_in_scopes(prims, scopes, frontend, s, imported_helper_resolver) {
                     return Some(CompileErr(
                         s.loc(),
                         format!("No such function found: {}", s),
@@ -416,23 +538,47 @@ pub fn check_live_helper_calls(
             }
 
             for b in v.iter().skip(1) {
-                if let Some(e) = check_live_helper_calls(prims, scopes, b) {
+                if let Some(e) = check_live_helper_calls_with_imports(
+                    prims,
+                    scopes,
+                    frontend,
+                    b,
+                    imported_helper_resolver,
+                ) {
                     return Some(e);
                 }
             }
 
             if let Some(tail) = rest_args {
-                if let Some(e) = check_live_helper_calls(prims, scopes, tail) {
+                if let Some(e) = check_live_helper_calls_with_imports(
+                    prims,
+                    scopes,
+                    frontend,
+                    tail,
+                    imported_helper_resolver,
+                ) {
                     return Some(e);
                 }
             }
         }
         BodyForm::Let(_kind, letdata) => {
-            return check_live_helper_calls(prims, scopes, letdata.body.borrow());
+            return check_live_helper_calls_with_imports(
+                prims,
+                scopes,
+                frontend,
+                letdata.body.borrow(),
+                imported_helper_resolver,
+            );
         }
 
         BodyForm::Lambda(ldata) => {
-            return check_live_helper_calls(prims, scopes, ldata.body.borrow());
+            return check_live_helper_calls_with_imports(
+                prims,
+                scopes,
+                frontend,
+                ldata.body.borrow(),
+                imported_helper_resolver,
+            );
         }
 
         _ => {}
@@ -490,9 +636,30 @@ pub fn combine_new_with_old_parse(
     parsed: &ParsedDoc,
     reparse: &ReparsedModule,
 ) -> ParsedDoc {
-    let new_includes = reparse.includes.clone();
+    let mut no_imported_helpers = |_frontend: &CompileForm, _name: &[u8]| false;
+    combine_new_with_old_parse_with_imports(
+        uristring,
+        text,
+        parsed,
+        reparse,
+        &mut no_imported_helpers,
+    )
+}
+
+pub fn combine_new_with_old_parse_with_imports<F>(
+    uristring: &str,
+    text: &[Rc<Vec<u8>>],
+    parsed: &ParsedDoc,
+    reparse: &ReparsedModule,
+    imported_helper_resolver: &mut F,
+) -> ParsedDoc
+where
+    F: FnMut(&CompileForm, &[u8]) -> bool,
+{
+    let mut new_includes = parsed.includes.clone();
     let mut new_helpers = parsed.helpers.clone();
     let mut extracted_helpers = Vec::new();
+    let mut exports = parsed.exports.clone();
     let mut to_remove = HashSet::new();
     let mut remove_names = HashSet::new();
     let mut hash_to_name = parsed.hash_to_name.clone();
@@ -516,9 +683,34 @@ pub fn combine_new_with_old_parse(
         }
     }
 
+    for (h, _) in exports.iter() {
+        // Reparse models helpers and exports together as an enum.
+        if !reparse.unparsed.contains_key(h) && !reparse.helpers.contains_key(h) {
+            // Exports are given synthetic names that can also be removed.
+            if let Some(name) = parsed.hash_to_name.get(h) {
+                remove_names.insert(name.clone());
+            }
+            to_remove.insert(h.clone());
+        }
+    }
+
+    // Ensure that we catch when an include form disappeared.
+    for (h, _) in new_includes.iter() {
+        if !reparse.unparsed.contains_key(h) && !reparse.includes.contains_key(h) {
+            to_remove.insert(h.clone());
+        }
+    }
+
     for h in to_remove.iter() {
+        // If we removed a namespace ref, clobber it from the import files.
         hash_to_name.remove(h);
         new_helpers.remove(h);
+        exports.remove(h);
+        new_includes.remove(h);
+    }
+
+    for (h, i) in reparse.includes.iter() {
+        new_includes.insert(h.clone(), i.clone());
     }
 
     // Iterate new helpers.
@@ -527,12 +719,25 @@ pub fn combine_new_with_old_parse(
             Err(e) => {
                 out_errors.push(e.clone());
             }
-            Ok(parsed) => {
-                hash_to_name.insert(h.clone(), parsed.name().clone());
-                extracted_helpers.push(parsed.clone());
+            Ok(ParsedForm::Helper(parsed_helper)) => {
+                for ph in parsed_helper.iter() {
+                    hash_to_name.insert(h.clone(), ph.name().clone());
+                    extracted_helpers.push(ph.clone());
+                    new_helpers.insert(h.clone(), p.clone());
+                }
+            }
+            Ok(ParsedForm::ModuleExport(Export::MainProgram(p))) => {
+                let name = b"__export__main".to_vec();
+                hash_to_name.insert(h.clone(), name.clone());
+                exports.insert(h.clone(), Export::MainProgram(p.clone()));
+            }
+            Ok(ParsedForm::ModuleExport(Export::Function(f))) => {
+                let mut name = b"__export__".to_vec();
+                name.append(&mut f.name.value.clone());
+                hash_to_name.insert(h.clone(), name.clone());
+                exports.insert(h.clone(), Export::Function(f.clone()));
             }
         }
-        new_helpers.insert(h.clone(), p.clone());
     }
 
     // For helpers that parsed, replace them in the compile.
@@ -562,16 +767,26 @@ pub fn combine_new_with_old_parse(
 
     for h in compile_with_dead_helpers_removed.helpers.iter() {
         if let HelperForm::Defun(_, d) = h {
-            if let Some(error) = check_live_helper_calls(&PRIM_NAMES, &scopes, &d.body) {
+            if let Some(error) = check_live_helper_calls_with_imports(
+                &PRIM_NAMES,
+                &scopes,
+                &compile_with_dead_helpers_removed,
+                &d.body,
+                imported_helper_resolver,
+            ) {
                 out_errors.push(error);
             }
         }
     }
 
     // Check whether functions called in exp are live
-    if let Some(error) =
-        check_live_helper_calls(&PRIM_NAMES, &scopes, &compile_with_dead_helpers_removed.exp)
-    {
+    if let Some(error) = check_live_helper_calls_with_imports(
+        &PRIM_NAMES,
+        &scopes,
+        &compile_with_dead_helpers_removed,
+        &compile_with_dead_helpers_removed.exp,
+        imported_helper_resolver,
+    ) {
         out_errors.push(error);
     }
 
@@ -579,6 +794,7 @@ pub fn combine_new_with_old_parse(
         ignored: reparse.ignored,
         mod_kw: reparse.mod_kw.clone(),
         compiled: compile_with_dead_helpers_removed,
+        exports,
         errors: out_errors,
         scopes,
         includes: new_includes,
