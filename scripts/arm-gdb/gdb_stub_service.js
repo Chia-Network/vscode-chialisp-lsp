@@ -1,0 +1,231 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const net = require('net');
+const path = require('path');
+
+function parseArgs(argv) {
+    const result = {};
+    for (let i = 0; i < argv.length; i++) {
+        const key = argv[i];
+        if (!key.startsWith('--')) {
+            throw new Error(`unexpected argument ${key}`);
+        }
+        const value = argv[i + 1];
+        if (value === undefined || value.startsWith('--')) {
+            throw new Error(`missing value for ${key}`);
+        }
+        result[key.slice(2)] = value;
+        i += 1;
+    }
+    return result;
+}
+
+function loadWasmModule() {
+    const candidates = [
+        path.resolve(__dirname, '../../debug/build/clvm_tools_lsp.js'),
+        path.resolve(__dirname, '../../wasm/pkg/clvm_tools_lsp.js'),
+    ];
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return require(candidate);
+        }
+    }
+
+    throw new Error(
+        `Could not find clvm_tools_lsp wasm package. Tried: ${candidates.join(', ')}. ` +
+        'Run `make` or `cd wasm && wasm-pack build --release --target nodejs` first.'
+    );
+}
+
+function getRunArg(runArgsJson) {
+    const runArgs = JSON.parse(runArgsJson);
+    if (typeof runArgs === 'string') {
+        return runArgs;
+    }
+
+    if (Array.isArray(runArgs) && typeof runArgs[0] === 'string') {
+        return runArgs[0];
+    }
+
+    return '()';
+}
+
+function readChialispJson(workspace) {
+    const configPath = path.join(workspace, 'chialisp.json');
+    try {
+        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {
+        if (e && e.code === 'ENOENT') {
+            return {};
+        }
+
+        throw e;
+    }
+}
+
+function getIncludePaths(workspace, programPath) {
+    const config = readChialispJson(workspace);
+    const configuredPaths = Array.isArray(config.include_paths) ? config.include_paths : [];
+    const includePaths = [path.dirname(programPath)];
+
+    for (const includePath of configuredPaths) {
+        if (typeof includePath !== 'string') {
+            continue;
+        }
+
+        if (path.isAbsolute(includePath)) {
+            includePaths.push(includePath);
+        } else {
+            includePaths.push(path.resolve(workspace, includePath));
+        }
+    }
+
+    return Array.from(new Set(includePaths));
+}
+
+function makeFileReader(workspace) {
+    return (filename) => {
+        const candidates = path.isAbsolute(filename) ? [filename] : [path.resolve(workspace, filename)];
+        for (const candidate of candidates) {
+            try {
+                return fs.readFileSync(candidate, 'utf8');
+            } catch (_e) {
+                // Try the next candidate.
+            }
+        }
+
+        return null;
+    };
+}
+
+function requiredArgs(args) {
+    for (const required of ['workspace', 'program', 'run-args-json', 'elf-out', 'synthetic-source-out', 'port']) {
+        if (!args[required]) {
+            throw new Error(`missing --${required}`);
+        }
+    }
+}
+
+function writeGeneratedElf(wasm, args) {
+    const program = fs.readFileSync(args.program, 'utf8');
+    const runArg = getRunArg(args['run-args-json']);
+    const includePaths = getIncludePaths(args.workspace, args.program);
+    const built = wasm.arm_gdb_build_program(
+        args.program,
+        program,
+        runArg,
+        JSON.stringify(includePaths),
+        makeFileReader(args.workspace),
+        args['elf-out']
+    );
+    const elf = Buffer.from(built.elf);
+    const syntheticSource = built.syntheticSource || '';
+
+    fs.mkdirSync(path.dirname(args['elf-out']), { recursive: true });
+    fs.writeFileSync(args['elf-out'], elf);
+    fs.mkdirSync(path.dirname(args['synthetic-source-out']), { recursive: true });
+    fs.writeFileSync(args['synthetic-source-out'], syntheticSource, 'utf8');
+
+    return {
+        elf,
+        syntheticSource,
+        symbolsJson: built.symbolsJson,
+    };
+}
+
+function destroyStub(wasm, stubId) {
+    if (stubId !== undefined) {
+        wasm.destroy_arm_gdb_stub(stubId);
+    }
+}
+
+function startTcpBridge(wasm, args, built) {
+    const port = Number.parseInt(args.port, 10);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error(`invalid --port ${args.port}`);
+    }
+
+    let shuttingDown = false;
+    const server = net.createServer((socket) => {
+        let stubId;
+        let exitCode = 0;
+        const shutdown = () => {
+            if (shuttingDown) {
+                return;
+            }
+
+            shuttingDown = true;
+            destroyStub(wasm, stubId);
+            server.close(() => process.exit(exitCode));
+            setTimeout(() => process.exit(exitCode), 1000).unref();
+        };
+        const writeToSocket = (bytes) => {
+            if (!socket.destroyed) {
+                socket.write(Buffer.from(bytes));
+            }
+        };
+
+        try {
+            stubId = wasm.create_arm_gdb_stub(built.elf, built.symbolsJson, writeToSocket);
+        } catch (e) {
+            console.error(e && e.stack ? e.stack : String(e));
+            exitCode = 1;
+            socket.destroy();
+            return;
+        }
+
+        socket.on('data', (chunk) => {
+            try {
+                wasm.arm_gdb_stub_incoming_data(stubId, chunk);
+            } catch (e) {
+                console.error(e && e.stack ? e.stack : String(e));
+                exitCode = 1;
+                socket.destroy();
+            }
+        });
+
+        socket.on('close', () => {
+            shutdown();
+        });
+
+        socket.on('error', (e) => {
+            console.error(e && e.stack ? e.stack : String(e));
+            exitCode = 1;
+        });
+    });
+
+    server.on('error', (e) => {
+        console.error(e && e.stack ? e.stack : String(e));
+        process.exit(1);
+    });
+
+    server.listen(port, '127.0.0.1', () => {
+        const address = server.address();
+        const readyPort = address && typeof address !== 'string' ? address.port : port;
+        console.log(`CHIALISP_GDB_STUB_READY ${readyPort}`);
+    });
+
+    process.on('SIGTERM', () => server.close(() => process.exit(0)));
+    process.on('SIGINT', () => server.close(() => process.exit(0)));
+}
+
+function main() {
+    const args = parseArgs(process.argv.slice(2));
+    requiredArgs(args);
+
+    process.chdir(args.workspace);
+
+    const wasm = loadWasmModule();
+    const built = writeGeneratedElf(wasm, args);
+    startTcpBridge(wasm, args, built);
+}
+
+try {
+    main();
+} catch (e) {
+    console.error(e && e.stack ? e.stack : String(e));
+    process.exit(1);
+}

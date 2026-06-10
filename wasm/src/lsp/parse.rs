@@ -131,6 +131,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             HelperForm::Defconstant(c) => {
                 toplevel_args.insert(Rc::new(SExp::Atom(c.loc.clone(), c.name.clone())));
             }
+            HelperForm::Defnamespace(_) | HelperForm::Defnsref(_) => {}
         }
 
         let f = h.loc().file.clone();
@@ -592,7 +593,10 @@ fn get_test_program_for_scope_tests(file: &str, prog: &[Rc<Vec<u8>>]) -> Compile
     let sl = Srcloc::start(file);
     let parsed = parse_sexp(sl, DocVecByteIter::new(prog)).expect("should parse");
     let opts = Rc::new(DefaultCompilerOpts::new(file));
-    frontend(opts, &parsed).expect("should compile")
+    frontend(opts, &parsed)
+        .expect("should compile")
+        .compileform()
+        .clone()
 }
 
 #[cfg(test)]

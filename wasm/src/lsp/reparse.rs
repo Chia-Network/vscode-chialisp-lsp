@@ -8,10 +8,8 @@ use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ReparsedExp, ReparsedHelper,
 };
 use chialisp::compiler::clvm::sha256tree_from_atom;
-use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm,
-};
-use chialisp::compiler::frontend::{compile_bodyform, compile_helperform};
+use chialisp::compiler::comptypes::{BodyForm, CompileErr, CompileForm, CompilerOpts, HelperForm};
+use chialisp::compiler::frontend::{compile_bodyform, compile_helperform, HelperFormResult};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -103,6 +101,11 @@ fn compile_helperform_with_loose_defconstant(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>,
 ) -> Result<Option<HelperForm>, CompileErr> {
+    let pick_first_helper = |result: Result<Option<HelperFormResult>, CompileErr>| {
+        result.map(|maybe_result| {
+            maybe_result.and_then(|helper_result| helper_result.new_helpers.into_iter().next())
+        })
+    };
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -131,13 +134,13 @@ fn compile_helperform_with_loose_defconstant(
                 // Try by enwrapping the body in quote so it can act as an
                 // expression to the parser.  Other kinds of errors will still
                 // go through.
-                return compile_helperform(opts, Rc::new(amended_instr));
+                return pick_first_helper(compile_helperform(opts, Rc::new(amended_instr)));
             }
         }
     }
 
     // Not a proper list so not the kind of thing we're looking for.
-    compile_helperform(opts, parsed)
+    pick_first_helper(compile_helperform(opts, parsed))
 }
 
 pub fn reparse_subset(
