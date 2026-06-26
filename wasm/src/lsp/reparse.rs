@@ -779,6 +779,20 @@ where
         }
     }
 
+    for export in parsed.exports.iter() {
+        if let Export::MainProgram(p) = &export.1 {
+            if let Some(error) = check_live_helper_calls_with_imports(
+                &PRIM_NAMES,
+                &scopes,
+                &compile_with_dead_helpers_removed,
+                &p.expr,
+                imported_helper_resolver,
+            ) {
+                out_errors.push(error);
+            }
+        }
+    }
+
     // Check whether functions called in exp are live
     if let Some(error) = check_live_helper_calls_with_imports(
         &PRIM_NAMES,

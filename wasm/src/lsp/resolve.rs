@@ -40,6 +40,18 @@ fn resolve_imported_name(
                         return Some((file_uri, helper.name().to_vec()));
                     }
                 }
+
+                // Look into the exports to see if we have a match.
+                for export in parsed.exports.iter() {
+                    if let Export::Function(f) = &export.1 {
+                        let use_name = f.as_name.clone().unwrap_or_else(|| f.name.clone());
+                        let full_helper_qualified_name = qualified_parent.with_child(&use_name.value);
+                        let name_to_match = full_helper_qualified_name.as_u8_vec(LongNameTranslation::Namespace);
+                        if name_to_match == called_name {
+                            return Some((file_uri, use_name.value));
+                        }
+                    }
+                }
             }
         }
         ModuleImportSpec::Exposing(_, exposed_names) => {
