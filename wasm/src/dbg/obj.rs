@@ -18,9 +18,7 @@ use chialisp::classic::clvm_tools::comp_input::RunAndCompileInputData;
 use chialisp::classic::clvm_tools::stages::stage_0::TRunProgram;
 use chialisp::classic::platform::argparse::ArgumentValue;
 use chialisp::compiler::cldb::hex_to_modern_sexp;
-use chialisp::compiler::cldb_hierarchy::{
-    HierarchialRunner, HierarchialStepResult, RunPurpose,
-};
+use chialisp::compiler::cldb_hierarchy::{HierarchialRunner, HierarchialStepResult, RunPurpose};
 #[cfg(test)]
 use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{CompileErr, CompileForm, CompilerOpts, HelperForm};
@@ -168,9 +166,13 @@ impl RunningDebugger {
                 // Verfified if we overlap at least one location in the symbols
                 // We.ll be simple and set it to the first matching point following
                 // the given location.
-                if let Some((hash, found)) =
-                    find_location(self.symbols.clone(), &self.compiled, log.clone(), &p, b)
-                {
+                if let Some((hash, found)) = find_location(
+                    self.symbols.clone(),
+                    self.compiled.as_ref(),
+                    log.clone(),
+                    &p,
+                    b,
+                ) {
                     log.log(&format!(
                         "breakpoint {p} {b:?} resolved to {hash} {found:?}"
                     ));
@@ -339,7 +341,6 @@ impl RunningDebugger {
             log.clone(),
             allocator,
             opts.clone(),
-            launch_args.init_args,
             launch_args.program,
             launch_args.symbols,
             read_in_file.as_bytes(),
@@ -406,8 +407,14 @@ fn test_simple_find_location_classic_symbols_1() {
         line: 2,
         log_message: None,
     };
-    let (hash, _) = find_location(symbols, &Some(compiled), log, "fact.clsp", &breakpoint_spec)
-        .expect("should be found");
+    let (hash, _) = find_location(
+        symbols,
+        Some(compiled.compileform()),
+        log,
+        "fact.clsp",
+        &breakpoint_spec,
+    )
+    .expect("should be found");
     assert_eq!(
         hash,
         "de3687023fa0a095d65396f59415a859dd46fc84ed00504bf4c9724fca08c9de"
@@ -482,7 +489,7 @@ fn try_locate_symbols(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, V
 }
 
 fn try_locate_source_file(fs: Rc<dyn IFileReader>, fname: &str) -> Option<(String, Vec<u8>)> {
-    for ext in vec![".clsp", ".clvm"].iter() {
+    for ext in [".clsp", ".clvm"].iter() {
         if let Some(res) = try_locate_related_file(fs.clone(), fname, ext) {
             return Some(res);
         }
@@ -500,7 +507,7 @@ fn translate_argument_names(lines: &[Rc<Vec<u8>>], sexp: Rc<SExp>) -> Rc<SExp> {
         )),
         SExp::Atom(l, _) => {
             let vrange = DocRange::from_srcloc(l.clone()).to_range();
-            if let Some(replacement) = get_positional_text(lines, &vrange.start) {
+            if let Some(replacement) = get_positional_text(&lines, &vrange.start) {
                 Rc::new(SExp::Atom(l.clone(), replacement.to_vec()))
             } else {
                 sexp.clone()
@@ -573,7 +580,6 @@ fn read_program_data(
     log: Rc<dyn ILogWriter>,
     allocator: &mut Allocator,
     opts: Rc<dyn CompilerOpts>,
-    _i: &InitializeRequestArguments,
     name: &str,
     symbols: &str,
     read_in_file: &[u8],
@@ -632,7 +638,7 @@ fn read_program_data(
             frontend(opts.clone(), &source_and_content.source_parsed).map_err(compile_err_map)?;
 
         inputs.source = Some(source_and_content);
-        inputs.compiled = Ok(Some(frontend_compiled));
+        inputs.compiled = Ok(Some(frontend_compiled.compileform().clone()));
     }
 
     let mut parsed_program = if inputs.is_hex {
