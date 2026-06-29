@@ -36,9 +36,68 @@ export class WorkaroundFeature implements StaticFeature {
     }
 }
 
+export class LogOutputChannelWrapper {
+  outputChannel: vscode.OutputChannel;
+  onDidChangeLogLevelEmitter: vscode.EventEmitter<vscode.LogLevel> = new vscode.EventEmitter();
+ 	onDidChangeLogLevel: vscode.Event<vscode.LogLevel>;
+
+  logLevel: number = 0;
+  name: string = "chialisp lsp log output channel";
+
+  append(text: string) {
+    this.outputChannel.append(text);
+  }
+  appendLine(text: string) {
+    this.outputChannel.appendLine(text);
+  }
+  clear() {
+    this.outputChannel.clear();
+  }
+  replace() {
+  }
+  show() {
+  }
+  hide() {
+  }
+  dispose() {
+    this.outputChannel.dispose();
+  }
+
+  trace(message: string, ...args: any[]) {
+    this.outputChannel.appendLine(message);
+    this.outputChannel.appendLine(JSON.stringify(args));
+  }
+
+  debug(message: string, ...args: any[]) {
+    this.outputChannel.appendLine(message);
+    this.outputChannel.appendLine(JSON.stringify(args));
+  }
+
+  info(message: string, ...args: any[]) {
+    this.outputChannel.appendLine(message);
+    this.outputChannel.appendLine(JSON.stringify(args));
+  }
+
+  warn(message: string, ...args: any[]) {
+    this.outputChannel.appendLine(message);
+    this.outputChannel.appendLine(JSON.stringify(args));
+  }
+
+  error(message: string, ...args: any[]) {
+    this.outputChannel.appendLine(message);
+    this.outputChannel.appendLine(JSON.stringify(args));
+  }
+
+  constructor(outputChannel: vscode.OutputChannel) {
+    this.onDidChangeLogLevel = this.onDidChangeLogLevelEmitter.event;
+    this.outputChannel = outputChannel;
+  }
+}
+
 async function activateServer(context: vscode.ExtensionContext) {
     const workspaceClientInstanceId = 'chialisp';
-    const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
+    const rawOutputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
+    const outputChannel: vscode.LogOutputChannel = new LogOutputChannelWrapper(rawOutputChannel);
     var ourExtensionPath = vscode.extensions.getExtension(ourExtension)?.extensionPath;
 
     if (!ourExtensionPath) {
