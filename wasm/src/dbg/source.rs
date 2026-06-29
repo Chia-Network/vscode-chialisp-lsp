@@ -54,7 +54,7 @@ pub struct StoredScope {
 /// This can certainly be improved.
 pub fn find_location(
     symbols: Rc<HashMap<String, String>>,
-    compiled: &Option<CompileForm>,
+    compiled: Option<&CompileForm>,
     log: Rc<dyn ILogWriter>,
     file: &str,
     b: &SourceBreakpoint,
@@ -163,6 +163,7 @@ pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
                 }
                 (SrclocParseAction::ReadingColumn(eof, l, c, _), b'-') => {
                     parse_state = SrclocParseAction::ReadingColumn(*eof, *l, *c, Some(i + 1));
+                    break;
                 }
                 (SrclocParseAction::ReadingColumn(eof, l, c, e), ch) => {
                     if !ch.is_ascii_digit() {
@@ -180,7 +181,7 @@ pub fn parse_srcloc(s: &str) -> Option<Srcloc> {
 
         if let SrclocParseAction::ReadingColumn(f, line, col, ext) = parse_state {
             Some(ParsedSrclocPart {
-                file: s.as_bytes().iter().copied().take(f).collect(),
+                file: s.as_bytes().iter().skip(skip).copied().take(f).collect(),
                 line,
                 col,
                 ext,
