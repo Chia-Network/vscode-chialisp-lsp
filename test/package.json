@@ -8,5 +8,8 @@
     "mocha": "^11.7.6",
     "selenium-webdriver": "^4.17.0",
     "serialize-javascript": "^7.0.6"
+  },
+  "resolutions": {
+    "diff": "^9.0.0"
   }
 }
