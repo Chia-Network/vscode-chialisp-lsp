@@ -159,7 +159,6 @@
     },
     "dependencies": {
         "@babel/core": "^7.29.6",
-        "uuid": "^14.0.1",
         "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
