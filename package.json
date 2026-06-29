@@ -158,6 +158,7 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
+        "jws": "^4.0.1",
         "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
