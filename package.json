@@ -158,7 +158,7 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
-        "babel-core": "^6.26.3",
+        "@babel/core": "^7.29.6",
         "uuid": "^14.0.1",
         "vscode-languageclient": "^9.0.1"
     },
