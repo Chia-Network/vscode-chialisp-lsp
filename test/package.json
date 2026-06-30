@@ -1,13 +1,16 @@
 {
   "name": "chialisp-lsp-test",
-  "overrides": {
-    "follow-redirects": "1.15.6"
-  },
   "dependencies": {
-    "chromedriver": "146.0.0",
+    "chromedriver": "150.0.0",
+    "diff": "^9.0.0",
     "jasmine": "^4.5.0",
     "jest": "^29.7.0",
-    "mocha": "^10.8.2",
-    "selenium-webdriver": "^4.17.0"
+    "mocha": "^11.7.6",
+    "selenium-webdriver": "^4.17.0",
+    "serialize-javascript": "^7.0.6"
+  },
+  "resolutions": {
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.6"
   }
 }
