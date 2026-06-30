@@ -36,61 +36,157 @@ export class WorkaroundFeature implements StaticFeature {
     }
 }
 
-export class LogOutputChannelWrapper {
-  outputChannel: vscode.OutputChannel;
-  onDidChangeLogLevelEmitter: vscode.EventEmitter<vscode.LogLevel> = new vscode.EventEmitter();
- 	onDidChangeLogLevel: vscode.Event<vscode.LogLevel>;
+export class LogOutputChannelWrapper implements vscode.LogOutputChannel {
+  private readonly outputChannel: vscode.OutputChannel;
+  private readonly onDidChangeLogLevelEmitter = new vscode.EventEmitter<vscode.LogLevel>();
+  private readonly disposables: vscode.Disposable[] = [];
+  private _logLevel: vscode.LogLevel;
 
-  logLevel: number = 0;
-  name: string = "chialisp lsp log output channel";
+  readonly onDidChangeLogLevel: vscode.Event<vscode.LogLevel>;
 
-  append(text: string) {
-    this.outputChannel.append(text);
+  constructor(outputChannel: vscode.OutputChannel, logLevel: vscode.LogLevel = vscode.env.logLevel) {
+    this.outputChannel = outputChannel;
+    this._logLevel = logLevel;
+    this.onDidChangeLogLevel = this.onDidChangeLogLevelEmitter.event;
+
+    this.disposables.push(
+      vscode.env.onDidChangeLogLevel((level) => {
+        this._logLevel = level;
+        this.onDidChangeLogLevelEmitter.fire(level);
+      }),
+      this.onDidChangeLogLevelEmitter,
+    );
   }
-  appendLine(text: string) {
-    this.outputChannel.appendLine(text);
+
+  get logLevel(): vscode.LogLevel {
+    return this._logLevel;
   }
-  clear() {
+
+  get name(): string {
+    return this.outputChannel.name;
+  }
+
+  append(value: string): void {
+    this.info(value);
+  }
+
+  appendLine(value: string): void {
+    this.append(value);
+  }
+
+  clear(): void {
     this.outputChannel.clear();
   }
-  replace() {
+
+  replace(value: string): void {
+    this.clear();
+    this.info(value);
   }
-  show() {
+
+  show(preserveFocus?: boolean): void;
+  show(column?: vscode.ViewColumn, preserveFocus?: boolean): void;
+  show(columnOrPreserveFocus?: vscode.ViewColumn | boolean, preserveFocus?: boolean): void {
+    if (typeof columnOrPreserveFocus === 'number') {
+      this.outputChannel.show(columnOrPreserveFocus, preserveFocus);
+    } else {
+      this.outputChannel.show(columnOrPreserveFocus);
+    }
   }
-  hide() {
+
+  hide(): void {
+    this.outputChannel.hide();
   }
-  dispose() {
+
+  dispose(): void {
+    for (const disposable of this.disposables) {
+      disposable.dispose();
+    }
     this.outputChannel.dispose();
   }
 
-  trace(message: string, ...args: any[]) {
-    this.outputChannel.appendLine(message);
-    this.outputChannel.appendLine(JSON.stringify(args));
+  trace(message: string, ...args: any[]): void {
+    this.writeLog(vscode.LogLevel.Trace, message, args, true);
   }
 
-  debug(message: string, ...args: any[]) {
-    this.outputChannel.appendLine(message);
-    this.outputChannel.appendLine(JSON.stringify(args));
+  debug(message: string, ...args: any[]): void {
+    this.writeLog(vscode.LogLevel.Debug, message, args);
   }
 
-  info(message: string, ...args: any[]) {
-    this.outputChannel.appendLine(message);
-    this.outputChannel.appendLine(JSON.stringify(args));
+  info(message: string, ...args: any[]): void {
+    this.writeLog(vscode.LogLevel.Info, message, args);
   }
 
-  warn(message: string, ...args: any[]) {
-    this.outputChannel.appendLine(message);
-    this.outputChannel.appendLine(JSON.stringify(args));
+  warn(message: string, ...args: any[]): void {
+    this.writeLog(vscode.LogLevel.Warning, message, args);
   }
 
-  error(message: string, ...args: any[]) {
-    this.outputChannel.appendLine(message);
-    this.outputChannel.appendLine(JSON.stringify(args));
+  error(error: string | Error, ...args: any[]): void {
+    if (!this.canLog(vscode.LogLevel.Error)) {
+      return;
+    }
+    if (error instanceof Error) {
+      this.appendFormattedLine(vscode.LogLevel.Error, this.formatMessage(error.stack ?? error.message, args));
+    } else {
+      this.writeLog(vscode.LogLevel.Error, error, args);
+    }
   }
 
-  constructor(outputChannel: vscode.OutputChannel) {
-    this.onDidChangeLogLevel = this.onDidChangeLogLevelEmitter.event;
-    this.outputChannel = outputChannel;
+  private writeLog(level: vscode.LogLevel, message: string, args: any[], verbose = false): void {
+    if (!this.canLog(level)) {
+      return;
+    }
+    this.appendFormattedLine(level, this.formatMessage(message, args, verbose));
+  }
+
+  private canLog(messageLevel: vscode.LogLevel): boolean {
+    return this._logLevel !== vscode.LogLevel.Off && this._logLevel <= messageLevel;
+  }
+
+  private appendFormattedLine(level: vscode.LogLevel, message: string): void {
+    this.outputChannel.append(`${this.getCurrentTimestamp()} [${this.stringifyLogLevel(level)}] ${message}\n`);
+  }
+
+  private formatMessage(message: string, args: any[], verbose = false): string {
+    const parts: any[] = [message, ...args];
+    let result = '';
+    for (let i = 0; i < parts.length; i++) {
+      let part = parts[i];
+      if (part instanceof Error) {
+        part = verbose ? (part.stack ?? part.message) : part.message;
+      } else if (typeof part === 'object' && part !== null) {
+        try {
+          part = JSON.stringify(part);
+        } catch {
+          part = String(part);
+        }
+      }
+      result += (i > 0 ? ' ' : '') + String(part);
+    }
+    return result;
+  }
+
+  private getCurrentTimestamp(): string {
+    const toTwoDigits = (value: number) => (value < 10 ? `0${value}` : `${value}`);
+    const toThreeDigits = (value: number) => (value < 10 ? `00${value}` : value < 100 ? `0${value}` : `${value}`);
+    const now = new Date();
+    return `${now.getFullYear()}-${toTwoDigits(now.getMonth() + 1)}-${toTwoDigits(now.getDate())} ${toTwoDigits(now.getHours())}:${toTwoDigits(now.getMinutes())}:${toTwoDigits(now.getSeconds())}.${toThreeDigits(now.getMilliseconds())}`;
+  }
+
+  private stringifyLogLevel(level: vscode.LogLevel): string {
+    switch (level) {
+      case vscode.LogLevel.Trace:
+        return 'trace';
+      case vscode.LogLevel.Debug:
+        return 'debug';
+      case vscode.LogLevel.Info:
+        return 'info';
+      case vscode.LogLevel.Warning:
+        return 'warning';
+      case vscode.LogLevel.Error:
+        return 'error';
+      default:
+        return 'off';
+    }
   }
 }
 
