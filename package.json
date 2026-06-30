@@ -6,7 +6,7 @@
     "publisher": "ChiaNetwork",
     "version": "1.2.6",
     "engines": {
-        "vscode": "^1.85.0"
+        "vscode": "^1.110.0"
     },
     "categories": [
         "Programming Languages"
@@ -158,14 +158,14 @@
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {
-        "vscode-languageclient": "^9.0.1"
+        "vscode-languageclient": "^10.0.1"
     },
     "devDependencies": {
         "@stylistic/eslint-plugin": "^5.10.0",
         "@types/glob": "^9.0.0",
         "@types/mocha": "^10.0.10",
         "@types/node": "25.9.3",
-        "@types/vscode": "^1.85.0",
+        "@types/vscode": "^1.110.0",
         "@typescript-eslint/eslint-plugin": "^8.61.1",
         "@typescript-eslint/parser": "^8.60.1",
         "@vscode/test-electron": "^3.0.0",
