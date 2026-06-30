@@ -176,5 +176,8 @@
         "typescript": "^5.9.3",
         "webpack": "^5.107.2",
         "webpack-cli": "^7.0.3"
+    },
+    "resolutions": {
+        "serialize-javascript": "^7.0.6"
     }
 }
