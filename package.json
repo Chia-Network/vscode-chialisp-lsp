@@ -173,7 +173,7 @@
         "eslint": "^10.6.0",
         "glob": "^13.0.3",
         "mocha": "^11.7.6",
-        "typescript": "^5.9.3",
+        "typescript": "^7.0.2",
         "webpack": "^5.108.3",
         "webpack-cli": "^7.1.0"
     },
