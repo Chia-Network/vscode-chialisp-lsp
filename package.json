@@ -174,7 +174,7 @@
         "glob": "^13.0.3",
         "mocha": "^11.7.6",
         "typescript": "^5.9.3",
-        "webpack": "^5.108.3",
+        "webpack": "^5.108.4",
         "webpack-cli": "^7.1.0"
     },
     "resolutions": {
