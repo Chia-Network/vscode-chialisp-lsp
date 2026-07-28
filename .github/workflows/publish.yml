@@ -1,48 +1,62 @@
+name: Deploy Extension
 
 on:
   workflow_dispatch:
   release:
     types: [published]
 
-name: Deploy Extension
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: vscode-marketplace
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
+
       - name: Set Job Env
         uses: Chia-Network/actions/setjobenv@main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
+
       - name: Install latest nightly
         uses: dtolnay/rust-toolchain@stable
         with:
             target: wasm32-unknown-unknown
             components: rustfmt
+
       - name: Install wasm-pack
         run: |
           cargo install --version 0.13.1 wasm-pack
+
       - name: Install
         run: npm ci
+
       - name: Compile & lint
         run: npm run pretest
+
       - name: Build pre-release extension
         id: package_name_pre
         if: env.PRE_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --pre-release --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
+
       - name: Build release extension
         id: package_name
         if: env.FULL_RELEASE == 'true'
         run: |
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >>$GITHUB_OUTPUT
+
       - name: Run headless test
         run: |
           sudo apt update
@@ -58,15 +72,24 @@ jobs:
           else
               echo "No xvfb processes to kill"
           fi
+
+      - name: Azure login (user-assigned managed identity)
+        if: env.PRE_RELEASE == 'true' || env.FULL_RELEASE == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+          enable-AzPSSession: true
+
       - name: Publish Pre-release to Visual Studio Marketplace
         if: env.PRE_RELEASE == 'true'
         env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name_pre.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --pre-release --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+        run: ./node_modules/.bin/vsce publish --azure-credential --pre-release --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+
       - name: Publish Release to Visual Studio Marketplace
         if: env.FULL_RELEASE == 'true'
         env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
-        run: ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+        run: ./node_modules/.bin/vsce publish --azure-credential --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"

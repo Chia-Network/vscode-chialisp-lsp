@@ -5,23 +5,30 @@ on:
     - cron: '0 0 * * *' # This will run the workflow every day at midnight
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build_and_publish:
     runs-on: ubuntu-latest
-
+    environment: vscode-marketplace
     steps:
       - name: Check out code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
         with:
           ref: 'dev'
+
       - name: Set Job Env
         uses: Chia-Network/actions/setjobenv@main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Node
         uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -29,15 +36,19 @@ jobs:
             target: wasm32-unknown-unknown
             override: true
             components: rustfmt
+
       - name: Install wasm-pack
         run: |
           sh install-clvm_tools_rs.sh
           cargo install --version 0.13.1 wasm-pack
+
       - name: Install
         run: npm ci
+
       - name: Check for published package
         run: |
           ./node_modules/.bin/vsce show "ChiaNetwork.chialisp-dev" --json | jq -r '.extensionName' || echo "VSIX_EXISTS=false" >> "$GITHUB_ENV"
+
       - name: Check for changes
         if: env.VSIX_EXISTS != 'false'
         id: check_changes
@@ -50,9 +61,11 @@ jobs:
           else
             echo "SKIP=false" >> "$GITHUB_ENV"
           fi
+
       - name: Compile & lint
         if: env.SKIP != 'true'
         run: npm run pretest
+
       - name: Build dev extension
         if: env.SKIP != 'true'
         id: package_name
@@ -62,9 +75,11 @@ jobs:
           fi
           ./node_modules/.bin/vsce package --no-yarn
           echo "VSIX_FILE=$(ls -- *.vsix)" >> "$GITHUB_OUTPUT"
+
       - name: Fix dates
         run: |
           python datefix.py *.vsix
+
       - name: Run headless test
         if: env.SKIP != 'true'
         env:
@@ -73,6 +88,7 @@ jobs:
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
+
       - name: Cleanup xvfb pidx
         if: env.SKIP != 'true'
         run: |
@@ -83,10 +99,19 @@ jobs:
           else
               echo "No xvfb processes to kill"
           fi
+
+      - name: Azure login (user-assigned managed identity)
+        if: env.SKIP != 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+          enable-AzPSSession: true
+
       - name: Publish chialisp-dev to Visual Studio Marketplace
         if: env.SKIP != 'true'
         env:
-          VSCE_PAT: ${{ secrets.MARKETPLACE_PAT }}
           VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE }}
         run: |
           # Find files with timestamps in the future
@@ -95,4 +120,4 @@ jobs:
           for file in $future_files; do
             touch -a -m -t $(date -d "now - 1 minute" +'%Y%m%d%H%M.%S') "$file"
           done
-          ./node_modules/.bin/vsce publish --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
+          ./node_modules/.bin/vsce publish --azure-credential --no-yarn -i "$GITHUB_WORKSPACE"/"$VSIX_FILE"
