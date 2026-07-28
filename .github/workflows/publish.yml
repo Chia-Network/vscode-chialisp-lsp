@@ -74,6 +74,7 @@ jobs:
           fi
 
       - name: Azure login (user-assigned managed identity)
+        if: env.PRE_RELEASE == 'true' || env.FULL_RELEASE == 'true'
         uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
