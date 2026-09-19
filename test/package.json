@@ -1,7 +1,7 @@
 {
   "name": "chialisp-lsp-test",
   "dependencies": {
-    "chromedriver": "150.0.0",
+    "chromedriver": "153.0.2",
     "diff": "^9.0.0",
     "jasmine": "^4.5.0",
     "jest": "^29.7.0",
