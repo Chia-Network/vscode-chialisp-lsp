@@ -44,6 +44,7 @@ let login = async function() {
     // Wait to be logged in, assuming it was was successful
     // once the Log in button has gone "stale."
     await enterCredentialsAndLogin();
+    await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
     console.log('Logged in.');
 
     console.log('grant clipboard permissions if needed');
