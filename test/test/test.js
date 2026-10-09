@@ -504,7 +504,35 @@ describe("Basic element tests", function() {
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
-        let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
+        let factFunction;
+        try {
+            factFunction = await driver.wait(until.elementLocated(byExactText("fact")), 30 * 1000);
+        } catch (error) {
+            // Capture the editor state without changing the failed lookup.
+            try {
+                const fs = require('fs');
+                fs.mkdirSync('diagnostics', {recursive: true});
+                const state = await driver.executeScript(() => ({
+                    url: window.location.href,
+                    title: document.title,
+                    activeTabs: Array.from(document.querySelectorAll('.tabs-container .tab.active'))
+                        .map(tab => tab.innerText),
+                    editors: Array.from(document.querySelectorAll('.monaco-editor'))
+                        .filter(editor => editor.getClientRects().length > 0)
+                        .map(editor => ({
+                            text: editor.querySelector('.view-lines')?.innerText,
+                            factTokens: Array.from(editor.querySelectorAll('.view-lines span'))
+                                .map(span => span.textContent).filter(text => text.includes('fact')),
+                        })),
+                }));
+                fs.writeFileSync('diagnostics/fact-lookup.json', JSON.stringify(state, null, 2));
+                console.error('Fact lookup editor state:', JSON.stringify(state));
+                fs.writeFileSync('diagnostics/fact-lookup.png', await driver.takeScreenshot(), 'base64');
+            } catch (diagnosticError) {
+                console.error('Could not capture fact lookup diagnostics:', diagnosticError);
+            }
+            throw error;
+        }
         await factFunction.click();
 
         console.log('Try to do the palette command "inline breakpoint"');
