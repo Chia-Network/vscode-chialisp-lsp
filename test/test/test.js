@@ -507,24 +507,24 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running debug test 1...');
 
-        // Change folder.
-        await openFileTheLongWay(driver, '../project/include/fact.clinc', 'fact.clinc');
-
-        let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
-        await debugButton.click();
-
-        console.log('selecting debug tab');
-        let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
-        await configDropdown.click();
-        let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
-        await factClspSelection.click();
-
-        console.log('find factorial function to set a breakpoint');
         let factFunction;
         try {
+            // Change folder.
+            await openFileTheLongWay(driver, '../project/include/fact.clinc', 'fact.clinc');
+
+            let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
+            await debugButton.click();
+
+            console.log('selecting debug tab');
+            let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+            await configDropdown.click();
+            let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
+            await factClspSelection.click();
+
+            console.log('find factorial function to set a breakpoint');
             factFunction = await driver.wait(until.elementLocated(byExactText("fact")), 30 * 1000);
         } catch (error) {
-            // Capture the editor state without changing the failed lookup.
+            // Capture failures opening the file or locating the function without changing the interaction.
             try {
                 const fs = require('fs');
                 fs.mkdirSync('diagnostics', {recursive: true});
