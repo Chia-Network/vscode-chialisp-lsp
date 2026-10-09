@@ -44,6 +44,7 @@ let login = async function() {
     // Wait to be logged in, assuming it was was successful
     // once the Log in button has gone "stale."
     await enterCredentialsAndLogin();
+    await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
     console.log('Logged in.');
 
     console.log('grant clipboard permissions if needed');
@@ -183,7 +184,7 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
-async function openFileTheLongWay(driver, file) {
+async function openFileTheLongWay(driver, file, expectedTab) {
     await sendControlO();
     await wait(2.0);
 
@@ -192,7 +193,23 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    await sendReturn();
+    if (expectedTab) {
+        const confirmButton = await driver.wait(until.elementLocated(byExactText("OK")), 30 * 1000);
+        await driver.wait(until.elementIsVisible(confirmButton), 30 * 1000);
+        await driver.wait(until.elementIsEnabled(confirmButton), 30 * 1000);
+        await confirmButton.click();
+        await driver.wait(async () => {
+            const tabs = await driver.findElements(By.css('.tabs-container .tab.active'));
+            for (const tab of tabs) {
+                if ((await tab.getText()).split('\n').includes(expectedTab)) {
+                    return true;
+                }
+            }
+            return false;
+        }, 30 * 1000, `Expected ${expectedTab} to be the active editor`);
+    } else {
+        await sendReturn();
+    }
 }
 
 async function performCommand(cmd) {
@@ -490,20 +507,48 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running debug test 1...');
 
-        // Change folder.
-        await openFileTheLongWay(driver, '../project/include/fact.clinc');
+        let factFunction;
+        try {
+            // Change folder.
+            await openFileTheLongWay(driver, '../project/include/fact.clinc', 'fact.clinc');
 
-        let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
-        await debugButton.click();
+            let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
+            await debugButton.click();
 
-        console.log('selecting debug tab');
-        let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
-        await configDropdown.click();
-        let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
-        await factClspSelection.click();
+            console.log('selecting debug tab');
+            let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+            await configDropdown.click();
+            let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
+            await factClspSelection.click();
 
-        console.log('find factorial function to set a breakpoint');
-        let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
+            console.log('find factorial function to set a breakpoint');
+            factFunction = await driver.wait(until.elementLocated(byExactText("fact")), 30 * 1000);
+        } catch (error) {
+            // Capture failures opening the file or locating the function without changing the interaction.
+            try {
+                const fs = require('fs');
+                fs.mkdirSync('diagnostics', {recursive: true});
+                const state = await driver.executeScript(() => ({
+                    url: window.location.href,
+                    title: document.title,
+                    activeTabs: Array.from(document.querySelectorAll('.tabs-container .tab.active'))
+                        .map(tab => tab.innerText),
+                    editors: Array.from(document.querySelectorAll('.monaco-editor'))
+                        .filter(editor => editor.getClientRects().length > 0)
+                        .map(editor => ({
+                            text: editor.querySelector('.view-lines')?.innerText,
+                            factTokens: Array.from(editor.querySelectorAll('.view-lines span'))
+                                .map(span => span.textContent).filter(text => text.includes('fact')),
+                        })),
+                }));
+                fs.writeFileSync('diagnostics/fact-lookup.json', JSON.stringify(state, null, 2));
+                console.error('Fact lookup editor state:', JSON.stringify(state));
+                fs.writeFileSync('diagnostics/fact-lookup.png', await driver.takeScreenshot(), 'base64');
+            } catch (diagnosticError) {
+                console.error('Could not capture fact lookup diagnostics:', diagnosticError);
+            }
+            throw error;
+        }
         await factFunction.click();
 
         console.log('Try to do the palette command "inline breakpoint"');
