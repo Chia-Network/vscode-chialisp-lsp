@@ -44,6 +44,7 @@ let login = async function() {
     // Wait to be logged in, assuming it was was successful
     // once the Log in button has gone "stale."
     await enterCredentialsAndLogin();
+    await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
     console.log('Logged in.');
 
     console.log('grant clipboard permissions if needed');
@@ -288,7 +289,21 @@ async function dismissTrustDialogue() {
 describe("Basic element tests", function() {
     // After each test, close the browser.
     afterAll(async function() {
-        await driver.quit();
+        try {
+            // Save the final UI state before quitting, including on a failed attempt.
+            if (process.env.HEADLESS_TEST_DIAGNOSTICS) {
+                const fs = require('fs');
+                const path = require('path');
+                const directory = process.env.HEADLESS_TEST_DIAGNOSTICS;
+                fs.mkdirSync(directory, {recursive: true});
+                fs.writeFileSync(path.join(directory, 'final-state.png'), await driver.takeScreenshot(), 'base64');
+                fs.writeFileSync(path.join(directory, 'final-state.html'), await driver.getPageSource());
+            }
+        } catch (error) {
+            console.error('Could not capture final UI state:', error);
+        } finally {
+            await driver.quit();
+        }
     });
 
     async function enterTheEditor() {
