@@ -194,6 +194,16 @@ async function openFileTheLongWay(driver, file, expectedTab) {
     await inputBox.sendKeys(file);
 
     if (expectedTab) {
+        // Wait for the target directory listing before accepting the typed path.
+        await driver.wait(async () => {
+            const entries = await driver.findElements(By.css('.quick-input-list .monaco-list-row'));
+            for (const entry of entries) {
+                if ((await entry.getText()).split('\n').includes(expectedTab)) {
+                    return true;
+                }
+            }
+            return false;
+        }, 30 * 1000, `Expected ${expectedTab} in the file list`);
         const confirmButton = await driver.wait(until.elementLocated(byExactText("OK")), 30 * 1000);
         await driver.wait(until.elementIsVisible(confirmButton), 30 * 1000);
         await driver.wait(until.elementIsEnabled(confirmButton), 30 * 1000);
