@@ -184,7 +184,7 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
-async function openFileTheLongWay(driver, file) {
+async function openFileTheLongWay(driver, file, expectedTab) {
     await sendControlO();
     await wait(2.0);
 
@@ -193,7 +193,23 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    await sendReturn();
+    if (expectedTab) {
+        const confirmButton = await driver.wait(until.elementLocated(byExactText("OK")), 30 * 1000);
+        await driver.wait(until.elementIsVisible(confirmButton), 30 * 1000);
+        await driver.wait(until.elementIsEnabled(confirmButton), 30 * 1000);
+        await confirmButton.click();
+        await driver.wait(async () => {
+            const tabs = await driver.findElements(By.css('.tabs-container .tab.active'));
+            for (const tab of tabs) {
+                if ((await tab.getText()).split('\n').includes(expectedTab)) {
+                    return true;
+                }
+            }
+            return false;
+        }, 30 * 1000, `Expected ${expectedTab} to be the active editor`);
+    } else {
+        await sendReturn();
+    }
 }
 
 async function performCommand(cmd) {
@@ -492,7 +508,7 @@ describe("Basic element tests", function() {
         console.log('Running debug test 1...');
 
         // Change folder.
-        await openFileTheLongWay(driver, '../project/include/fact.clinc');
+        await openFileTheLongWay(driver, '../project/include/fact.clinc', 'fact.clinc');
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
