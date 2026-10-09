@@ -13,6 +13,10 @@ on:
 
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,6 +59,14 @@ jobs:
           sudo apt update
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
+
+      - name: Upload fact lookup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: fact-lookup-${{ matrix.attempt }}-${{ github.run_attempt }}
+          path: test/diagnostics/
+          if-no-files-found: ignore
 
       - name: Cleanup xvfb pidx
         run: |
