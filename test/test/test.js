@@ -15,7 +15,7 @@ const driver = new Builder()
       .setChromeOptions(options)
       .build();
 
-const baseUrl = "http://localhost:8080";
+const baseUrl = "http://localhost:8080/?folder=/home/coder";
 const password = "739f75e86e8d7843df146bac";
 const clickTries = 5;
 
@@ -83,7 +83,14 @@ async function pressTab() {
 
 async function sendControlA() { await sendControlChar('a'); }
 async function sendControlF() { await sendControlChar('f'); }
-async function sendControlH() { await sendControlChar('h'); }
+async function sendControlH() {
+    if (os.platform() === 'darwin') {
+        await driver.actions({async: true}).keyDown(Key.COMMAND).keyDown(Key.ALT)
+            .sendKeys('f').keyUp(Key.ALT).keyUp(Key.COMMAND).perform();
+    } else {
+        await sendControlChar('h');
+    }
+}
 async function sendControlO() { await sendControlChar('o'); }
 async function sendControlP() { await sendControlChar('p'); }
 
@@ -173,29 +180,6 @@ function byAttribute(attr,val) {
     return By.xpath(`//*[@${attr}='${val}']`);
 }
 
-async function openFile(driver, file) {
-    console.log(`Check the content of ${file}`);
-    await sendControlP();
-    let inputBox = await findFileInput(driver);
-    await inputBox.click();
-    await inputBox.sendKeys(file);
-
-    let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
-    await sendReturn();
-}
-
-async function openFileTheLongWay(driver, file) {
-    await sendControlO();
-    await wait(2.0);
-
-    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
-    console.log('find input box', inputBox);
-    await inputBox.click();
-    await inputBox.sendKeys(file);
-
-    await sendReturn();
-}
-
 async function performCommand(cmd) {
     console.log(`Perform command ${cmd}`);
     await shifted(sendControlP);
@@ -239,7 +223,7 @@ async function replaceString(olds, news) {
     await sendControlA();
     await inputBox.sendKeys(olds);
 
-    inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace")));
+    inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace")), 30000, 'Replace input did not appear');
     await wait(1.0);
     await inputBox.click();
     await sendControlA();
@@ -281,7 +265,7 @@ async function dismissTrustDialogue() {
         let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
         if (trustDialog.length !== 0) {
             let trustButton = await driver.wait(until.elementLocated(byVisibleText("Yes, I trust the authors")));
-            trustButton.click();
+            await trustButton.click();
 	}
 }
 
@@ -322,32 +306,36 @@ describe("Basic element tests", function() {
         await dismissTrustDialogue();
     }
 
-    async function openFactFromExplorer() {
+    async function openFileFromExplorer(segments) {
         try {
             const explorer = await driver.wait(
                 until.elementLocated(By.css('.codicon-explorer-view-icon')), 30000,
                 'Explorer view button was not found'
             );
-            if ((await driver.findElements(By.css('.explorer-folders'))).length === 0) {
+            if ((await driver.findElements(By.css('.explorer-folders-view'))).length === 0) {
                 await explorer.click();
             }
-            for (const name of ['project', 'include']) {
+            for (const name of segments.slice(0, -1)) {
                 const folder = await driver.wait(
-                    until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders')]//*[@role='treeitem' and @aria-label='${name}']`)),
+                    until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${name}']`)),
                     30000, `Explorer folder ${name} was not found`
                 );
                 if (await folder.getAttribute('aria-expanded') !== 'true') {
                     await folder.click();
                 }
             }
+            const filename = segments[segments.length - 1];
             const file = await driver.wait(
-                until.elementLocated(By.xpath("//*[contains(@class, 'explorer-folders')]//*[@role='treeitem' and @aria-label='fact.clinc']")),
-                30000, 'Explorer file project/include/fact.clinc was not found'
+                until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${filename}']`)),
+                30000, `Explorer file ${segments.join("/")} was not found`
             );
-            await file.click();
+            const label = await file.findElement(By.css('.label-name'));
+            await driver.actions({async: true}).doubleClick(label).perform();
+            await driver.wait(async () => (await driver.getTitle()).startsWith(filename + ' —'),
+                30000, `${filename} did not become the active document`);
             await driver.wait(
-                until.elementLocated(By.css('.editor-group-container.active .tab.active[data-resource-name="fact.clinc"]')),
-                30000, 'fact.clinc did not become the active editor after clicking its Explorer entry'
+                until.elementLocated(By.css(`.editor-group-container.active .tab.active[data-resource-name="${filename}"]`)),
+                30000, `${filename} did not become the active editor after clicking its Explorer entry`
             );
         } catch (error) {
             if (process.env.HEADLESS_TEST_DIAGNOSTICS) {
@@ -371,24 +359,31 @@ describe("Basic element tests", function() {
         console.log('clicking project dir');
         await projectDir.click();
 
-        let chialispExt = await driver.wait(until.elementLocated(byVisibleText(".vsix")));
+        let chialispExt = await driver.wait(until.elementLocated(By.xpath(
+            "//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and contains(@aria-label, '.vsix')]"
+        )), 30000, 'VSIX file was not found in Explorer');
         console.log('right click chialisp ext');
         await rightClick(chialispExt);
 
-        let installChoice = await driver.wait(until.elementLocated(byVisibleText("VSIX")));
+        let installChoice = await driver.wait(async () => {
+            const choices = await driver.findElements(By.xpath("//div[contains(@class, 'context-view')]//*[contains(text(), 'VSIX')]"));
+            for (const choice of choices) {
+                if (await choice.isDisplayed()) { return choice; }
+            }
+            return false;
+        }, 30000, 'Visible Install Extension VSIX menu item was not found');
         console.log('click install');
         await installChoice.click();
 
-	      await sendReturn();
-
-        await driver.wait(until.elementLocated(byVisibleText("installing")));
+        await driver.wait(until.elementLocated(byVisibleText("Completed installing extension.")),
+            60000, 'VSIX installation did not complete');
 
         console.log('install done');
     }
 
     // The launch json we have should have squiggles until the extension is installed.
     async function checkSquiggleInLaunchJson() {
-        await openFileTheLongWay(driver, ".vscode/launch.json");
+        await openFileFromExplorer(['.vscode', 'launch.json']);
 
         await dismissTrustDialogue();
 
@@ -415,7 +410,7 @@ describe("Basic element tests", function() {
         // This test should pass.
         console.log('Running test...');
 
-        await openFile(driver, 'collatz.cl');
+        await openFileFromExplorer(['project', 'collatz.cl']);
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
@@ -439,7 +434,7 @@ describe("Basic element tests", function() {
 
         console.log('find the quick fix selection');
         let quickFixElement = await driver.wait(until.elementLocated(byVisibleText("Quick Fix")));
-        quickFixElement.click();
+        await quickFixElement.click();
 
         console.log('find the include path button');
         await sendReturn();
@@ -451,17 +446,17 @@ describe("Basic element tests", function() {
 
         console.log('accept input');
         let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
-        okBox.click();
+        await okBox.click();
 
         await wait(3.0);
 
         console.log('Check the content of chialisp.json');
-        await openFile(driver, "chialisp.json");
+        await openFileFromExplorer(['chialisp.json']);
 
         console.log('Check content');
         let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
 
-        await openFile(driver, "collatz.cl");
+        await openFileFromExplorer(['project', 'collatz.cl']);
 
         console.log('comments should move');
         let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
@@ -532,7 +527,7 @@ describe("Basic element tests", function() {
         // Check that we apply our schema to the launch json
         console.log('Check launch json highlighting');
         // This version of vs code opens from the most recent folder.
-        await openFileTheLongWay(driver, "../.vscode/launch.json");
+        await openFileFromExplorer(['.vscode', 'launch.json']);
 
         // Verify that installing the debugger made the lint warnings disappear in
         // launch.json.
@@ -550,7 +545,7 @@ describe("Basic element tests", function() {
         console.log('Running debug test 1...');
 
         // Change folder.
-        await openFactFromExplorer();
+        await openFileFromExplorer(['project', 'include', 'fact.clinc']);
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
