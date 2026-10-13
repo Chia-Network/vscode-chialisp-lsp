@@ -6,6 +6,7 @@ on:
       - "main"
       - "dev"
       - "base"
+      - "emlowe/headless-validation-20"
 
   pull_request:
     branches:
@@ -13,6 +14,12 @@ on:
 
 jobs:
   test:
+    name: Headless validation ${{ matrix.attempt }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,7 +67,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: headless-test-${{ github.run_attempt }}
+          name: headless-test-${{ matrix.attempt }}-${{ github.run_attempt }}
           path: test/diagnostics/
           if-no-files-found: ignore
 
