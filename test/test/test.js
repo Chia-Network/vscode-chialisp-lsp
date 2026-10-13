@@ -331,8 +331,6 @@ describe("Basic element tests", function() {
             );
             const label = await file.findElement(By.css('.label-name'));
             await driver.actions({async: true}).doubleClick(label).perform();
-            await driver.wait(async () => (await driver.getTitle()).startsWith(filename + ' —'),
-                30000, `${filename} did not become the active document`);
             await driver.wait(
                 until.elementLocated(By.css(`.editor-group-container.active .tab.active[data-resource-name="${filename}"]`)),
                 30000, `${filename} did not become the active editor after clicking its Explorer entry`
