@@ -322,6 +322,50 @@ describe("Basic element tests", function() {
         await dismissTrustDialogue();
     }
 
+    async function openFactFromExplorer() {
+        try {
+            const explorer = await driver.wait(
+                until.elementLocated(By.css('.codicon-explorer-view-icon')), 30000,
+                'Explorer view button was not found'
+            );
+            if ((await driver.findElements(By.css('.explorer-folders'))).length === 0) {
+                await explorer.click();
+            }
+            for (const name of ['project', 'include']) {
+                const folder = await driver.wait(
+                    until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders')]//*[@role='treeitem' and @aria-label='${name}']`)),
+                    30000, `Explorer folder ${name} was not found`
+                );
+                if (await folder.getAttribute('aria-expanded') !== 'true') {
+                    await folder.click();
+                }
+            }
+            const file = await driver.wait(
+                until.elementLocated(By.xpath("//*[contains(@class, 'explorer-folders')]//*[@role='treeitem' and @aria-label='fact.clinc']")),
+                30000, 'Explorer file project/include/fact.clinc was not found'
+            );
+            await file.click();
+            await driver.wait(
+                until.elementLocated(By.css('.editor-group-container.active .tab.active[data-resource-name="fact.clinc"]')),
+                30000, 'fact.clinc did not become the active editor after clicking its Explorer entry'
+            );
+        } catch (error) {
+            if (process.env.HEADLESS_TEST_DIAGNOSTICS) {
+                const fs = require('fs');
+                const path = require('path');
+                const directory = process.env.HEADLESS_TEST_DIAGNOSTICS;
+                try {
+                    fs.mkdirSync(directory, {recursive: true});
+                    fs.writeFileSync(path.join(directory, 'file-open-failure.png'), await driver.takeScreenshot(), 'base64');
+                    fs.writeFileSync(path.join(directory, 'file-open-failure.html'), await driver.getPageSource());
+                } catch (captureError) {
+                    console.error('Could not capture file-open failure:', captureError);
+                }
+            }
+            throw error;
+        }
+    }
+
     async function installVsix() {
         let projectDir = await driver.wait(until.elementLocated(byExactText("project")));
         console.log('clicking project dir');
@@ -506,7 +550,7 @@ describe("Basic element tests", function() {
         console.log('Running debug test 1...');
 
         // Change folder.
-        await openFileTheLongWay(driver, '../project/include/fact.clinc');
+        await openFactFromExplorer();
 
         let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
@@ -518,7 +562,11 @@ describe("Basic element tests", function() {
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
-        let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
+        let factFunction = await driver.wait(
+            until.elementLocated(byExactText("fact")),
+            30 * 1000,
+            'Expected factorial function "fact" in fact.clinc after opening the file; check UI diagnostics for the active editor'
+        );
         await factFunction.click();
 
         console.log('Try to do the palette command "inline breakpoint"');
