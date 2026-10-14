@@ -392,7 +392,8 @@ describe("Basic element tests", function() {
         await dismissTrustDialogue();
     }
 
-    it("starts", async function() {
+    // All extension assertions require a logged-in session and successful installation.
+    beforeAll(async function() {
         await login();
 
         await enterTheEditor();
