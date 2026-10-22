@@ -273,21 +273,7 @@ async function dismissTrustDialogue() {
 describe("Basic element tests", function() {
     // After each test, close the browser.
     afterAll(async function() {
-        try {
-            // Save the final UI state before quitting, including on a failed attempt.
-            if (process.env.HEADLESS_TEST_DIAGNOSTICS) {
-                const fs = require('fs');
-                const path = require('path');
-                const directory = process.env.HEADLESS_TEST_DIAGNOSTICS;
-                fs.mkdirSync(directory, {recursive: true});
-                fs.writeFileSync(path.join(directory, 'final-state.png'), await driver.takeScreenshot(), 'base64');
-                fs.writeFileSync(path.join(directory, 'final-state.html'), await driver.getPageSource());
-            }
-        } catch (error) {
-            console.error('Could not capture final UI state:', error);
-        } finally {
-            await driver.quit();
-        }
+        await driver.quit();
     });
 
     async function enterTheEditor() {
@@ -307,49 +293,33 @@ describe("Basic element tests", function() {
     }
 
     async function openFileFromExplorer(segments) {
-        try {
-            const explorer = await driver.wait(
-                until.elementLocated(By.css('.codicon-explorer-view-icon')), 30000,
-                'Explorer view button was not found'
-            );
-            if ((await driver.findElements(By.css('.explorer-folders-view'))).length === 0) {
-                await explorer.click();
-            }
-            for (const name of segments.slice(0, -1)) {
-                const folder = await driver.wait(
-                    until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${name}']`)),
-                    30000, `Explorer folder ${name} was not found`
-                );
-                if (await folder.getAttribute('aria-expanded') !== 'true') {
-                    await folder.click();
-                }
-            }
-            const filename = segments[segments.length - 1];
-            const file = await driver.wait(
-                until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${filename}']`)),
-                30000, `Explorer file ${segments.join("/")} was not found`
-            );
-            const label = await file.findElement(By.css('.label-name'));
-            await driver.actions({async: true}).doubleClick(label).perform();
-            await driver.wait(
-                until.elementLocated(By.css(`.editor-group-container.active .tab.active[data-resource-name="${filename}"]`)),
-                30000, `${filename} did not become the active editor after clicking its Explorer entry`
-            );
-        } catch (error) {
-            if (process.env.HEADLESS_TEST_DIAGNOSTICS) {
-                const fs = require('fs');
-                const path = require('path');
-                const directory = process.env.HEADLESS_TEST_DIAGNOSTICS;
-                try {
-                    fs.mkdirSync(directory, {recursive: true});
-                    fs.writeFileSync(path.join(directory, 'file-open-failure.png'), await driver.takeScreenshot(), 'base64');
-                    fs.writeFileSync(path.join(directory, 'file-open-failure.html'), await driver.getPageSource());
-                } catch (captureError) {
-                    console.error('Could not capture file-open failure:', captureError);
-                }
-            }
-            throw error;
+        const explorer = await driver.wait(
+            until.elementLocated(By.css('.codicon-explorer-view-icon')), 30000,
+            'Explorer view button was not found'
+        );
+        if ((await driver.findElements(By.css('.explorer-folders-view'))).length === 0) {
+            await explorer.click();
         }
+        for (const name of segments.slice(0, -1)) {
+            const folder = await driver.wait(
+                until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${name}']`)),
+                30000, `Explorer folder ${name} was not found`
+            );
+            if (await folder.getAttribute('aria-expanded') !== 'true') {
+                await folder.click();
+            }
+        }
+        const filename = segments[segments.length - 1];
+        const file = await driver.wait(
+            until.elementLocated(By.xpath(`//*[contains(@class, 'explorer-folders-view')]//*[@role='treeitem' and @aria-label='${filename}']`)),
+            30000, `Explorer file ${segments.join("/")} was not found`
+        );
+        const label = await file.findElement(By.css('.label-name'));
+        await driver.actions({async: true}).doubleClick(label).perform();
+        await driver.wait(
+            until.elementLocated(By.css(`.editor-group-container.active .tab.active[data-resource-name="${filename}"]`)),
+            30000, `${filename} did not become the active editor after clicking its Explorer entry`
+        );
     }
 
     async function installVsix() {
