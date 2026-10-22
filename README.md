@@ -1,60 +1,65 @@
-# README
-![GitHub](https://img.shields.io/github/license/Chia-Network/vscode-chialisp-lsp?logo=Github)
-![Build](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml/badge.svg)
-![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/ChiaNetwork.chialisp)
+# Chialisp for Visual Studio Code
 
+[![License](https://img.shields.io/github/license/Chia-Network/vscode-chialisp-lsp?logo=Github)](LICENSE)
+[![Build](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml/badge.svg)](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml)
 
-A rust based Chialisp language server client delivered with a rust client compiled
-to webassembly (wasm).  This extension uses the modern Chialisp compiler from `clvm_tool_rs` (https://github.com/Chia-Network/clvm_tools_rs).
+Language support and debugging for Chialisp, powered by the modern
+[Chialisp compiler](https://github.com/Chia-Network/chialisp) compiled from Rust to WebAssembly.
 
-To use as a Visual Studio Code extension, simply install the extension from the extension marketplace
-https://marketplace.visualstudio.com/items?itemName=ChiaNetwork.chialisp
+## Installation
+
+Install [Chialisp from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ChiaNetwork.chialisp).
+The extension is ready to use; no source build or Rust installation is needed.
 
 ## Features
 
-- Highlighting functions, arguments
-- Go to definition (if in the same file)
+- Syntax highlighting for functions and arguments
+- Go to definition
 - Completion
-- Include files (when the filesystem is accessible)
-- Debugging support via the Debug Adapter Protocol
+- Include-file and module support
+- Debugging via the Debug Adapter Protocol
 
 ## Requirements
 
-- A 64-bit version of any OS supported by both Chia and Visual Studio Code (Windows, MacOS, and Debian-based Linux distributions are all supported)
+- Visual Studio Code 1.85 or later
+- A 64-bit operating system supported by both Chia and Visual Studio Code, including Windows, macOS, and Debian-based Linux distributions
 
-- Microsoft Visual Studio Code
-  - This is the only editor that is currently supported
-  - If you would like to add support for your favorite editor or IDE, PRs are welcome!
-
-## Required to build:
-
-    npm install -g vsce
-    cargo install wasm-pack
-    rustup target add wasm32-unknown-unknown
-
-## Testing
-
-From the root directory of the repo, run:
-
-    ./test/test.sh
+Visual Studio Code is currently the only supported editor. Contributions to support other editors are welcome.
 
 ## Extension Settings
 
-For best results, put a chialisp.json file in your workspace root that lists the
-directories you'll be including other files from.
+For best results, put a `chialisp.json` file in your workspace root that lists the
+directories containing your include files:
 
+```json
 {
     "include_paths": ["/home/person/dev/chia-blockchain/chia/wallet/puzzles"]
 }
+```
 
-## Manual Building Steps:
+## Building from Source
 
-This is not required to use the extension, as it is available fully compiled and ready to use directly from the vscode extension marketplace. However, if you wish to make code changes or want to manually build this extension, you can follow the below steps:
+These steps are for contributors who want to modify or build the extension.
+Install Node.js 24, npm, Rust, and Make, then run from the repository root:
 
-    npm install -g vsce
-    cargo install wasm-pack
-    rustup target add wasm32-unknown-unknown
+```sh
+cargo install --version 0.13.1 wasm-pack
+rustup target add wasm32-unknown-unknown
+npm ci
+./node_modules/.bin/vsce package --no-yarn
+```
 
+Packaging builds the compiler, language server, and debugger and creates a `.vsix`
+file. In VS Code, run **Extensions: Install from VSIX...** to install it.
 
----
- 
+### Testing
+
+After building the `.vsix`, run the browser integration tests from the repository root:
+
+```sh
+DETECT_CHROMEDRIVER_VERSION=true ./test/test.sh
+```
+
+The tests require Docker and Chrome, and start code-server on port 8080. On Linux,
+run under a display server, such as `xvfb-run -a`, as shown in the
+[Test workflow](https://github.com/Chia-Network/vscode-chialisp-lsp/blob/main/.github/workflows/test.yml).
