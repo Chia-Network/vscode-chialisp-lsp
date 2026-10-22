@@ -1,12 +1,13 @@
 # Changelog
 
-Notable changes to the Chialisp extension, grouped by released version.
+Changes in released versions of the Chialisp extension.
 
 ## [1.2.6] - 2026-07-28
 
 ### Changed
 
-- Updated build and test dependencies and Marketplace publishing authentication.
+- Updated build and test dependencies.
+- Switched Marketplace publishing to OpenID Connect authentication.
 
 [Full release notes](https://github.com/Chia-Network/vscode-chialisp-lsp/releases/tag/1.2.6)
 
@@ -14,18 +15,19 @@ Notable changes to the Chialisp extension, grouped by released version.
 
 ### Added
 
-- Support for module-style Chialisp, including imports, exported aliases, go to definition, and a quick fix for locating missing modules.
+- Support for Chialisp modules, including imports, exported aliases, and go to definition.
+- A quick fix to locate missing modules.
 
 ### Fixed
 
 - Parentheses inside comments are no longer colored as code.
-- Live diagnostics for imported functions and name resolution for aliased exports.
-- Debugger input framing and continue responses.
-- Handling of hex files as program data.
+- Fixed live diagnostics for imported functions and name resolution for aliased exports.
+- Fixed debugger message parsing and responses to continue commands.
+- Fixed the handling of hex files as program data.
 
 ### Changed
 
-- Updated the Chialisp compiler and dependency versions.
+- Updated the Chialisp compiler and dependencies.
 
 [Full release notes](https://github.com/Chia-Network/vscode-chialisp-lsp/releases/tag/1.2.5)
 
@@ -33,16 +35,17 @@ Notable changes to the Chialisp extension, grouped by released version.
 
 ### Added
 
-- Validation and descriptions for Chialisp debug launch configurations.
+- Validation and help text for Chialisp debug launch configurations.
 - Support for loading debugger symbols from launch configurations.
 
 ### Fixed
 
-- Improved debugger argument retrieval and support for separate symbols and free functions in classic Chialisp.
+- Fixed debugger argument retrieval.
+- Improved debugging of classic Chialisp programs that use separate symbol files or free functions.
 
 ### Changed
 
-- Updated the Chialisp compiler, build tooling, and dependencies.
+- Updated the Chialisp compiler, build tools, and dependencies.
 
 [Full release notes](https://github.com/Chia-Network/vscode-chialisp-lsp/releases/tag/1.2.4)
 
@@ -62,9 +65,9 @@ Notable changes to the Chialisp extension, grouped by released version.
 
 ### Fixed
 
-- First-line comment handling.
-- False errors for `defconstant` values outside the language server's supported subset.
-- Protocol message parsing when input arrives in chunks.
+- Fixed comment handling on the first line of a file.
+- Stopped reporting errors for valid `defconstant` values the language server cannot evaluate.
+- Fixed protocol message parsing when input arrives in chunks.
 
 ### Changed
 
@@ -89,7 +92,7 @@ Notable changes to the Chialisp extension, grouped by released version.
 
 - Syntax highlighting.
 - Go to definition.
-- Auto-completion.
+- Code completion.
 - Configurable stderr logging for diagnostics.
 
 [1.2.6]: https://github.com/Chia-Network/vscode-chialisp-lsp/compare/1.2.5...1.2.6

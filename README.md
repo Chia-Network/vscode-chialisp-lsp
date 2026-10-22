@@ -3,21 +3,21 @@
 [![License](https://img.shields.io/github/license/Chia-Network/vscode-chialisp-lsp?logo=Github)](LICENSE)
 [![Build](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml/badge.svg)](https://github.com/Chia-Network/vscode-chialisp-lsp/actions/workflows/test.yml)
 
-Language support and debugging for Chialisp, powered by the modern
-[Chialisp compiler](https://github.com/Chia-Network/chialisp) compiled from Rust to WebAssembly.
+Language support and debugging for Chialisp. The extension uses the
+[Chialisp compiler](https://github.com/Chia-Network/chialisp), written in Rust and compiled to WebAssembly.
 
 ## Installation
 
 Install [Chialisp from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ChiaNetwork.chialisp).
-The extension is ready to use; no source build or Rust installation is needed.
+You do not need to build the extension or install Rust.
 
 ## Features
 
 - Syntax highlighting for functions and arguments
 - Go to definition
-- Completion
-- Include-file and module support
-- Debugging via the Debug Adapter Protocol
+- Code completion
+- Support for include files and modules
+- Debugging through the Debug Adapter Protocol
 
 ## Requirements
 
@@ -28,8 +28,7 @@ Visual Studio Code is currently the only supported editor. Contributions to supp
 
 ## Extension Settings
 
-For best results, put a `chialisp.json` file in your workspace root that lists the
-directories containing your include files:
+To set include directories, add a `chialisp.json` file to your workspace root:
 
 ```json
 {
@@ -39,8 +38,8 @@ directories containing your include files:
 
 ## Building from Source
 
-These steps are for contributors who want to modify or build the extension.
-Install Node.js 24, npm, Rust, and Make, then run from the repository root:
+To build the extension yourself, install Node.js 24, npm, Rust, and Make.
+Then run these commands from the repository root:
 
 ```sh
 cargo install --version 0.13.1 wasm-pack
@@ -49,7 +48,7 @@ npm ci
 ./node_modules/.bin/vsce package --no-yarn
 ```
 
-Packaging builds the compiler, language server, and debugger and creates a `.vsix`
+The packaging command builds the compiler, language server, and debugger, then creates a `.vsix`
 file. In VS Code, run **Extensions: Install from VSIX...** to install it.
 
 ### Testing
@@ -60,6 +59,6 @@ After building the `.vsix`, run the browser integration tests from the repositor
 DETECT_CHROMEDRIVER_VERSION=true ./test/test.sh
 ```
 
-The tests require Docker and Chrome, and start code-server on port 8080. On Linux,
-run under a display server, such as `xvfb-run -a`, as shown in the
+The tests require Docker and Chrome and start code-server on port 8080. On Linux,
+use a display server or run the tests with `xvfb-run -a`, as shown in the
 [Test workflow](https://github.com/Chia-Network/vscode-chialisp-lsp/blob/main/.github/workflows/test.yml).
