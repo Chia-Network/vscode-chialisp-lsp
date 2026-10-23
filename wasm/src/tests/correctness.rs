@@ -426,17 +426,26 @@ fn imported_errors_point_to_the_dependency_that_contains_the_error() {
     for directive in ["import", "include"] {
         for transitive in [false, true] {
             let fs = Rc::new(MemoryFiles::default());
-            fs.files
-                .borrow_mut()
-                .insert("/audit/good.clinc".into(), "(defun good (X) X)".into());
-            fs.files
-                .borrow_mut()
-                .insert("/audit/bad.clinc".into(), "(defun broken (X) (mod))".into());
+            let helper_source = |text: &str| {
+                if directive == "include" {
+                    format!("({text})")
+                } else {
+                    text.to_owned()
+                }
+            };
+            fs.files.borrow_mut().insert(
+                "/audit/good.clinc".into(),
+                helper_source("(defun good (X) X)"),
+            );
+            fs.files.borrow_mut().insert(
+                "/audit/bad.clinc".into(),
+                helper_source("(defun broken (X) (mod))"),
+            );
             let suffix = if directive == "include" { ".clinc" } else { "" };
             if transitive {
                 fs.files.borrow_mut().insert(
                     "/audit/bridge.clinc".into(),
-                    format!("({directive} bad{suffix})\n(defun bridge (X) X)"),
+                    helper_source(&format!("({directive} bad{suffix})\n(defun bridge (X) X)")),
                 );
             }
             let mut service = server(fs);

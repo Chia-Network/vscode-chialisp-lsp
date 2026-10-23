@@ -158,6 +158,14 @@ fn validate_definition_forms(forms: &[Rc<SExp>]) -> Result<(), CompileErr> {
     // trees opaque until preprocessing, because they may be quoted macro data.
     for form in forms {
         if let Some(parts) = form.proper_list() {
+            // Legacy include files enclose their helper forms in an outer
+            // list. The compiler unwraps that container before registering
+            // definitions, so validate those same definitions here as well.
+            if matches!(parts.first(), Some(SExp::Cons(_, _, _))) {
+                let helpers: Vec<_> = parts.into_iter().map(Rc::new).collect();
+                validate_definition_forms(&helpers)?;
+                continue;
+            }
             if matches!(parts.first(), Some(SExp::Atom(_, name)) if [b"mod".as_slice(), b"defun", b"defun-inline", b"defmac", b"defmacro"].contains(&name.as_slice()))
             {
                 validate_incomplete_mods(form)?;
@@ -1070,6 +1078,19 @@ mod module_preprocessing_tests {
     fn macro_generated_primitive_opcodes_are_accepted() {
         let parsed = analyze("(defmac pair (A B) (c 4 (c A (c B ()))))\n(export (A B) (pair A B))");
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    }
+
+    #[test]
+    fn legacy_include_wrappers_validate_definitions_but_leave_macro_trees_opaque() {
+        let error = validate_compiler_input("legacy.clinc", b"((defun broken (X) (mod)))")
+            .expect_err("wrapped helper must be checked before compiler preprocessing");
+        assert_eq!(error.1, "incomplete mod form");
+        assert!(validate_compiler_input(
+            "legacy.clinc",
+            b"((defmac ignore (TREE) 1) (ignore (mod)))",
+        )
+        .is_ok());
+        assert!(validate_compiler_input("legacy.clinc", b"((defun f (mod) mod))").is_ok());
     }
 
     #[test]
