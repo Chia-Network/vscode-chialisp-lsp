@@ -22,6 +22,10 @@ const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
 const clickTries = 5;
 
+function waitFor(condition, timeout) {
+    return workspaceTrust.waitFor(driver, condition, timeout, expect.getState().currentTestName);
+}
+
 let login = async function() {
     let loginContainer = By.css('.login-form');
     let inpPassword = By.css('.password');
@@ -29,7 +33,7 @@ let login = async function() {
     let enterCredentialsAndLogin = async function() {
         console.log('Entering credentials...');
         // Wait until an input element appears
-        await driver.wait(until.elementLocated(inpPassword), 10 * 1000);
+        await waitFor(until.elementLocated(inpPassword), 10 * 1000);
         // Enter credentials and log in
         console.log('sending password');
         await driver.findElement(inpPassword).sendKeys(password);
@@ -41,7 +45,7 @@ let login = async function() {
     await driver.get(baseUrl);
 
     // Wait until the page is loaded
-    await driver.wait(until.elementLocated(loginContainer), 40 * 1000);
+    await waitFor(until.elementLocated(loginContainer), 40 * 1000);
     console.log('Login screen loaded.');
 
     // Wait to be logged in, assuming it was was successful
@@ -182,7 +186,7 @@ async function openFile(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    let chialispFilename = await driver.wait(until.elementLocated(byExactText(file)));
+    let chialispFilename = await waitFor(until.elementLocated(byExactText(file)));
     await sendReturn();
 }
 
@@ -190,7 +194,7 @@ async function openFileTheLongWay(driver, file) {
     await sendControlO();
     await wait(2.0);
 
-    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    let inputBox = await waitFor(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
     console.log('find input box', inputBox);
     await inputBox.click();
     await inputBox.sendKeys(file);
@@ -202,7 +206,7 @@ async function performCommand(cmd) {
     console.log(`Perform command ${cmd}`);
     await shifted(sendControlP);
 
-    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    let inputBox = await waitFor(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
     await inputBox.click();
     await inputBox.sendKeys(cmd);
 
@@ -216,7 +220,7 @@ async function clickStepInto() {
     // because the UI is refreshed async.  We'll try a few times before concluding that something
     // went wrong.
     for (var i = 0; !clicked && i < clickTries; i++) {
-        let stepIntoButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-step-into")));
+        let stepIntoButton = await waitFor(until.elementLocated(By.css(".codicon-debug-step-into")));
         try {
             // This reference could be stale due to asynchronous action in the browser.
             await stepIntoButton.click();
@@ -235,25 +239,25 @@ async function replaceString(olds, news) {
     await sendControlH();
 
     console.log('rename a function so some errors appear');
-    let inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Find")));
+    let inputBox = await waitFor(until.elementLocated(byAttribute("aria-label", "Find")));
     await wait(1.0);
     await inputBox.click();
     await sendControlA();
     await inputBox.sendKeys(olds);
 
-    inputBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace")));
+    inputBox = await waitFor(until.elementLocated(byAttribute("aria-label", "Replace")));
     await wait(1.0);
     await inputBox.click();
     await sendControlA();
     await inputBox.sendKeys(news);
 
-    let nextMatchButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Next Match (Enter)")));
+    let nextMatchButton = await waitFor(until.elementLocated(byAttribute("aria-label", "Next Match (Enter)")));
     await nextMatchButton.click();
 
-    let replaceButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Replace (Enter)")));
+    let replaceButton = await waitFor(until.elementLocated(byAttribute("aria-label", "Replace (Enter)")));
     await replaceButton.click();
 
-    let closeButton = await driver.wait(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
+    let closeButton = await waitFor(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
     await closeButton.click();
 
     const actions = driver.actions({async: true});
@@ -271,7 +275,7 @@ function simplifyText(t) {
 }
 
 async function findFileInput(driver) {
-    let findInput = await driver.wait(until.elementLocated(By.css(".monaco-findInput")));
+    let findInput = await waitFor(until.elementLocated(By.css(".monaco-findInput")));
     let inputbox = await findInput.findElement(By.css(".monaco-inputbox"));
     let ibwrapper = await inputbox.findElement(By.css(".ibwrapper"));
     return await ibwrapper.findElement(By.css(".input"));
@@ -308,7 +312,7 @@ describe("Basic element tests", function() {
 
         // Wait for button
         console.log('wait for an element indicating that the workspace is up');
-        await driver.wait(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
+        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
 
         // Things load more progressively in the current vs code.
         const actions = driver.actions({async: true});
@@ -318,21 +322,21 @@ describe("Basic element tests", function() {
     }
 
     async function installVsix() {
-        await driver.wait(until.elementLocated(byExactText("project")));
+        await waitFor(until.elementLocated(byExactText("project")));
         console.log('clicking project dir');
         await workspaceTrust.clickWithWorkspaceTrust(driver, byExactText("project"));
 
-        let chialispExt = await driver.wait(until.elementLocated(byVisibleText(".vsix")));
+        let chialispExt = await waitFor(until.elementLocated(byVisibleText(".vsix")));
         console.log('right click chialisp ext');
         await rightClick(chialispExt);
 
-        let installChoice = await driver.wait(until.elementLocated(byVisibleText("VSIX")));
+        let installChoice = await waitFor(until.elementLocated(byVisibleText("VSIX")));
         console.log('click install');
         await installChoice.click();
 
 	      await sendReturn();
 
-        await driver.wait(until.elementLocated(byVisibleText("installing")));
+        await waitFor(until.elementLocated(byVisibleText("installing")));
 
         console.log('install done');
     }
@@ -345,7 +349,7 @@ describe("Basic element tests", function() {
 
         // Will abort if not found.
         // There should be a squiggly here before the driver is installed.
-        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-warning")));
+        let squiggly = await waitFor(until.elementLocated(By.css(".squiggly-warning")));
 
         await dismissTrustDialogue();
     }
@@ -370,27 +374,27 @@ describe("Basic element tests", function() {
 
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
-        let keyword_classed_element = await driver.wait(until.elementLocated(By.css(".mtk5")));
+        let keyword_classed_element = await waitFor(until.elementLocated(By.css(".mtk5")));
 
         console.log('checking mod highlight');
-        let mod_keyword = await driver.wait(until.elementLocated(byExactText("mod")));
+        let mod_keyword = await waitFor(until.elementLocated(byExactText("mod")));
         expect(await mod_keyword.getAttribute("class")).toBe("mtk16");
 
         console.log('checking comment highlight');
-        let comment = await driver.wait(until.elementLocated(byVisibleText("COLLATZ")));
+        let comment = await waitFor(until.elementLocated(byVisibleText("COLLATZ")));
 
         expect(await comment.getAttribute("class")).toBe("mtk5");
 
         console.log('we should have an error shown');
-        let squiggly = await driver.wait(until.elementLocated(By.css(".squiggly-error")));
+        let squiggly = await waitFor(until.elementLocated(By.css(".squiggly-error")));
 
         console.log('try to resolve includes automatically');
-        let include_name_to_hover = await driver.wait(until.elementLocated(byVisibleText("test-inc.clsp")));
+        let include_name_to_hover = await waitFor(until.elementLocated(byVisibleText("test-inc.clsp")));
         await hover(include_name_to_hover);
 
         console.log('find the quick fix selection');
-        let quickFixElement = await driver.wait(until.elementLocated(byVisibleText("Quick Fix")));
-        quickFixElement.click();
+        let quickFixElement = await waitFor(until.elementLocated(byVisibleText("Quick Fix")));
+        await quickFixElement.click();
 
         console.log('find the include path button');
         await sendReturn();
@@ -401,8 +405,8 @@ describe("Basic element tests", function() {
         await inputBox.sendKeys("include/test-inc.clsp");
 
         console.log('accept input');
-        let okBox = await driver.wait(until.elementLocated(byVisibleText("OK")));
-        okBox.click();
+        let okBox = await waitFor(until.elementLocated(byVisibleText("OK")));
+        await okBox.click();
 
         await wait(3.0);
 
@@ -410,12 +414,12 @@ describe("Basic element tests", function() {
         await openFile(driver, "chialisp.json");
 
         console.log('Check content');
-        let chialispText = await driver.wait(until.elementLocated(byVisibleText('"./project/include"')));
+        let chialispText = await waitFor(until.elementLocated(byVisibleText('"./project/include"')));
 
         await openFile(driver, "collatz.cl");
 
         console.log('comments should move');
-        let otherComment = await driver.wait(until.elementLocated(byVisibleText("defun-inline")));
+        let otherComment = await waitFor(until.elementLocated(byVisibleText("defun-inline")));
         expect(await otherComment.getAttribute("class")).toBe("mtk16");
 
         console.log('check for squigglies');
@@ -470,9 +474,9 @@ describe("Basic element tests", function() {
         await inputBox.sendKeys("QQEX");
 
         // Ensure there are 2 matches.
-        await driver.wait(until.elementLocated(byVisibleText("1 of 2")));
+        await waitFor(until.elementLocated(byVisibleText("1 of 2")));
 
-        let closeBox = await driver.wait(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
+        let closeBox = await waitFor(until.elementLocated(byAttribute("aria-label", "Close (Escape)")));
         await closeBox.click();
 
         console.log("completion test done, should have no search box");
@@ -503,23 +507,23 @@ describe("Basic element tests", function() {
         // Change folder.
         await openFileTheLongWay(driver, '../project/include/fact.clinc');
 
-        let debugButton = await driver.wait(until.elementLocated(By.css(".codicon-run-view-icon")));
+        let debugButton = await waitFor(until.elementLocated(By.css(".codicon-run-view-icon")));
         await debugButton.click();
 
         console.log('selecting debug tab');
-        let configDropdown = await driver.wait(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+        let configDropdown = await waitFor(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
         await configDropdown.click();
-        let factClspSelection = await driver.wait(until.elementLocated(byAttribute("value", "fact.clsp")));
+        let factClspSelection = await waitFor(until.elementLocated(byAttribute("value", "fact.clsp")));
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
-        let factFunction = await driver.wait(until.elementLocated(byExactText("fact")));
+        let factFunction = await waitFor(until.elementLocated(byExactText("fact")));
         await factFunction.click();
 
         console.log('Try to do the palette command "inline breakpoint"');
         await performCommand('Debug: Inline Breakpoint');
 
-        let startButton = await driver.wait(until.elementLocated(By.css(".codicon-debug-start")));
+        let startButton = await waitFor(until.elementLocated(By.css(".codicon-debug-start")));
         await startButton.click();
 
         console.log('Step a few times');
@@ -529,12 +533,12 @@ describe("Basic element tests", function() {
         await clickStepInto();
         await clickStepInto();
 
-        let expression = await driver.wait(until.elementLocated(By.css(".expression")));
+        let expression = await waitFor(until.elementLocated(By.css(".expression")));
         let text = await expression.getText();
         while (simplifyText(text) != "X=4") {
             await clickStepInto();
             console.log(simplifyText(text));
-            expression = await driver.wait(until.elementLocated(By.css(".expression")));
+            expression = await waitFor(until.elementLocated(By.css(".expression")));
             text = await expression.getText();
         }
     });

@@ -1,5 +1,13 @@
 const {By: by, error, until} = require('selenium-webdriver');
 
+// Selenium defaults to waiting forever. Keep each expected UI transition bounded
+// and identify both the scenario and condition if the editor never reaches it.
+function waitFor(driver, condition, timeout = 30000, context = 'Browser test') {
+    const description = typeof condition.description === 'function'
+        ? condition.description() : 'custom editor condition';
+    return driver.wait(condition, timeout, `${context}: ${description}`);
+}
+
 // Only accept the trust prompt for the disposable test workspace. Other dialogs
 // must remain failures, with their text available in the test output.
 async function dismissTrustDialogue(driver) {
@@ -43,4 +51,4 @@ async function clickWithWorkspaceTrust(driver, locator) {
     }, 10000, 'Could not click after accepting workspace trust');
 }
 
-module.exports = {dismissTrustDialogue, clickWithWorkspaceTrust};
+module.exports = {dismissTrustDialogue, clickWithWorkspaceTrust, waitFor};

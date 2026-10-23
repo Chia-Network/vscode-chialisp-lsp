@@ -1,7 +1,7 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {error} = require('selenium-webdriver');
-const {dismissTrustDialogue, clickWithWorkspaceTrust} = require('./workspace-trust');
+const {dismissTrustDialogue, clickWithWorkspaceTrust, waitFor} = require('./workspace-trust');
 
 function fixture({late = false, unexpected = false} = {}) {
     let open = !late;
@@ -66,4 +66,19 @@ test('does not accept an unrelated editor confirmation', async () => {
     const f = fixture({unexpected: true});
     await assert.rejects(dismissTrustDialogue(f.driver), /Unexpected editor dialog: An unrelated confirmation/);
     assert.equal(f.state().accepted, false);
+});
+
+test('element waits have a finite default and identify the missing editor state', async () => {
+    const condition = {description: () => 'for element Quick Fix'};
+    let called;
+    const driver = {wait: (...args) => { called = args; return Promise.resolve('ready'); }};
+    assert.equal(await waitFor(driver, condition, undefined, 'Can run extension'), 'ready');
+    assert.deepEqual(called, [condition, 30000, 'Can run extension: for element Quick Fix']);
+});
+
+test('explicit startup wait limits are preserved', async () => {
+    const condition = {description: () => 'for login form'};
+    const driver = {wait: async (_, timeout) => timeout};
+    assert.equal(await waitFor(driver, condition, 40000), 40000);
+    assert.equal(await waitFor(driver, condition, 10000), 10000);
 });
