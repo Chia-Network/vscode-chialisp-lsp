@@ -50,7 +50,7 @@ fn complete_variable_name(
                 }
             })
             .filter_map(|(l, n)| {
-                if l.line > 0 && l.col > 1 {
+                if l.file.as_str() == doc.fullname && l.line > 0 && l.col > 1 {
                     get_positional_text(
                         &doc.text,
                         &Position {
@@ -169,38 +169,52 @@ impl LSPCompletionRequestHandler for LSPServiceProvider {
         let mut res = self.produce_error_list();
         let log = self.log.clone();
 
-        self.with_doc_and_parsed(&uristring, |doc, output| {
-            let on_previous_character = if params.text_document_position.position.character > 0 {
-                Position {
-                    line: params.text_document_position.position.line,
-                    character: params.text_document_position.position.character - 1,
-                }
-            } else {
-                params.text_document_position.position
-            };
-            log.log(&format!(
-                "doing completion with position {:?}",
-                on_previous_character
-            ));
-
-            if let Some(cpl) = get_positional_text(&doc.text, &on_previous_character) {
-                let mut found_scopes = Vec::new();
-                let want_position = Srcloc::new(
-                    Rc::new(uristring.clone()),
-                    (on_previous_character.line + 1) as usize,
-                    (on_previous_character.character + 1) as usize,
+        let request_id = id.clone();
+        let mut messages = self
+            .with_doc_and_parsed(&uristring, |doc, output| {
+                let position = crate::lsp::positions::position_to_byte(
+                    &doc.text,
+                    params.text_document_position.position,
                 );
-                find_scope_stack(&mut found_scopes, &output.scopes, &want_position);
-                // Handle variable completions.
-                if is_first_in_list(doc, &on_previous_character) {
-                    complete_function_name(&mut res, id, &found_scopes, &cpl);
+                let on_previous_character = if position.character > 0 {
+                    Position {
+                        line: position.line,
+                        character: position.character - 1,
+                    }
                 } else {
-                    complete_variable_name(&mut res, id, doc, &found_scopes, &cpl);
+                    position
+                };
+                log.log(&format!(
+                    "doing completion with position {:?}",
+                    on_previous_character
+                ));
+
+                if let Some(cpl) = get_positional_text(&doc.text, &on_previous_character) {
+                    let mut found_scopes = Vec::new();
+                    let want_position = Srcloc::new(
+                        Rc::new(uristring.clone()),
+                        (on_previous_character.line + 1) as usize,
+                        (on_previous_character.character + 1) as usize,
+                    );
+                    find_scope_stack(&mut found_scopes, &output.scopes, &want_position);
+                    // Handle variable completions.
+                    if is_first_in_list(doc, &on_previous_character) {
+                        complete_function_name(&mut res, id, &found_scopes, &cpl);
+                    } else {
+                        complete_variable_name(&mut res, id, doc, &found_scopes, &cpl);
+                    }
                 }
-            }
-            Some(res)
-        })
-        .map(Ok)
-        .unwrap_or_else(|| Ok(vec![]))
+                Some(res)
+            })
+            .unwrap_or_default();
+        if !messages.iter().any(
+            |message| matches!(message, Message::Response(response) if response.id == request_id),
+        ) {
+            messages.push(Message::Response(Response::new_ok(
+                request_id,
+                serde_json::json!([]),
+            )));
+        }
+        Ok(messages)
     }
 }

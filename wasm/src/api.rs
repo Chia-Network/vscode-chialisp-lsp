@@ -126,14 +126,15 @@ pub fn lsp_service_handle_msg(lsp_id: i32, msg: String) -> Vec<JsValue> {
         if let Some(service_cell) = service.get(&lsp_id) {
             let mut s_borrowed = service_cell.borrow_mut();
             let s = s_borrowed.deref_mut();
-            let outmsgs = s.handle_message_from_string(msg);
-            for m in outmsgs.iter() {
-                if let Ok(r) = serde_json::to_value(m) {
-                    res.push(JsValue::from_str(&r.to_string()));
-                } else {
-                    panic!("unable to convert message {:?} to json", m);
-                }
-            }
+            let input: Result<serde_json::Value, _> = serde_json::from_str(&msg);
+            let replies = match s.handle_message_from_string(msg) {
+                Ok(messages) => serde_json::to_value(messages).expect("serializable LSP messages"),
+                Err(error) => serde_json::json!([{
+                    "id": input.as_ref().ok().and_then(|value| value.get("id")).cloned().unwrap_or(serde_json::Value::Null),
+                    "error": {"code": if input.is_ok() { -32600 } else { -32700 }, "message": error}
+                }]),
+            };
+            res.push(JsValue::from_str(&replies.to_string()));
         }
     });
     res

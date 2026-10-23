@@ -19,6 +19,7 @@ use chialisp::compiler::sexp::SExp;
 use chialisp::compiler::sexp::{decode_string, parse_sexp};
 use chialisp::compiler::srcloc::Srcloc;
 
+use crate::lsp::positions::LexicalState;
 use crate::lsp::types::{
     DocData, DocPosition, DocRange, Hash, IncludeData, ParseScope, ReparsedExp, ReparsedHelper,
     ScopeKind,
@@ -154,6 +155,7 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
             }
         }
     }
+    make_inner_function_scopes(&mut contained, &fe.exp);
 
     ParseScope {
         kind: ScopeKind::Module,
@@ -165,6 +167,93 @@ pub fn recover_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], fe: &CompileForm) -> 
         variables: toplevel_args,
         functions: toplevel_funs,
         containing: contained,
+    }
+}
+
+pub fn add_export_scopes(scope: &mut ParseScope, exports: &HashMap<Hash, Export>) {
+    for export in exports.values() {
+        if let Export::MainProgram(program) = export {
+            let mut variables = HashSet::new();
+            make_arg_set(&mut variables, program.args.clone());
+            let mut containing = Vec::new();
+            make_inner_function_scopes(&mut containing, &program.expr);
+            scope.containing.push(ParseScope {
+                // The compiler's export location covers only the keyword;
+                // the argument bindings remain in scope throughout its body.
+                region: program.loc.ext(&body_region(&program.expr)),
+                kind: ScopeKind::Function,
+                variables,
+                functions: HashSet::new(),
+                containing,
+            });
+        }
+    }
+}
+
+/// Recover editor scopes from source declarations as well as the expanded
+/// module. Preprocessing consumes macro declarations, but their parameters and
+/// compile-time bodies are still present in the document the user edits.
+pub fn recover_source_scopes(ourfile: &str, text: &[Rc<Vec<u8>>], parsed: &mut ParsedDoc) {
+    let source_helpers: Vec<_> = parsed
+        .helpers
+        .values()
+        .filter_map(|helper| {
+            if let crate::lsp::types::ParsedForm::Helper(forms) = helper.parsed.as_ref().ok()? {
+                Some(
+                    forms
+                        .iter()
+                        .filter(|form| form.loc().file.as_str() == ourfile)
+                        .cloned(),
+                )
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .collect();
+    let source_frontend = parsed.compiled.replace_helpers(&source_helpers);
+    parsed.scopes = recover_scopes(ourfile, text, &source_frontend);
+    add_export_scopes(&mut parsed.scopes, &parsed.exports);
+}
+
+// Some compiler nodes locate only their keyword. Scope bounds must include
+// their descendants, especially nested let/assign expressions.
+fn body_region(body: &BodyForm) -> Srcloc {
+    let mut region = body.loc();
+    match body {
+        BodyForm::Let(_, data) => {
+            for binding in &data.bindings {
+                region = cover_source_regions(&region, &body_region(&binding.body));
+            }
+            region = cover_source_regions(&region, &body_region(&data.body));
+        }
+        BodyForm::Call(_, args, tail) => {
+            for arg in args {
+                region = cover_source_regions(&region, &body_region(arg));
+            }
+            if let Some(tail) = tail {
+                region = cover_source_regions(&region, &body_region(tail));
+            }
+        }
+        BodyForm::Lambda(data) => region = cover_source_regions(&region, &body_region(&data.body)),
+        BodyForm::Mod(_, data) => region = cover_source_regions(&region, &body_region(&data.exp)),
+        _ => {}
+    }
+    region
+}
+
+fn cover_source_regions(left: &Srcloc, right: &Srcloc) -> Srcloc {
+    if left.file != right.file {
+        return left.clone();
+    }
+    let (line, col) = (left.line, left.col).min((right.line, right.col));
+    let end = chialisp::compiler::srcloc::src_location_max(left)
+        .max(chialisp::compiler::srcloc::src_location_max(right));
+    Srcloc {
+        file: left.file.clone(),
+        line,
+        col,
+        until: Some(chialisp::compiler::srcloc::Until::from_pair(end)),
     }
 }
 
@@ -234,7 +323,7 @@ pub fn find_ident(line: Rc<Vec<u8>>, char_at: u32) -> Option<Vec<u8>> {
     let ca_size = char_at as usize;
     let ll = line.len();
 
-    if ca_size > ll {
+    if ca_size >= ll {
         return None;
     }
 
@@ -484,9 +573,11 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 
             let binding = &letdata.bindings[0];
             let new_location = if letdata.bindings.len() == 1 {
-                letdata.body.loc()
+                body_region(&letdata.body)
             } else {
-                letdata.bindings[1].loc().ext(&letdata.loc.ending())
+                letdata.bindings[1]
+                    .loc()
+                    .ext(&body_region(&letdata.body).ending())
             };
 
             let mut variables = HashSet::new();
@@ -516,7 +607,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
                 containing: inner_scopes,
             });
         }
-        BodyForm::Let(LetFormKind::Parallel, letdata) => {
+        BodyForm::Let(kind @ (LetFormKind::Parallel | LetFormKind::Assign), letdata) => {
             if letdata.bindings.is_empty() {
                 make_inner_function_scopes(scopes, letdata.body.borrow());
                 return;
@@ -528,10 +619,19 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             }
 
             let mut inner_scopes = Vec::new();
+            for binding in &letdata.bindings {
+                make_inner_function_scopes(&mut inner_scopes, &binding.body);
+            }
             make_inner_function_scopes(&mut inner_scopes, letdata.body.borrow());
 
             let new_scope = ParseScope {
-                region: letdata.bindings[0].loc.ext(&letdata.body.loc().ending()),
+                region: if *kind == LetFormKind::Parallel {
+                    body_region(&letdata.body)
+                } else {
+                    letdata.bindings[0]
+                        .loc
+                        .ext(&body_region(&letdata.body).ending())
+                },
                 kind: ScopeKind::Let,
                 variables: name_set,
                 functions: HashSet::new(),
@@ -558,7 +658,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
             make_inner_function_scopes(&mut inner_scopes, ldata.body.borrow());
 
             let new_scope = ParseScope {
-                region: ldata.body.loc(),
+                region: body_region(&ldata.body),
                 kind: ScopeKind::Let,
                 variables: name_set,
                 functions: HashSet::new(),
@@ -572,7 +672,7 @@ fn make_inner_function_scopes(scopes: &mut Vec<ParseScope>, body: &BodyForm) {
 }
 
 fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
-    let loc = h.loc();
+    let mut loc = h.loc();
 
     let mut kind = None;
     let mut args = HashSet::new();
@@ -581,12 +681,15 @@ fn make_helper_scope(h: &HelperForm) -> Option<ParseScope> {
     match h {
         HelperForm::Defun(_, d) => {
             kind = Some(ScopeKind::Function);
+            loc = cover_source_regions(&loc, &body_region(&d.body));
             make_arg_set(&mut args, d.args.clone());
             make_inner_function_scopes(&mut inner_scopes, &d.body);
         }
         HelperForm::Defmacro(m) => {
             kind = Some(ScopeKind::Macro);
+            loc = cover_source_regions(&loc, &body_region(&m.program.exp));
             make_arg_set(&mut args, m.args.clone());
+            make_inner_function_scopes(&mut inner_scopes, &m.program.exp);
         }
         _ => {}
     }
@@ -873,7 +976,7 @@ fn test_make_arg_set() {
 pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     let mut ranges_1 = Vec::new();
     let mut ranges_0 = Vec::new();
-    let mut in_comment = false;
+    let mut lexer = LexicalState::default();
     let mut start_1 = None;
     let mut start_0 = None;
     let mut level = 0;
@@ -882,28 +985,25 @@ pub fn make_simple_ranges(srctext: &[Rc<Vec<u8>>]) -> (bool, Vec<DocRange>) {
     let mut first_word_of_module = Vec::new();
 
     for i in DocVecByteIter::new(srctext) {
-        if i == b';' {
-            character += 1;
-            in_comment = true;
-        } else if i == b'\n' {
+        let is_code = lexer.code(i);
+        if i == b'\n' {
             line += 1;
             character = 0;
-            in_comment = false;
+        } else if !is_code {
+            character += 1;
         } else if i == b'(' {
-            if !in_comment {
-                if level == 1 && start_1.is_none() {
-                    start_1 = Some(DocPosition { line, character });
-                }
-                if level == 0 {
-                    start_0 = Some(DocPosition { line, character });
-                }
-                level += 1;
+            if level == 1 && start_1.is_none() {
+                start_1 = Some(DocPosition { line, character });
             }
+            if level == 0 {
+                start_0 = Some(DocPosition { line, character });
+            }
+            level += 1;
             character += 1;
         } else if i == b')' {
             // We expect to contain only one toplevel list, so other ends
             // are probably a misparse.
-            if !in_comment && level > 0 {
+            if level > 0 {
                 level -= 1;
 
                 if level == 1 {

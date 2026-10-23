@@ -4,17 +4,21 @@ use std::rc::Rc;
 
 use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{grab_scope_doc_range, recover_scopes, IncludedFileSpec, ParsedDoc};
+use crate::lsp::patch::get_bytes;
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, ParseScope, ParsedForm, ReparsedExp,
     ReparsedHelper,
 };
-use chialisp::compiler::clvm::{sha256tree, sha256tree_from_atom};
+use chialisp::compiler::clvm::sha256tree_from_atom;
 use chialisp::compiler::comptypes::{
-    BodyForm, CompileErr, CompileForm, CompilerOpts, Export, HelperForm, NamespaceRefData,
+    BodyForm, CompileErr, CompileForm, CompilerOpts, Export, FrontendOutput, HelperForm,
+    NamespaceRefData,
 };
 use chialisp::compiler::frontend::{
-    compile_bodyform, compile_helperform, compile_nsref, match_export_form, HelperFormResult,
+    compile_bodyform, compile_helperform, compile_helperform_mm, compile_nsref,
+    compute_live_helpers, match_export_form, HelperFormResult,
 };
+use chialisp::compiler::preprocessor::{detect_chialisp_module, Preprocessor};
 use chialisp::compiler::prims::primquote;
 use chialisp::compiler::sexp::{enlist, parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
@@ -24,6 +28,9 @@ lazy_static! {
 }
 
 pub struct ReparsedModule {
+    /// Compiler preprocessing is authoritative for complete module-style input.
+    /// Raw forms below remain available for tolerant source highlighting.
+    pub module_semantics: Option<Result<FrontendOutput, CompileErr>>,
     pub ignored: bool,
     pub mod_kw: Option<Srcloc>,
     pub args: Rc<SExp>,
@@ -104,10 +111,86 @@ pub fn parse_include(sexp: Rc<SExp>) -> Option<IncludedFileSpec> {
     })
 }
 
+// Compiler 0.4.4 indexes the argument list before diagnosing an incomplete
+// nested `(mod)`. Editor buffers routinely contain this intermediate form.
+// Validate the expression shape before entering that non-recoverable WASM path.
+fn validate_incomplete_mods(form: &SExp) -> Result<(), CompileErr> {
+    if let SExp::Cons(_, head, tail) = form {
+        if let SExp::Atom(_, name) = head.as_ref() {
+            if name == b"q" || name == b"quote" || name == b"qq" {
+                return Ok(());
+            }
+            if name == b"mod" && matches!(tail.as_ref(), SExp::Nil(_)) {
+                return Err(CompileErr(form.loc(), "incomplete mod form".to_string()));
+            }
+            if [
+                b"defun".as_slice(),
+                b"defun-inline",
+                b"defmac",
+                b"defmacro",
+                b"mod",
+            ]
+            .contains(&name.as_slice())
+            {
+                if let Some(parts) = form.proper_list() {
+                    let first_body = if name == b"mod" { 2 } else { 3 };
+                    for body in parts.iter().skip(first_body) {
+                        validate_incomplete_mods(body)?;
+                    }
+                    return Ok(());
+                }
+            }
+        } else if matches!(head.as_ref(), SExp::Integer(_, n) if n.to_string() == "1") {
+            return Ok(());
+        }
+        validate_incomplete_mods(head)?;
+        let mut rest = tail.as_ref();
+        while let SExp::Cons(_, argument, next) = rest {
+            validate_incomplete_mods(argument)?;
+            rest = next.as_ref();
+        }
+    }
+    Ok(())
+}
+
+fn validate_definition_forms(forms: &[Rc<SExp>]) -> Result<(), CompileErr> {
+    // Definitions are compiled while macros are registered. Leave invocation
+    // trees opaque until preprocessing, because they may be quoted macro data.
+    for form in forms {
+        if let Some(parts) = form.proper_list() {
+            if matches!(parts.first(), Some(SExp::Atom(_, name)) if [b"mod".as_slice(), b"defun", b"defun-inline", b"defmac", b"defmacro"].contains(&name.as_slice()))
+            {
+                validate_incomplete_mods(form)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Protect compiler-internal reads as well as editor parsing from the bundled
+/// compiler's incomplete nested-mod panic.
+pub fn validate_compiler_input(filename: &str, contents: &[u8]) -> Result<(), CompileErr> {
+    // Readers are also used for opaque embed-file payloads. Ordinary syntax
+    // errors remain the responsibility of the compiler's actual parse path.
+    match parse_sexp(Srcloc::start(filename), contents.iter().copied()) {
+        Ok(forms) => validate_definition_forms(&forms),
+        Err(_) => Ok(()),
+    }
+}
+
+fn safe_compile_bodyform(
+    opts: Rc<dyn CompilerOpts>,
+    form: Rc<SExp>,
+) -> Result<BodyForm, CompileErr> {
+    validate_incomplete_mods(&form)?;
+    compile_bodyform(opts, form)
+}
+
 fn compile_helperform_with_loose_defconstant_and_module_forms(
     opts: Rc<dyn CompilerOpts>,
     parsed: Rc<SExp>,
 ) -> Result<Option<ParsedForm<HelperFormResult>>, CompileErr> {
+    validate_incomplete_mods(&parsed)?;
     let is_defconstant = |sexp: &SExp| {
         if let SExp::Atom(_, name) = sexp {
             return name == b"defconstant";
@@ -154,6 +237,49 @@ fn compile_helperform_with_loose_defconstant_and_module_forms(
     }
 }
 
+/// Use the same module pipeline as the compiler, including compile-time macros.
+/// Unlike `frontend`, this also accepts single-form module and include files;
+/// those are useful editor documents even when they do not export a program.
+fn preprocess_module(
+    opts: Rc<dyn CompilerOpts>,
+    forms: &[Rc<SExp>],
+) -> Result<FrontendOutput, CompileErr> {
+    let opts =
+        if let Some(dialect) = detect_chialisp_module(Srcloc::start(&opts.filename()), forms)? {
+            opts.set_dialect(dialect)
+        } else {
+            opts
+        };
+    validate_definition_forms(forms)?;
+    let mut includes = Vec::new();
+    let mut preprocessor = Preprocessor::new(opts.clone());
+    let output = preprocessor.run_modules(&mut includes, forms)?;
+    let mut helpers = Vec::new();
+    let mut exports = Vec::new();
+    for form in output.forms {
+        validate_incomplete_mods(&form)?;
+        if let Some(export) = match_export_form(opts.clone(), form.clone())? {
+            exports.push(export);
+        } else if let Some(helper) = compile_helperform_mm(opts.clone(), form, true)? {
+            helpers.extend(helper.new_helpers);
+        }
+    }
+    let loc = forms
+        .first()
+        .map(|f| f.loc())
+        .unwrap_or_else(|| Srcloc::start(&opts.filename()));
+    Ok(FrontendOutput::Module(
+        CompileForm {
+            loc: loc.clone(),
+            include_forms: includes,
+            args: Rc::new(SExp::Nil(loc.clone())),
+            helpers,
+            exp: Rc::new(BodyForm::Quoted(SExp::Nil(loc))),
+        },
+        exports,
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn reparse_subset(
     prims: &[Vec<u8>],
@@ -165,7 +291,17 @@ pub fn reparse_subset(
     compiled: &CompileForm,
     prev_helpers: &HashMap<Hash, ReparsedHelper>,
 ) -> ReparsedModule {
+    let module_semantics = if module_style {
+        Some(
+            parse_sexp(Srcloc::start(uristring), get_bytes(doc).into_iter())
+                .map_err(|(loc, message)| CompileErr(loc, message))
+                .and_then(|forms| preprocess_module(opts.clone(), &forms)),
+        )
+    } else {
+        None
+    };
     let mut result = ReparsedModule {
+        module_semantics,
         ignored: false,
         mod_kw: None,
         args: compiled.args.clone(),
@@ -298,7 +434,7 @@ pub fn reparse_subset(
             took_exp = true;
             result.exp = Some(ReparsedExp {
                 hash: suffix_hash,
-                parsed: compile_bodyform(
+                parsed: safe_compile_bodyform(
                     opts.clone(),
                     suffix_parse[suffix_parse.len() - 1].clone(),
                 ),
@@ -349,57 +485,13 @@ pub fn reparse_subset(
                     } else if i == parse_as_body {
                         result.exp = Some(ReparsedExp {
                             hash,
-                            parsed: compile_bodyform(opts.clone(), parsed[0].clone()),
+                            parsed: safe_compile_bodyform(opts.clone(), parsed[0].clone()),
                         });
                         continue;
                     } else if let Some(include) = parse_include(parsed[0].clone()) {
                         result.includes.insert(hash, include.clone());
                         continue;
                     }
-
-                    let compiled_result = compile_helperform(opts.clone(), parsed[0].clone());
-
-                    let _ = match compiled_result {
-                        Ok(Some(parsed)) => {
-                            let typedefs: Vec<&HelperForm> = vec![];
-                            let other_helpers: &[HelperForm] = &parsed.new_helpers;
-
-                            let use_helper = if !typedefs.is_empty() {
-                                for h in other_helpers.iter() {
-                                    let new_hash = Hash::new(&sha256tree(h.to_sexp()));
-                                    result.helpers.insert(
-                                        new_hash.clone(),
-                                        ReparsedHelper {
-                                            hash: new_hash,
-                                            range: r.clone(),
-                                            parsed: Ok(ParsedForm::Helper(vec![h.clone()])),
-                                        },
-                                    );
-                                }
-                                Some(typedefs[0])
-                            } else if !parsed.new_helpers.is_empty() {
-                                Some(&parsed.new_helpers[0])
-                            } else {
-                                None
-                            };
-
-                            let new_parsed = if let Some(h) = use_helper {
-                                Ok(h)
-                            } else {
-                                Err(CompileErr(
-                                    loc.clone(),
-                                    "helper form was parsed but it wasn't understood by the LSP"
-                                        .to_string(),
-                                ))
-                            };
-
-                            new_parsed.cloned()
-                        }
-                        Ok(None) => {
-                            Err(CompileErr(loc.clone(), "must be a helper form".to_string()))
-                        }
-                        Err(e) => Err(e),
-                    };
 
                     let dc_result = compile_helperform_with_loose_defconstant_and_module_forms(
                         opts.clone(),
@@ -486,8 +578,19 @@ fn find_function_in_scopes<F>(
 where
     F: FnMut(&CompileForm, &[u8]) -> bool,
 {
+    // Macro expansion can use either numeric integers or binary atoms for
+    // opcodes. SExp equality compares the corresponding CLVM atom values.
+    if chialisp::compiler::prims::prims()
+        .iter()
+        .any(|(_, opcode)| opcode == name)
+    {
+        return true;
+    }
     if let SExp::Atom(_, a) = name {
         scopes.functions.contains(name)
+            // These callable operators are compiler builtins rather than CLVM
+            // primitives (compiler::resolve::is_compiler_builtin).
+            || a == b"com" || a == b"@"
             || prims.iter().any(|p| p == a)
             || imported_helper_resolver(frontend, a)
     } else {
@@ -595,7 +698,7 @@ fn determine_same_path(uristring: &str, query_file: &str) -> bool {
     // no match if the queried file has a longer path than the uristring.
     if uristring_comps.is_empty()
         || query_file_comps.is_empty()
-        || query_file_comps.len() > uristring.len()
+        || query_file_comps.len() > uristring_comps.len()
     {
         return false;
     }
@@ -762,10 +865,60 @@ where
         },
     }
 
+    // Macro expansion may create declarations and expressions that cannot be
+    // reconstructed by parsing individual source forms. Keep the source forms
+    // for coloring, but use the compiler's expanded module for semantics.
+    if let Some(module_semantics) = &reparse.module_semantics {
+        out_errors.clear();
+        match module_semantics {
+            Ok(FrontendOutput::Module(compiled, module_exports)) => {
+                new_compile = compiled.clone();
+                remove_names.clear();
+                exports.clear();
+                for (i, export) in module_exports.iter().enumerate() {
+                    let hash = Hash::new(&sha256tree_from_atom(format!("export:{i}").as_bytes()));
+                    exports.insert(hash, export.clone());
+                }
+            }
+            Ok(FrontendOutput::CompileForm(compiled)) => new_compile = compiled.clone(),
+            Err(error) => out_errors.push(error.clone()),
+        }
+    }
+
     let compile_with_dead_helpers_removed = new_compile.remove_helpers(&remove_names);
     let scopes = recover_scopes(uristring, text, &new_compile);
 
-    for h in compile_with_dead_helpers_removed.helpers.iter() {
+    let valid_module_semantics = !matches!(reparse.module_semantics, Some(Err(_)));
+    let validation_helpers = if !valid_module_semantics {
+        Vec::new()
+    } else if reparse.module_semantics.is_some() {
+        // A module's compile-time helpers are legal in the preprocessor's
+        // evaluator but need not be runtime functions. Validate the runtime
+        // dependency closure of exports, as the compiler does.
+        let mut live = Vec::new();
+        let live_opts = Rc::new(chialisp::compiler::compiler::DefaultCompilerOpts::new(
+            uristring,
+        ))
+        .set_frontend_check_live(true);
+        for export in exports.values() {
+            let root = match export {
+                Export::MainProgram(p) => p.expr.clone(),
+                Export::Function(f) => Rc::new(BodyForm::Value(SExp::Atom(
+                    f.name.loc.clone().unwrap_or_else(|| f.loc.clone()),
+                    f.name.value.clone(),
+                ))),
+            };
+            live.extend(compute_live_helpers(
+                live_opts.clone(),
+                &compile_with_dead_helpers_removed.helpers,
+                root,
+            ));
+        }
+        live
+    } else {
+        compile_with_dead_helpers_removed.helpers.clone()
+    };
+    for h in validation_helpers.iter() {
         if let HelperForm::Defun(_, d) = h {
             if let Some(error) = check_live_helper_calls_with_imports(
                 &PRIM_NAMES,
@@ -779,7 +932,7 @@ where
         }
     }
 
-    for export in parsed.exports.iter() {
+    for export in exports.iter().filter(|_| valid_module_semantics) {
         if let Export::MainProgram(p) = &export.1 {
             if let Some(error) = check_live_helper_calls_with_imports(
                 &PRIM_NAMES,
@@ -794,14 +947,16 @@ where
     }
 
     // Check whether functions called in exp are live
-    if let Some(error) = check_live_helper_calls_with_imports(
-        &PRIM_NAMES,
-        &scopes,
-        &compile_with_dead_helpers_removed,
-        &compile_with_dead_helpers_removed.exp,
-        imported_helper_resolver,
-    ) {
-        out_errors.push(error);
+    if valid_module_semantics {
+        if let Some(error) = check_live_helper_calls_with_imports(
+            &PRIM_NAMES,
+            &scopes,
+            &compile_with_dead_helpers_removed,
+            &compile_with_dead_helpers_removed.exp,
+            imported_helper_resolver,
+        ) {
+            out_errors.push(error);
+        }
     }
 
     ParsedDoc {
@@ -815,5 +970,129 @@ where
         helpers: new_helpers,
         hash_to_name,
         exp: reparse.exp.clone(),
+    }
+}
+
+#[cfg(test)]
+mod module_preprocessing_tests {
+    use super::*;
+    use crate::lsp::parse::make_simple_ranges;
+    use crate::lsp::patch::split_text;
+    use chialisp::compiler::compiler::DefaultCompilerOpts;
+
+    fn analyze(source: &str) -> ParsedDoc {
+        let filename = "file:///module.clsp";
+        let text = split_text(source);
+        let opts = Rc::new(DefaultCompilerOpts::new(filename)).set_stdenv(false);
+        let old = ParsedDoc::new(Srcloc::start(filename));
+        let (module_style, ranges) = make_simple_ranges(&text);
+        let reparsed = reparse_subset(
+            &PRIM_NAMES,
+            opts,
+            &text,
+            filename,
+            module_style,
+            &ranges,
+            &old.compiled,
+            &old.helpers,
+        );
+        combine_new_with_old_parse(filename, &text, &old, &reparsed)
+    }
+
+    #[test]
+    fn module_macro_generates_a_callable_helper() {
+        let parsed = analyze("(defmac define (NAME) (c (q . defun) (c NAME (q . (() 1)))))\n(define F)\n(export () (F))");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        assert!(parsed.compiled.helpers.iter().any(|h| h.name() == b"F"));
+        assert_eq!(parsed.exports.len(), 1);
+    }
+
+    #[test]
+    fn macro_tree_arguments_are_not_runtime_calls() {
+        let parsed = analyze("(defmac ignore (TREE) 1)\n(export () (ignore (unknown_argument 2)))");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    }
+
+    #[test]
+    fn compile_time_only_helpers_use_the_preprocessor_environment() {
+        let parsed =
+            analyze("(defun fresh (X) (string->symbol (symbol->string X)))\n(export () 1)");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    }
+
+    #[test]
+    fn expanded_macro_calls_keep_source_tokens_and_argument_navigation() {
+        use crate::interfaces::{EPrintWriter, FSFileReader};
+        use crate::lsp::semtok::{build_semantic_tokens, DocumentProcessingDescription};
+        use crate::lsp::{LSPServiceProvider, TK_MACRO_IDX, TK_PARAMETER_IDX};
+        use std::collections::BTreeMap;
+        let source = "(defmac ignore (TREE) 1)\n(export (A B) (ignore (A . B)))";
+        let parsed = analyze(source);
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let lines = split_text(source);
+        let mut resolver = LSPServiceProvider::new(
+            Rc::new(FSFileReader::default()),
+            Rc::new(EPrintWriter::default()),
+            true,
+        );
+        let mut definitions = BTreeMap::new();
+        let tokens = build_semantic_tokens(
+            &mut DocumentProcessingDescription {
+                resolver: &mut resolver,
+                prims: &PRIM_NAMES,
+                log: Rc::new(EPrintWriter::default()),
+                id: lsp_server::RequestId::from(1),
+                uristring: "file:///module.clsp",
+                lines: &lines,
+            },
+            &HashMap::new(),
+            &mut definitions,
+            &parsed,
+        );
+        let export_line = source.lines().nth(1).unwrap();
+        let macro_col = export_line.find("ignore").unwrap() + 1;
+        let arg_col = export_line.rfind('A').unwrap() + 1;
+        assert!(tokens
+            .iter()
+            .any(|t| t.loc.line == 2 && t.loc.col == macro_col && t.token_type == TK_MACRO_IDX));
+        assert!(tokens
+            .iter()
+            .any(|t| t.loc.line == 2 && t.loc.col == arg_col && t.token_type == TK_PARAMETER_IDX));
+        assert!(definitions
+            .iter()
+            .any(|(token, definition)| token.loc.line == 2
+                && token.loc.col == arg_col
+                && definition.line == 2
+                && definition.col == export_line.find('A').unwrap() + 1));
+    }
+
+    #[test]
+    fn macro_generated_primitive_opcodes_are_accepted() {
+        let parsed = analyze("(defmac pair (A B) (c 4 (c A (c B ()))))\n(export (A B) (pair A B))");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+    }
+
+    #[test]
+    fn incomplete_nested_mod_is_reported_without_panicking() {
+        let parsed = analyze("(mod () (list (mod)))");
+        assert!(
+            parsed.errors.iter().any(|e| e.1 == "incomplete mod form"),
+            "{:?}",
+            parsed.errors
+        );
+        let helper = analyze("(defun F () (mod))\n(export () (F))");
+        assert!(helper.errors.iter().any(|e| e.1 == "incomplete mod form"));
+        assert!(analyze("(mod () (q . (mod)))").errors.is_empty());
+        assert!(analyze("(mod () (defun F (mod) mod) (F 1))")
+            .errors
+            .is_empty());
+    }
+
+    #[test]
+    fn unknown_runtime_calls_are_diagnosed_on_the_first_analysis() {
+        let parsed = analyze("(export () (missing 1))");
+        assert_eq!(parsed.errors.len(), 1, "{:?}", parsed.errors);
+        assert!(parsed.errors[0].1.contains("missing"));
+        assert_eq!(parsed.errors[0].0.line, 1);
     }
 }

@@ -1,5 +1,16 @@
 import * as fs from 'fs';
 
+// Always return a serializable configuration, including an unchanged one.
+export function addIncludePath(config: any, directory: string) {
+    if (!Array.isArray(config.include_paths)) {
+        config.include_paths = [];
+    }
+    if (!config.include_paths.includes(directory)) {
+        config.include_paths.push(directory);
+    }
+    return config;
+}
+
 export class EmptyDisposable {
     dispose() { }
 }

@@ -37,6 +37,8 @@ jobs:
         run: npm ci
       - name: Compile & lint
         run: npm run pretest
+      - name: Configuration unit tests
+        run: npm run test:unit
       - name: Build pre-release extension
         id: package_name_pre
         run: |

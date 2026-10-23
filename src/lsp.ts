@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import {ourExtension} from './constants';
+import {addIncludePath} from './utils';
 
 import {
     ExecutableOptions,
@@ -167,22 +168,7 @@ export function languageActivate(context: vscode.ExtensionContext) {
                 // Check for matching parents in value vs selected path.
                 let finalPath = filterDirectory(targetDirectory, path.dirname(value));
 
-                // Try to enforce correct structure.
-                if (chialispJson.include_paths === undefined || !chialispJson.include_paths.length) {
-                    chialispJson.include_paths = [];
-                }
-
-                // Try not to duplicate.
-                for (var i = 0; i < chialispJson.include_paths.length; i++) {
-                    if (finalPath === chialispJson.include_paths[i]) {
-                        return;
-                    }
-                }
-
-                // We have a new include path to put in.
-                chialispJson.include_paths.push(finalPath);
-
-                return chialispJson;
+                return addIncludePath(chialispJson, finalPath);
             };
 
             const dec = new TextDecoder("utf-8");

@@ -1,24 +1,55 @@
 {
   "scopeName": "source.chialisp",
   "patterns": [
-    { "include": "#comment" },
-    { "include": "#form" }
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#double-string"
+    },
+    {
+      "include": "#single-string"
+    },
+    {
+      "include": "#parenform"
+    }
   ],
   "repository": {
-    "form": { "patterns": [{"include": "parenform"}, {"include": "word"}] },
     "comment": {
-      "name": "comment",
+      "name": "comment.line.semicolon.chialisp",
       "match": ";.*$"
+    },
+    "double-string": {
+      "name": "string.quoted.double.chialisp",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.chialisp",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "single-string": {
+      "name": "string.quoted.single.chialisp",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.chialisp",
+          "match": "\\\\."
+        }
+      ]
     },
     "parenform": {
       "begin": "\\(",
       "end": "\\)",
-      "name": "parenform",
-      "patterns": [{"include": "form"}]
-    },
-    "word": {
-      "match": "[a-zA-Z0-9_!@#$%^&*-+=|\\/[]{},.<>?]+",
-      "name": "word"
+      "name": "meta.expression.chialisp",
+      "patterns": [
+        {
+          "include": "$self"
+        }
+      ]
     }
   }
 }
