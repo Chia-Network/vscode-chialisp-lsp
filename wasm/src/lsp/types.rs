@@ -806,6 +806,45 @@ impl LSPServiceProvider {
         success
     }
 
+    fn dependency_contains(&self, root: &str, target: &str) -> bool {
+        let mut pending = vec![root.to_owned()];
+        let mut visited = HashSet::new();
+        while let Some(uri) = pending.pop() {
+            if uri == target {
+                return true;
+            }
+            if visited.insert(uri.clone()) {
+                if let Some(children) = self.dependencies.get(&uri) {
+                    pending.extend(children.iter().cloned());
+                }
+            }
+        }
+        false
+    }
+
+    fn imported_error_range(&mut self, parsed: &ParsedDoc, source_uri: &str) -> lsp_types::Range {
+        let mut candidates = Vec::new();
+        for include in parsed.includes.values() {
+            let (filename, loc) = match include {
+                IncludedFileSpec::Include(inc) => (inc.filename.clone(), inc.name_loc.clone()),
+                IncludedFileSpec::Import(_, imp) => {
+                    (self.get_filename_of_import(&imp.longname), imp.nl.clone())
+                }
+            };
+            if let Some(uri) = self.resolve_file_uri(&decode_string(&filename)) {
+                candidates.push((DocRange::from_srcloc(loc).to_range(), uri));
+            }
+        }
+        // Several imports may lead to the same source. Prefer the first in
+        // source order, never the iteration order of the includes hash map.
+        candidates.sort_by_key(|(range, _)| (range.start.line, range.start.character));
+        candidates
+            .into_iter()
+            .find(|(_, uri)| self.dependency_contains(uri, source_uri))
+            .map(|(range, _)| range)
+            .unwrap_or_default()
+    }
+
     pub fn ensure_parsed_document(&mut self, uristring: &str) {
         if self.parsed_documents.contains_key(uristring)
             || self.parse_stack.iter().any(|uri| uri == uristring)
@@ -1013,19 +1052,7 @@ impl LSPServiceProvider {
                     let range = if local {
                         actual_range
                     } else {
-                        new_parse
-                            .includes
-                            .values()
-                            .next()
-                            .map(|include| match include {
-                                IncludedFileSpec::Include(inc) => {
-                                    DocRange::from_srcloc(inc.name_loc.clone()).to_range()
-                                }
-                                IncludedFileSpec::Import(_, imp) => {
-                                    DocRange::from_srcloc(imp.nl.clone()).to_range()
-                                }
-                            })
-                            .unwrap_or_default()
+                        self.imported_error_range(&new_parse, &source_uri)
                     };
                     Diagnostic {
                         range,

@@ -58,3 +58,28 @@ test('escaped quotes and multiline strings retain their lexical state', async ()
     assert.ok(second.tokens[0].scopes.some(scope => scope.startsWith('string')));
     assert.ok(second.tokens[second.tokens.length - 1].scopes.some(scope => scope.startsWith('comment')));
 });
+
+test('semicolons and quotes inside compiler barewords remain atom content', async () => {
+    const g = await grammar;
+    for (const atom of ['1;comment', 'foo;bar', 'foo;(bar', "foo'bar", 'foo"bar']) {
+        const line = `(mod () (list ${atom} 1)) ; actual comment`;
+        const tokens = g.tokenizeLine(line, INITIAL).tokens;
+        const start = line.indexOf(atom);
+        const atomTokens = tokens.filter(token => token.startIndex < start + atom.length && token.endIndex > start);
+        assert.ok(atomTokens.length > 0);
+        assert.ok(atomTokens.every(token => token.scopes.includes('meta.atom.chialisp')));
+        assert.ok(atomTokens.every(token => token.scopes.every(scope => !/^(comment|string)/.test(scope))));
+        const comment = line.indexOf('; actual');
+        assert.ok(tokens.filter(token => token.endIndex > comment).every(token => token.scopes.some(scope => scope.startsWith('comment'))));
+    }
+});
+
+test('a semicolon immediately after a quoted string starts a comment', async () => {
+    const g = await grammar;
+    for (const quote of ['"', "'"]) {
+        const line = `(mod () (list ${quote}a;b${quote}; actual comment (`;
+        const comment = line.indexOf('; actual');
+        const tokens = g.tokenizeLine(line, INITIAL).tokens;
+        assert.ok(tokens.filter(token => token.endIndex > comment).every(token => token.scopes.some(scope => scope.startsWith('comment'))));
+    }
+});

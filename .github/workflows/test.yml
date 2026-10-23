@@ -58,6 +58,14 @@ jobs:
           sudo apt-get install -qy xvfb libnss3-dev libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev libasound2t64
           xvfb-run -a ./test/test.sh
 
+      - name: Upload browser test state
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-state
+          path: test/artifacts/
+          if-no-files-found: ignore
+
       - name: Cleanup xvfb pidx
         run: |
           xvfb_pids="$(pgrep tmp/xvfb-run | grep -v grep | awk '{print $2}')"

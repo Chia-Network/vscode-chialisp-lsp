@@ -420,3 +420,66 @@ fn program_imports_produce_real_program_and_hash_constants_without_file_outputs(
         matches!(constant(b"program_hash").body.as_ref(), BodyForm::Quoted(SExp::QuotedString(_, _, hash)) if hash.len() == 32)
     );
 }
+
+#[test]
+fn imported_errors_point_to_the_dependency_that_contains_the_error() {
+    for directive in ["import", "include"] {
+        for transitive in [false, true] {
+            let fs = Rc::new(MemoryFiles::default());
+            fs.files
+                .borrow_mut()
+                .insert("/audit/good.clinc".into(), "(defun good (X) X)".into());
+            fs.files
+                .borrow_mut()
+                .insert("/audit/bad.clinc".into(), "(defun broken (X) (mod))".into());
+            let suffix = if directive == "include" { ".clinc" } else { "" };
+            if transitive {
+                fs.files.borrow_mut().insert(
+                    "/audit/bridge.clinc".into(),
+                    format!("({directive} bad{suffix})\n(defun bridge (X) X)"),
+                );
+            }
+            let mut service = server(fs);
+            let import_name = format!("{}{suffix}", if transitive { "bridge" } else { "bad" });
+            let source =
+                format!("({directive} good{suffix})\n({directive} {import_name})\n(export () 1)");
+            let messages = open(&mut service, "main.clsp", &source);
+            let diagnostics: Vec<_> = messages
+                .iter()
+                .filter_map(|msg| match msg {
+                    Message::Notification(not)
+                        if not.method == "textDocument/publishDiagnostics"
+                            && not.params["uri"] == "file:///audit/main.clsp" =>
+                    {
+                        Some(not.params["diagnostics"].as_array().unwrap())
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            let imported: Vec<_> = diagnostics
+                .iter()
+                .filter(|diag| {
+                    diag["relatedInformation"].as_array().is_some_and(|info| {
+                        info.iter()
+                            .any(|item| item["location"]["uri"] == "file:///audit/bad.clinc")
+                    })
+                })
+                .collect();
+            assert!(!imported.is_empty(), "{:?}", messages);
+            let character = directive.len() + 2;
+            for diagnostic in imported {
+                assert_eq!(diagnostic["range"]["start"]["line"], 1, "{diagnostic:?}");
+                assert_eq!(
+                    diagnostic["range"]["start"]["character"], character,
+                    "{diagnostic:?}"
+                );
+                assert_eq!(
+                    diagnostic["range"]["end"]["character"],
+                    character + import_name.len(),
+                    "{diagnostic:?}"
+                );
+            }
+        }
+    }
+}

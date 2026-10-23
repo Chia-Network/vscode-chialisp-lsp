@@ -1,6 +1,9 @@
 // Require modules used in the logic below
 const jasmine = require('jasmine');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const workspaceTrust = require('../workspace-trust');
 const {Builder, Options, By, Key, until} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
@@ -275,18 +278,25 @@ async function findFileInput(driver) {
 }
 
 async function dismissTrustDialogue() {
-        // Dismiss trust dialog if it comes up.
-        console.log('check for the trust dialog');
-        let trustDialog = await driver.findElements(By.css('.dialog-shadow'));
-        if (trustDialog.length !== 0) {
-            let trustButton = await driver.wait(until.elementLocated(byVisibleText("Yes, I trust the authors")));
-            trustButton.click();
-	}
+    await workspaceTrust.dismissTrustDialogue(driver);
 }
 
 // Define a category of tests using test framework, in this case Jasmine
 describe("Basic element tests", function() {
-    // After each test, close the browser.
+    afterEach(async function() {
+        // Preserve the final state of each test, including unexpected modals.
+        try {
+            const artifactDir = path.resolve(__dirname, '../artifacts');
+            fs.mkdirSync(artifactDir, {recursive: true});
+            const name = expect.getState().currentTestName.replace(/[^a-z0-9]+/gi, '-');
+            fs.writeFileSync(path.join(artifactDir, `${name}.html`), await driver.getPageSource());
+            fs.writeFileSync(path.join(artifactDir, `${name}.png`), await driver.takeScreenshot(), 'base64');
+        } catch (e) {
+            console.error('Could not capture browser test state', e);
+        }
+    });
+
+    // After all tests, close the browser.
     afterAll(async function() {
         await driver.quit();
     });
@@ -308,9 +318,9 @@ describe("Basic element tests", function() {
     }
 
     async function installVsix() {
-        let projectDir = await driver.wait(until.elementLocated(byExactText("project")));
+        await driver.wait(until.elementLocated(byExactText("project")));
         console.log('clicking project dir');
-        await projectDir.click();
+        await workspaceTrust.clickWithWorkspaceTrust(driver, byExactText("project"));
 
         let chialispExt = await driver.wait(until.elementLocated(byVisibleText(".vsix")));
         console.log('right click chialisp ext');

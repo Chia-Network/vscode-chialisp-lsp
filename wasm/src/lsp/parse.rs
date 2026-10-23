@@ -288,7 +288,7 @@ fn test_doc_vec_byte_iter_0() {
 }
 
 fn is_identifier_char(ch: u8) -> bool {
-    ch != b'(' && ch != b')' && ch != b';' && !ch.is_ascii_whitespace()
+    ch != b'(' && ch != b')' && !ch.is_ascii_whitespace()
 }
 
 #[test]
@@ -320,31 +320,31 @@ fn test_is_identifier_char_symbol() {
 // (@see https://www.gnu.org/software/emacs/manual/html_node/elisp/Point.html )
 // Search for the bounds of a lisp like identifier at the point.
 pub fn find_ident(line: Rc<Vec<u8>>, char_at: u32) -> Option<Vec<u8>> {
-    let ca_size = char_at as usize;
-    let ll = line.len();
+    let (start, end) = find_atom_bounds(&line, char_at as usize)?;
+    Some(line[start..end].to_vec())
+}
 
-    if ca_size >= ll {
+fn find_atom_bounds(line: &[u8], point: usize) -> Option<(usize, usize)> {
+    if point >= line.len() {
         return None;
     }
-
-    let borrowed: &Vec<u8> = line.borrow();
-    let mut lb = ca_size;
-    let mut ub = ca_size;
-
-    if !is_identifier_char(borrowed[lb]) {
-        return None;
+    let mut lexer = LexicalState::default();
+    let mut start = 0;
+    for (offset, byte) in line.iter().enumerate() {
+        let was_atom = lexer.in_atom();
+        lexer.code(*byte);
+        if !was_atom && lexer.in_atom() {
+            start = offset;
+        }
+        if was_atom && !lexer.in_atom() && start <= point && point < offset {
+            return Some((start, offset));
+        }
     }
-
-    while lb > 0 && is_identifier_char(borrowed[lb - 1]) {
-        lb -= 1;
+    if lexer.in_atom() && start <= point {
+        Some((start, line.len()))
+    } else {
+        None
     }
-    while ub < borrowed.len() && is_identifier_char(borrowed[ub]) {
-        ub += 1;
-    }
-
-    let ident_vec: Vec<u8> = borrowed[lb..].iter().take(ub - lb).copied().collect();
-
-    Some(ident_vec)
 }
 
 #[test]
@@ -393,6 +393,18 @@ fn test_find_ident_last_paren() {
 pub fn is_first_in_list(lines: &DocData, position: &Position) -> bool {
     let mut current_char = b' ';
     let mut pos_walk = *position;
+    if let Some(line) = lines.nth_line_ref(position.line as usize) {
+        if let Some((start, _)) =
+            find_atom_bounds(line, position.character as usize).or_else(|| {
+                position
+                    .character
+                    .checked_sub(1)
+                    .and_then(|point| find_atom_bounds(line, point as usize))
+            })
+        {
+            pos_walk.character = start as u32;
+        }
+    }
 
     // Reverse past this identifier's start.
     while let Some((ch, p)) = lines.get_prev_position(&pos_walk) {
@@ -522,7 +534,7 @@ fn test_get_positional_text() {
 
 // Determine whether the character is an identifier char.
 pub fn is_identifier(v: &[u8]) -> bool {
-    v.iter().copied().all(is_identifier_char)
+    !v.is_empty() && find_atom_bounds(v, 0) == Some((0, v.len()))
 }
 
 #[test]

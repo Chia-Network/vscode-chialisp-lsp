@@ -7,6 +7,7 @@ rm -rf ./test/*.vsix
 cp -r chialisp-*.vsix ./test
 cd test
 npm install
+node --test workspace-trust.test.cjs
 sh ./run-server.sh &
 
 /bin/bash ./wait-for-it.sh -t 90 -h localhost -p 8080

@@ -12,6 +12,9 @@
     },
     {
       "include": "#parenform"
+    },
+    {
+      "include": "#atom"
     }
   ],
   "repository": {
@@ -42,7 +45,7 @@
       ]
     },
     "parenform": {
-      "begin": "\\(",
+      "begin": "#?\\(",
       "end": "\\)",
       "name": "meta.expression.chialisp",
       "patterns": [
@@ -50,6 +53,10 @@
           "include": "$self"
         }
       ]
+    },
+    "atom": {
+      "name": "meta.atom.chialisp",
+      "match": "[^\\s()\"';][^\\s)]*"
     }
   }
 }

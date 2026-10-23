@@ -58,6 +58,7 @@ pub(crate) struct LexicalState {
     escaped: bool,
     comment: bool,
     atom: bool,
+    hash_prefix: bool,
 }
 
 impl LexicalState {
@@ -79,7 +80,14 @@ impl LexicalState {
             }
             return false;
         }
+        if self.atom && byte == b'(' && !self.hash_prefix {
+            // An opening parenthesis inside a bareword is literal too.
+            return false;
+        }
+        self.hash_prefix = byte == b'#' && !self.atom;
         match byte {
+            // The compiler starts comments only between atoms: `a;b` is a
+            // single symbol, while `a ;b` starts a comment.
             b';' if !self.atom => {
                 self.comment = true;
                 false
@@ -105,6 +113,10 @@ impl LexicalState {
 
     pub(crate) fn in_comment(&self) -> bool {
         self.comment
+    }
+
+    pub(crate) fn in_atom(&self) -> bool {
+        self.atom
     }
 }
 
