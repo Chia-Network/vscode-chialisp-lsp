@@ -6,6 +6,8 @@ use chialisp::compiler::comptypes::{
 };
 use chialisp::compiler::sexp::{decode_string, SExp};
 
+use crate::lsp::parse::ParsedDoc;
+use crate::lsp::types::ParsedForm;
 use crate::lsp::LSPServiceProvider;
 
 pub trait HelperResolver {
@@ -14,6 +16,22 @@ pub trait HelperResolver {
         frontend: &CompileForm,
         name: &[u8],
     ) -> Option<HelperForm>;
+}
+
+/// Compile-time defmacs disappear from the compiler's runtime module. Keep
+/// their original definitions available to editor completion and navigation.
+fn source_helpers(parsed: &ParsedDoc) -> Vec<HelperForm> {
+    let mut helpers = parsed.compiled.helpers.clone();
+    for helper in parsed.helpers.values() {
+        if let Ok(ParsedForm::Helper(forms)) = &helper.parsed {
+            for form in forms {
+                if matches!(form, HelperForm::Defmacro(_)) {
+                    helpers.push(form.clone());
+                }
+            }
+        }
+    }
+    helpers
 }
 
 fn resolve_imported_name(
@@ -32,7 +50,7 @@ fn resolve_imported_name(
                     .as_ref()
                     .map(|q| &q.name)
                     .unwrap_or_else(|| &q.name);
-                for helper in parsed.compiled.helpers.iter() {
+                for helper in source_helpers(&parsed).iter() {
                     let full_helper_qualified_name = qualified_parent.with_child(helper.name());
                     let name_to_match =
                         full_helper_qualified_name.as_u8_vec(LongNameTranslation::Namespace);
@@ -45,8 +63,10 @@ fn resolve_imported_name(
                 for export in parsed.exports.iter() {
                     if let Export::Function(f) = &export.1 {
                         let use_name = f.as_name.clone().unwrap_or_else(|| f.name.clone());
-                        let full_helper_qualified_name = qualified_parent.with_child(&use_name.value);
-                        let name_to_match = full_helper_qualified_name.as_u8_vec(LongNameTranslation::Namespace);
+                        let full_helper_qualified_name =
+                            qualified_parent.with_child(&use_name.value);
+                        let name_to_match =
+                            full_helper_qualified_name.as_u8_vec(LongNameTranslation::Namespace);
                         if name_to_match == called_name {
                             return Some((file_uri, use_name.value));
                         }
@@ -163,7 +183,7 @@ impl HelperResolver for LSPServiceProvider {
                     }
                 }
 
-                for imported_helper in imported_doc.compiled.helpers.iter() {
+                for imported_helper in source_helpers(&imported_doc).iter() {
                     match imported_helper {
                         HelperForm::Defun(_, defun) if defun.name == imported_name => {
                             return Some(imported_helper.clone());

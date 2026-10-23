@@ -5,6 +5,7 @@ use std::rc::Rc;
 use lsp_types::TextDocumentContentChangeEvent;
 
 use crate::lsp::parse::DocVecByteIter;
+use crate::lsp::positions::{position_to_byte, LexicalState};
 use crate::lsp::types::DocData;
 use crate::lsp::LSPServiceProvider;
 
@@ -39,23 +40,24 @@ pub fn stringify_doc(d: &[Rc<Vec<u8>>]) -> Result<String, String> {
 }
 
 pub fn redo_comment_line(map: &mut HashMap<usize, usize>, text: &[Rc<Vec<u8>>], line: usize) {
-    let empty_line = Vec::new();
-    let text_b: &Vec<u8> = if line >= text.len() {
-        &empty_line
-    } else {
-        text[line].borrow()
-    };
-    if let Some(found) = text_b.iter().position(|ch| *ch == b';') {
-        map.insert(line, found);
-    } else {
-        map.remove(&line);
+    map.remove(&line);
+    if let Some(comment) = compute_comment_lines(&text[..text.len().min(line + 1)]).get(&line) {
+        map.insert(line, *comment);
     }
 }
 
 pub fn compute_comment_lines(text: &[Rc<Vec<u8>>]) -> HashMap<usize, usize> {
     let mut res = HashMap::new();
-    for i in 0..text.len() {
-        redo_comment_line(&mut res, text, i);
+    let mut lexer = LexicalState::default();
+    for (line_number, line) in text.iter().enumerate() {
+        for (offset, byte) in line.iter().enumerate() {
+            let was_comment = lexer.in_comment();
+            lexer.code(*byte);
+            if !was_comment && lexer.in_comment() {
+                res.insert(line_number, offset);
+            }
+        }
+        lexer.code(b'\n');
     }
     res
 }
@@ -69,6 +71,11 @@ impl PatchableDocument for DocData {
         for p in patches.iter() {
             let split_input = split_text(&p.text);
             if let Some(r) = p.range {
+                // LSP character offsets count UTF-16 units, never UTF-8 bytes.
+                let r = lsp_types::Range {
+                    start: position_to_byte(&doc_copy, r.start),
+                    end: position_to_byte(&doc_copy, r.end),
+                };
                 let prelude_start = if r.start.line > 0 {
                     doc_copy
                         .iter()
@@ -79,7 +86,7 @@ impl PatchableDocument for DocData {
                     vec![]
                 };
                 let suffix_line = r.end.line + 1;
-                let suffix_after = if (r.end.line as usize) < doc_copy.len() - 1 {
+                let suffix_after = if (r.end.line as usize) + 1 < doc_copy.len() {
                     doc_copy
                         .iter()
                         .skip(suffix_line as usize)

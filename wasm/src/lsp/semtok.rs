@@ -11,6 +11,8 @@ use crate::lsp::completion::PRIM_NAMES;
 use crate::lsp::parse::{
     add_bindings_to_set, add_sexp_bindings, recover_scopes, IncludedFileSpec, ParsedDoc,
 };
+use crate::lsp::patch::get_bytes;
+use crate::lsp::positions::byte_to_utf16;
 use crate::lsp::resolve::HelperResolver;
 use crate::lsp::types::{
     DocPosition, DocRange, Hash, IncludeData, IncludeKind, LSPServiceProvider, ParsedForm,
@@ -21,10 +23,12 @@ use crate::lsp::{
     TK_NUMBER_IDX, TK_PARAMETER_IDX, TK_READONLY_BIT, TK_STRING_IDX, TK_VARIABLE_IDX,
 };
 use chialisp::compiler::clvm::sha256tree;
+use chialisp::compiler::compiler::DefaultCompilerOpts;
 use chialisp::compiler::comptypes::{
     BodyForm, CompileForm, Export, HelperForm, LetFormKind, ModuleImportSpec,
 };
-use chialisp::compiler::sexp::SExp;
+use chialisp::compiler::frontend::match_export_form;
+use chialisp::compiler::sexp::{parse_sexp, SExp};
 use chialisp::compiler::srcloc::Srcloc;
 
 #[derive(Clone, Debug)]
@@ -116,6 +120,18 @@ fn process_body_code(
     match body.borrow() {
         BodyForm::Let(k, letdata) => {
             let mut bindings_vars = varcollection.clone();
+            // assign bindings are mutually visible, unlike let's initializers.
+            if k == &LetFormKind::Assign {
+                for binding in &letdata.bindings {
+                    let mut names = HashSet::new();
+                    add_bindings_to_set(&mut names, binding);
+                    for name in names {
+                        if let SExp::Atom(loc, name) = name.as_ref() {
+                            bindings_vars.insert(name.clone(), loc.clone());
+                        }
+                    }
+                }
+            }
             if let Some(kw) = &letdata.kw {
                 collected_tokens.push(SemanticTokenSortable {
                     loc: kw.clone(),
@@ -135,7 +151,7 @@ fn process_body_code(
                         });
                     }
                 }
-                if k == &LetFormKind::Sequential {
+                if k == &LetFormKind::Sequential || k == &LetFormKind::Assign {
                     // Bindings above affect code below
                     process_body_code(
                         env,
@@ -499,7 +515,21 @@ pub fn build_semantic_tokens(
         }
     }
 
-    for form in parsed.compiled.helpers.iter() {
+    // Preprocessing consumes defmac declarations and expands calls. Their raw
+    // source forms still describe what the editor displays, including macro
+    // parameters and compile-time helper bodies.
+    let mut source_helpers = parsed.compiled.helpers.clone();
+    for helper in parsed.helpers.values() {
+        if let Ok(ParsedForm::Helper(forms)) = &helper.parsed {
+            for form in forms {
+                if form.loc().file.as_str() == env.uristring {
+                    source_helpers.push(form.clone());
+                }
+            }
+        }
+    }
+    let source_frontend = parsed.compiled.replace_helpers(&source_helpers);
+    for form in source_helpers.iter() {
         match form {
             HelperForm::Defnamespace(_) => {}
             HelperForm::Defnsref(_) => {}
@@ -523,7 +553,7 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &HashMap::new(),
                     &varcollection,
-                    &parsed.compiled,
+                    &source_frontend,
                     defc.body.clone(),
                 );
             }
@@ -552,7 +582,7 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &argcollection,
                     &varcollection,
-                    &parsed.compiled,
+                    &source_frontend,
                     defun.body.clone(),
                 );
             }
@@ -577,14 +607,51 @@ pub fn build_semantic_tokens(
                     goto_def,
                     &argcollection,
                     &varcollection,
-                    &parsed.compiled,
+                    &source_frontend,
                     mac.program.exp.clone(),
                 );
             }
         }
     }
 
-    for (_, export) in parsed.exports.iter() {
+    // Prefer an unexpanded export for coloring when it is a regular BodyForm.
+    // Macro syntax such as dotted tree arguments instead uses the compiler's
+    // expanded form below; a raw SExp pass restores its macro call token.
+    let source_forms = parse_sexp(
+        Srcloc::start(env.uristring),
+        get_bytes(env.lines).into_iter(),
+    )
+    .unwrap_or_default();
+    // Even when a macro accepts a dotted tree that is not a BodyForm, its
+    // export arguments still bind names in that source tree.
+    for form in &source_forms {
+        if let Some(parts) = form.proper_list() {
+            if parts.len() == 3 && matches!(&parts[0], SExp::Atom(_, name) if name == b"export") {
+                collect_arg_tokens(
+                    &mut collected_tokens,
+                    &mut argcollection,
+                    Rc::new(parts[1].clone()),
+                );
+            }
+        }
+    }
+    let source_opts = Rc::new(DefaultCompilerOpts::new(env.uristring));
+    let mut source_exports = Vec::new();
+    for form in &source_forms {
+        if let Ok(Some(export)) = match_export_form(source_opts.clone(), form.clone()) {
+            source_exports.push(export);
+        }
+    }
+    for export in parsed.exports.values() {
+        if !source_exports.iter().any(|source| match (source, export) {
+            (Export::MainProgram(a), Export::MainProgram(b)) => a.loc == b.loc,
+            (Export::Function(a), Export::Function(b)) => a.loc == b.loc,
+            _ => false,
+        }) {
+            source_exports.push(export.clone());
+        }
+    }
+    for export in source_exports.iter() {
         match export {
             Export::MainProgram(p) => {
                 collect_arg_tokens(&mut collected_tokens, &mut argcollection, p.args.clone());
@@ -604,7 +671,7 @@ pub fn build_semantic_tokens(
                     &CompileForm {
                         loc: p.loc.clone(),
                         exp: p.expr.clone(),
-                        ..parsed.compiled.clone()
+                        ..source_frontend.clone()
                     },
                     p.expr.clone(),
                 );
@@ -644,9 +711,71 @@ pub fn build_semantic_tokens(
         goto_def,
         &argcollection,
         &varcollection,
-        &parsed.compiled,
+        &source_frontend,
         parsed.compiled.exp.clone(),
     );
+
+    fn restore_macro_calls(
+        env: &mut DocumentProcessingDescription,
+        frontend: &CompileForm,
+        form: &SExp,
+        args: &HashMap<Vec<u8>, Srcloc>,
+        tokens: &mut Vec<SemanticTokenSortable>,
+        goto_def: &mut BTreeMap<SemanticTokenSortable, Srcloc>,
+    ) {
+        if let SExp::Cons(_, head, tail) = form {
+            if let SExp::Atom(loc, name) = head.as_ref() {
+                if name == b"q" || name == b"quote" {
+                    return;
+                }
+                if let Some(HelperForm::Defmacro(mac)) =
+                    env.resolver.resolve_helper_reference(frontend, name)
+                {
+                    let token = SemanticTokenSortable {
+                        loc: loc.clone(),
+                        token_type: TK_MACRO_IDX,
+                        token_mod: 0,
+                    };
+                    if !tokens.iter().any(|t| t.loc == *loc) {
+                        tokens.push(token.clone());
+                    }
+                    goto_def.insert(token, mac.nl.clone());
+                }
+            }
+            restore_macro_calls(env, frontend, head, args, tokens, goto_def);
+            // The cdr is an argument list, not another call expression.
+            let mut rest = tail.as_ref();
+            while let SExp::Cons(_, argument, next) = rest {
+                restore_macro_calls(env, frontend, argument, args, tokens, goto_def);
+                rest = next.as_ref();
+            }
+            if !matches!(rest, SExp::Nil(_)) {
+                restore_macro_calls(env, frontend, rest, args, tokens, goto_def);
+            }
+        } else if let SExp::Atom(loc, name) = form {
+            if let Some(definition) = args.get(name) {
+                if !tokens.iter().any(|t| t.loc == *loc) {
+                    let token = SemanticTokenSortable {
+                        loc: loc.clone(),
+                        token_type: TK_PARAMETER_IDX,
+                        token_mod: 0,
+                    };
+                    tokens.push(token.clone());
+                    goto_def.insert(token, definition.clone());
+                }
+            }
+        }
+    }
+    for form in &source_forms {
+        restore_macro_calls(
+            env,
+            &source_frontend,
+            form,
+            &argcollection,
+            &mut collected_tokens,
+            goto_def,
+        );
+    }
 
     for (l, c) in comments.iter() {
         collected_tokens.push(SemanticTokenSortable {
@@ -689,25 +818,64 @@ fn do_semantic_tokens(
         data: Vec::new(),
     };
 
-    let mut last_row = 1;
-    let mut last_col = 1;
-
-    for (i, t) in collected_tokens.iter().enumerate() {
-        if i > 0 && (t.loc.line < last_row || (t.loc.line == last_row && t.loc.col <= last_col)) {
+    // Compiler locations count UTF-8 bytes. Convert only at the protocol
+    // boundary, and split multiline strings because clients need not support
+    // semantic tokens that span lines.
+    let mut encoded = Vec::new();
+    for t in collected_tokens.iter() {
+        let first_line = t.loc.line.saturating_sub(1);
+        let end = t.loc.ending();
+        let last_line = end.line.saturating_sub(1);
+        for line_number in first_line..=last_line.min(env.lines.len().saturating_sub(1)) {
+            let Some(line) = env.lines.get(line_number) else {
+                continue;
+            };
+            let start_byte = if line_number == first_line {
+                t.loc.col.saturating_sub(1)
+            } else {
+                0
+            };
+            let end_byte = if line_number == last_line {
+                if t.loc.until.is_some() {
+                    end.col.saturating_sub(1)
+                } else {
+                    start_byte + 1
+                }
+            } else {
+                line.len()
+            };
+            let start = byte_to_utf16(line, start_byte as u32);
+            let finish = byte_to_utf16(line, end_byte as u32);
+            if finish > start {
+                encoded.push((
+                    line_number as u32,
+                    start,
+                    finish - start,
+                    t.token_type,
+                    t.token_mod,
+                ));
+            }
+        }
+    }
+    encoded.sort_by_key(|(line, start, _, _, _)| (*line, *start));
+    let mut last_position = None;
+    for (line, start, length, token_type, token_modifiers_bitset) in encoded {
+        if last_position == Some((line, start)) {
             continue;
         }
-        if t.loc.line != last_row {
-            last_col = 1;
-        }
+        let (last_line, last_start) = last_position.unwrap_or((0, 0));
         result_tokens.data.push(SemanticToken {
-            delta_line: (t.loc.line - last_row) as u32,
-            delta_start: (t.loc.col - last_col) as u32,
-            length: t.loc.len().unwrap_or(1) as u32,
-            token_type: t.token_type,
-            token_modifiers_bitset: t.token_mod,
+            delta_line: line - last_line,
+            delta_start: if line == last_line {
+                start - last_start
+            } else {
+                start
+            },
+            length,
+            token_type,
+            token_modifiers_bitset,
         });
-        last_row = t.loc.line;
-        last_col = t.loc.col;
+        last_position = Some((line, start));
     }
 
     Response {
@@ -736,7 +904,7 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
                     resolver: self,
                     prims: &PRIM_NAMES,
                     log,
-                    id,
+                    id: id.clone(),
                     uristring: &uristring,
                     lines: &doc.text,
                 },
@@ -747,9 +915,42 @@ impl LSPSemtokRequestHandler for LSPServiceProvider {
             self.goto_defs.insert(uristring.clone(), our_goto_defs);
             res.push(Message::Response(resp));
         }
+        if res.is_empty() {
+            res.push(Message::Response(Response::new_ok(
+                id,
+                serde_json::json!({"data": []}),
+            )));
+        }
 
         res.append(&mut self.produce_error_list());
 
         Ok(res)
+    }
+}
+
+impl LSPServiceProvider {
+    pub fn ensure_definition_index(&mut self, uri: &str) {
+        self.parse_document_and_store_errors(uri);
+        if self.goto_defs.contains_key(uri) {
+            return;
+        }
+        if let (Some(doc), Some(parsed)) = (self.get_doc(uri), self.get_parsed(uri)) {
+            let mut definitions = BTreeMap::new();
+            let log = self.log.clone();
+            build_semantic_tokens(
+                &mut DocumentProcessingDescription {
+                    resolver: self,
+                    prims: &PRIM_NAMES,
+                    log,
+                    id: RequestId::from(0),
+                    uristring: uri,
+                    lines: &doc.text,
+                },
+                &doc.comments,
+                &mut definitions,
+                &parsed,
+            );
+            self.goto_defs.insert(uri.to_owned(), definitions);
+        }
     }
 }

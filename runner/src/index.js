@@ -3,15 +3,12 @@ import * as process from 'process';
 import * as fs from 'fs';
 import { StdinReader } from './stdin_reader.js';
 
-// clean 1:1 8-bit encoding.
-process.stdin.setEncoding('binary');
-
 const emptyWriteLog = (line) => { };
 const log = {
 	write: emptyWriteLog
 };
 
-let lspId = clvm_tools_rs.create_lsp_service(function(name) {
+const lspId = clvm_tools_rs.create_lsp_service(function(name) {
     try {
         return fs.readFileSync(name, 'utf8');
     } catch(e) {
@@ -22,11 +19,18 @@ let lspId = clvm_tools_rs.create_lsp_service(function(name) {
     log.write('stderr> ' + e + '\n');
 });
 
+let shutdownRequested = false;
+
+function sendMessage(value) {
+    const message = JSON.stringify({jsonrpc: '2.0', ...value});
+    process.stdout.write(`Content-Length: ${Buffer.byteLength(message, 'utf8')}\r\n\r\n${message}`);
+}
+
 function processCommand(cmd) {
     if (cmd.method === 'workspace/didChangeConfiguration') {
         if (cmd.params.settings && cmd.params.settings && cmd.params.settings.chialisp) {
             let stderrPath = cmd.params.settings.chialisp.stderrLogPath;
-            if (stderrPath !== '') {
+            if (typeof stderrPath === 'string' && stderrPath !== '') {
 		            if (!stderrPath.startsWith('/')) {
 			              stderrPath = '/tmp/' + stderrPath;
 		            }
@@ -46,11 +50,20 @@ function processCommand(cmd) {
 }
 
 const stdinReader = new StdinReader((m) => {
+    let command;
     try {
         // Check for various commands we need to interpret at this layer.
-        processCommand(JSON.parse(m));
+        command = JSON.parse(m);
+        processCommand(command);
     } catch (e) {
         log.write('local exn: ' + e + '\n' + e.stack + '\n');
+        sendMessage({id: null, error: {code: -32700, message: 'Invalid JSON'}});
+        return;
+    }
+    if (command.method === 'exit') {
+        clvm_tools_rs.destroy_lsp_service(lspId);
+        process.stdout.write('', () => process.exit(shutdownRequested ? 0 : 1));
+        return;
     }
 
     // Process the message in text form, sending it to the lsp.
@@ -59,15 +72,19 @@ const stdinReader = new StdinReader((m) => {
         messages = clvm_tools_rs.lsp_service_handle_msg(lspId, m);
     } catch (e) {
         log.write('exn: ' + e + '\n' + e.stack + '\n');
+        if (command.id !== undefined) {
+            sendMessage({id: command.id, error: {code: -32603, message: 'Language service failed'}});
+        }
     }
 
     for (let i = 0; i < messages.length; i++) {
         const innerMs = JSON.parse(messages[i]);
         for (let j = 0; j < innerMs.length; j++) {
-            const message = JSON.stringify(innerMs[j]);
-            const messageLength = Buffer.byteLength(message, 'utf8');
-            process.stdout.write(`Content-Length: ${messageLength}\r\n\r\n`);
-            process.stdout.write(message);
+            const reply = innerMs[j];
+            if (command.method === 'shutdown' && reply.id === command.id && !reply.error) {
+                shutdownRequested = true;
+            }
+            sendMessage(reply);
         }
     }
 });

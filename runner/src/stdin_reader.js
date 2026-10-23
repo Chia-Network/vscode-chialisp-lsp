@@ -16,6 +16,11 @@ export class StdinReader {
     // Process a chunk coming in from stdin.  It may be misaligned due to
     // os level buffer limits so we need to be prepared to deal with fragments.
     processChunk(log, chunk) {
+        // Frame by bytes, then decode the complete body (a UTF-8 character can
+        // straddle any number of stdin chunks).
+        if (Buffer.isBuffer(chunk)) {
+            chunk = chunk.toString('latin1');
+        }
         for (let i = 0; i < chunk.length; ) {
             let ch = chunk[i];
             let doInc = 1;
@@ -61,7 +66,7 @@ export class StdinReader {
                     this.mode = START_HEADER;
                     try {
                         if (this.deliverMsg) {
-                            this.deliverMsg(message);
+                            this.deliverMsg(Buffer.from(message, 'latin1').toString('utf8'));
                         }
                     } catch (e) {
                         log.write('exception ' + e);

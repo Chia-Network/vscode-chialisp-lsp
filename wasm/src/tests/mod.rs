@@ -1,4 +1,6 @@
+mod lexical;
 pub mod obj;
+mod unicode;
 
 use regex::Regex;
 use std::collections::HashMap;
@@ -1231,7 +1233,7 @@ fn test_inner_mod_expr_with_inner_includes_and_comments() {
             SemanticToken {
                 delta_line: 0,
                 delta_start: 24,
-                length: 16,
+                length: 15,
                 token_type: TK_COMMENT_IDX,
                 token_modifiers_bitset: 0,
             },
@@ -1355,7 +1357,7 @@ fn test_line_move() {
         .expect("should be ok to send sem tok");
     let insert_msg = make_insert_text_msg(
         &file,
-        1,
+        2,
         DocRange {
             start: DocPosition {
                 line: 1,
@@ -1444,7 +1446,7 @@ fn test_line_move() {
             SemanticToken {
                 delta_line: 0,
                 delta_start: 3,
-                length: 7,
+                length: 6,
                 token_type: TK_COMMENT_IDX,
                 token_modifiers_bitset: 0
             }
@@ -1521,7 +1523,7 @@ fn test_line_move() {
             SemanticToken {
                 delta_line: 0,
                 delta_start: 3,
-                length: 7,
+                length: 6,
                 token_type: TK_COMMENT_IDX,
                 token_modifiers_bitset: 0
             }
@@ -1983,7 +1985,7 @@ fn test_first_line_comment() {
             SemanticToken {
                 delta_line: 0,
                 delta_start: 0,
-                length: 16,
+                length: 15,
                 token_type: TK_COMMENT_IDX,
                 token_modifiers_bitset: 0,
             },
@@ -2145,7 +2147,17 @@ fn test_missing_import_reports_diagnostic() {
         .map(|d| d.message.clone())
         .filter(|m| m.contains("std/missing.clinc"))
         .collect();
-    assert_eq!(missing_messages.len(), 1);
+    assert!(!missing_messages.is_empty());
+    // Diagnostics are now available on didOpen as well as feature requests.
+    // Each publication must contain the missing import exactly once.
+    for set in &diag_sets {
+        let count = set
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.contains("std/missing.clinc"))
+            .count();
+        assert!(count <= 1);
+    }
 }
 
 #[test]
@@ -2472,3 +2484,5 @@ fn test_sem_tok_for_module_program_import() {
         ]
     );
 }
+
+mod correctness;

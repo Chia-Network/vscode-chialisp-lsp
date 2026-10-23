@@ -14,8 +14,9 @@ use lsp_server::{ExtractError, Message, Notification, Request, RequestId};
 
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, Diagnostic,
-    InitializeParams, OneOf, Position, PublishDiagnosticsParams, Range, SemanticTokenModifier,
-    SemanticTokenType, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    DiagnosticRelatedInformation, InitializeParams, Location, OneOf, Position,
+    PublishDiagnosticsParams, Range, SemanticTokenModifier, SemanticTokenType,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
     SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
     TextDocumentSyncKind, WorkDoneProgressOptions,
 };
@@ -24,7 +25,7 @@ use percent_encoding::percent_decode;
 use url::{Host, Url};
 
 use crate::interfaces::{IFileReader, ILogWriter};
-use crate::lsp::compopts::{get_file_content, LSPCompilerOpts};
+use crate::lsp::compopts::LSPCompilerOpts;
 use crate::lsp::parse::{make_simple_ranges, IncludedFileSpec, ParsedDoc};
 use crate::lsp::patch::stringify_doc;
 use crate::lsp::reparse::{
@@ -137,14 +138,12 @@ fn file_url_segments_to_pathbuf(
         bytes.push(b'/');
     }
 
-    let path = PathBuf::from(decode_string(&bytes));
-
-    debug_assert!(
-        path.is_absolute(),
-        "to_file_path() failed to produce an absolute Path"
-    );
-
-    Ok(path)
+    // These are URI paths supplied to the host filesystem callback. WASM's
+    // unsupported filesystem target does not classify them as OS-absolute paths.
+    if !bytes.starts_with(b"/") {
+        return Err(ToFilePathErr);
+    }
+    Ok(PathBuf::from(decode_string(&bytes)))
 }
 
 impl HasFilePath for Url {
@@ -561,6 +560,12 @@ pub struct LSPServiceProvider {
     // use in compiler opts.
     pub document_collection: Rc<RefCell<HashMap<String, DocData>>>,
 
+    pub open_documents: HashSet<String>,
+    pub dependencies: HashMap<String, HashSet<String>>,
+    pub resolved_files: HashMap<String, Option<String>>,
+    pub parse_stack: Vec<String>,
+    pub shutdown_requested: bool,
+
     // These aren't shared.
     pub parsed_documents: HashMap<String, ParsedDoc>,
     pub goto_defs: HashMap<String, BTreeMap<SemanticTokenSortable, Srcloc>>,
@@ -576,11 +581,17 @@ pub struct LSPServiceProvider {
 }
 
 pub fn urlify(u: &str) -> String {
-    if !u.starts_with("file://") {
-        format!("file://{}", u)
-    } else {
-        u.to_owned()
+    if Url::parse(u)
+        .map(|url| url.scheme() == "file")
+        .unwrap_or(false)
+    {
+        return u.to_owned();
     }
+    // Url::from_file_path is unavailable on wasm; URL-encode path characters
+    // rather than interpreting '#' or '?' in a filename as URL components.
+    let mut url = Url::parse("file:///").expect("constant file URI");
+    url.set_path(u);
+    url.to_string()
 }
 
 impl LSPServiceProvider {
@@ -631,8 +642,13 @@ impl LSPServiceProvider {
         &mut self,
         uristring: &str,
         preprocessing: bool,
-        errors: Vec<Diagnostic>,
+        mut errors: Vec<Diagnostic>,
     ) {
+        if let Some(doc) = self.get_doc(uristring) {
+            for error in errors.iter_mut() {
+                error.range = crate::lsp::positions::range_to_utf16(&doc.text, error.range);
+            }
+        }
         if preprocessing {
             // Remove semantic errors if errors is not empty, otherwise, clear
             // preprocessing errors.
@@ -722,7 +738,15 @@ impl LSPServiceProvider {
     }
 
     pub fn save_doc(&mut self, uristring: String, dd: DocData) {
-        self.parsed_documents.remove(&uristring);
+        if self.open_documents.contains(&uristring) && dd.version < 0 {
+            return;
+        }
+        if self
+            .get_doc(&uristring)
+            .is_none_or(|old| old.text != dd.text)
+        {
+            self.invalidate_document(&uristring);
+        }
         let cell: &RefCell<HashMap<String, DocData>> = self.document_collection.borrow();
         cell.replace_with(|coll| {
             let mut repl = HashMap::new();
@@ -736,6 +760,31 @@ impl LSPServiceProvider {
         self.parsed_documents.insert(uristring, p);
     }
 
+    pub fn invalidate_document(&mut self, uri: &str) {
+        let mut pending = vec![uri.to_owned()];
+        let mut invalidated = HashSet::new();
+        while let Some(changed) = pending.pop() {
+            if !invalidated.insert(changed.clone()) {
+                continue;
+            }
+            self.parsed_documents.remove(&changed);
+            self.goto_defs.remove(&changed);
+            self.thrown_errors.remove(&changed);
+            for (parent, children) in self.dependencies.iter() {
+                if children.contains(&changed) {
+                    pending.push(parent.clone());
+                }
+            }
+        }
+    }
+
+    pub fn analyze_open_documents(&mut self) {
+        let documents: Vec<_> = self.open_documents.iter().cloned().collect();
+        for uri in documents {
+            self.parse_document_and_store_errors(&uri);
+        }
+    }
+
     pub fn try_handle_incoming_file(
         &mut self,
         new_helpers: &mut ReparsedModule,
@@ -743,47 +792,166 @@ impl LSPServiceProvider {
     ) -> bool {
         let mut success = false;
 
-        if let Ok((filename, file_body)) = get_file_content(
-            self.log.clone(),
-            self.fs.clone(),
-            self.get_workspace_root(),
-            &self.config.include_paths,
-            &decode_string(target_filename),
-        ) {
-            if let Some(file_uri) = self
-                .get_workspace_root()
-                .and_then(|r| r.join(&filename).to_str().map(urlify))
-            {
-                // Keep the contents.
-                self.save_doc(file_uri.clone(), file_body);
-                // Do parsing on this document if the content changed
-                // or it's new.
-                self.ensure_parsed_document(&file_uri);
-                // If it parsed, we have the helpers and can populate
-                // autocomplete/error functionality.
-                if let Some(p) = self.get_parsed(&file_uri) {
-                    for (hash, helper) in p.helpers.iter() {
-                        new_helpers.helpers.insert(hash.clone(), helper.clone());
-                        success = true;
-                    }
-                }
+        if let Some((_file_uri, p)) =
+            self.get_file_uri_and_ensure_parsing(&decode_string(target_filename))
+        {
+            // If it parsed, we have the helpers and can populate
+            // autocomplete/error functionality.
+            for (hash, helper) in p.helpers.iter() {
+                new_helpers.helpers.insert(hash.clone(), helper.clone());
+                success = true;
             }
         }
 
         success
     }
 
+    fn dependency_contains(&self, root: &str, target: &str) -> bool {
+        let mut pending = vec![root.to_owned()];
+        let mut visited = HashSet::new();
+        while let Some(uri) = pending.pop() {
+            if uri == target {
+                return true;
+            }
+            if visited.insert(uri.clone()) {
+                if let Some(children) = self.dependencies.get(&uri) {
+                    pending.extend(children.iter().cloned());
+                }
+            }
+        }
+        false
+    }
+
+    fn imported_error_range(&mut self, parsed: &ParsedDoc, source_uri: &str) -> lsp_types::Range {
+        let mut candidates = Vec::new();
+        for include in parsed.includes.values() {
+            let (filename, loc) = match include {
+                IncludedFileSpec::Include(inc) => (inc.filename.clone(), inc.name_loc.clone()),
+                IncludedFileSpec::Import(_, imp) => {
+                    (self.get_filename_of_import(&imp.longname), imp.nl.clone())
+                }
+            };
+            if let Some(uri) = self.resolve_file_uri(&decode_string(&filename)) {
+                candidates.push((DocRange::from_srcloc(loc).to_range(), uri));
+            }
+        }
+        // Several imports may lead to the same source. Prefer the first in
+        // source order, never the iteration order of the includes hash map.
+        candidates.sort_by_key(|(range, _)| (range.start.line, range.start.character));
+        candidates
+            .into_iter()
+            .find(|(_, uri)| self.dependency_contains(uri, source_uri))
+            .map(|(range, _)| range)
+            .unwrap_or_default()
+    }
+
     pub fn ensure_parsed_document(&mut self, uristring: &str) {
+        if self.parsed_documents.contains_key(uristring)
+            || self.parse_stack.iter().any(|uri| uri == uristring)
+        {
+            return;
+        }
+        self.parse_stack.push(uristring.to_owned());
+        self.dependencies.remove(uristring);
+        // Resolve the source graph before invoking the compiler preprocessor.
+        // An include may recurse inside preprocessing before the LSP sees its
+        // expanded helpers, so cycle detection must precede that operation.
+        if let Some(doc) = self.get_doc(uristring) {
+            let mut cycles = Vec::new();
+            if let Ok(forms) = chialisp::compiler::sexp::parse_sexp(
+                Srcloc::start(uristring),
+                crate::lsp::parse::DocVecByteIter::new(&doc.text),
+            ) {
+                let forms = if forms.len() == 1 {
+                    forms[0].proper_list().filter(|parts| matches!(parts.first(), Some(SExp::Atom(_, name)) if name == b"mod"))
+                        .map(|parts| parts.into_iter().skip(2).map(Rc::new).collect()).unwrap_or(forms)
+                } else {
+                    forms
+                };
+                for form in forms {
+                    let include = crate::lsp::reparse::parse_include(form.clone()).or_else(|| {
+                        let listed = form.proper_list()?;
+                        match chialisp::compiler::frontend::compile_nsref(form.loc(), &listed)
+                            .ok()?
+                        {
+                            HelperForm::Defnsref(ns) => Some(IncludedFileSpec::Import(None, *ns)),
+                            _ => None,
+                        }
+                    });
+                    let Some(include) = include else { continue };
+                    let (filename, loc) = match include {
+                        IncludedFileSpec::Include(inc)
+                            if inc.filename.starts_with(b"*")
+                                || inc.kind != IncludeKind::Include =>
+                        {
+                            continue
+                        }
+                        IncludedFileSpec::Include(inc) => (inc.filename, inc.name_loc),
+                        IncludedFileSpec::Import(_, imp) => {
+                            (self.get_filename_of_import(&imp.longname), imp.nl)
+                        }
+                    };
+                    let Some(dependency) = self.resolve_file_uri(&decode_string(&filename)) else {
+                        continue;
+                    };
+                    self.dependencies
+                        .entry(uristring.to_owned())
+                        .or_default()
+                        .insert(dependency.clone());
+                    if self.parse_stack.contains(&dependency) {
+                        cycles.push(CompileErr(
+                            loc,
+                            format!("Circular include/import: {}", decode_string(&filename)),
+                        ));
+                    } else {
+                        self.ensure_parsed_document(&dependency);
+                        if self.get_parsed(&dependency).is_some_and(|parsed| {
+                            parsed
+                                .errors
+                                .iter()
+                                .any(|error| error.1.starts_with("Circular"))
+                        }) {
+                            cycles.push(CompileErr(
+                                loc,
+                                format!("Circular dependency in {}", decode_string(&filename)),
+                            ));
+                        }
+                    }
+                }
+            }
+            if !cycles.is_empty() {
+                let mut parsed = ParsedDoc::new(Srcloc::start(uristring));
+                parsed.errors = cycles;
+                self.set_error_list(
+                    uristring,
+                    false,
+                    parsed
+                        .errors
+                        .iter()
+                        .map(|error| Diagnostic {
+                            range: DocRange::from_srcloc(error.0.clone()).to_range(),
+                            message: error.1.clone(),
+                            source: Some("chialisp".to_owned()),
+                            ..Default::default()
+                        })
+                        .collect(),
+                );
+                self.save_parse(uristring.to_owned(), parsed);
+                self.parse_stack.pop();
+                return;
+            }
+        }
         let def_opts = Rc::new(DefaultCompilerOpts::new(uristring));
-        let opts = Rc::new(LSPCompilerOpts::new(
+        let compiler_opts = LSPCompilerOpts::new(
             def_opts,
             self.log.clone(),
             self.fs.clone(),
             self.get_workspace_root(),
             &self.config.include_paths,
             self.document_collection.clone(),
-        ))
-        .set_frontend_check_live(false);
+        );
+        let compiler_reads = compiler_opts.read_files.clone();
+        let opts = Rc::new(compiler_opts).set_frontend_check_live(false);
 
         if let Some(doc) = self.get_doc(uristring) {
             let startloc = Srcloc::start(uristring);
@@ -805,7 +973,7 @@ impl LSPServiceProvider {
             );
 
             for (_, incfile) in new_helpers.includes.clone().iter() {
-                match incfile {
+                let (filename, loc) = match incfile {
                     IncludedFileSpec::Include(incfile) => {
                         if incfile.kind != IncludeKind::Include
                             || incfile.filename.starts_with(b"*")
@@ -813,13 +981,27 @@ impl LSPServiceProvider {
                             continue;
                         }
 
-                        self.try_handle_incoming_file(&mut new_helpers, &incfile.filename);
+                        (incfile.filename.clone(), incfile.name_loc.clone())
                     }
                     IncludedFileSpec::Import(_, imp) => {
                         let filename_inc = self.get_filename_of_import(&imp.longname);
-                        self.try_handle_incoming_file(&mut new_helpers, &filename_inc);
+                        (filename_inc, imp.nl.clone())
+                    }
+                };
+                if let Some(dep) = self.resolve_file_uri(&decode_string(&filename)) {
+                    self.dependencies
+                        .entry(uristring.to_owned())
+                        .or_default()
+                        .insert(dep.clone());
+                    if self.parse_stack.contains(&dep) {
+                        new_helpers.errors.push(CompileErr(
+                            loc,
+                            format!("Circular include/import: {}", decode_string(&filename)),
+                        ));
+                        continue;
                     }
                 }
+                self.try_handle_incoming_file(&mut new_helpers, &filename);
             }
 
             let mut resolve_imported_helper = |frontend: &CompileForm, name: &[u8]| {
@@ -828,36 +1010,79 @@ impl LSPServiceProvider {
                     Some(HelperForm::Defun(_, _) | HelperForm::Defmacro(_))
                 )
             };
-            let new_parse = combine_new_with_old_parse_with_imports(
+            let mut new_parse = combine_new_with_old_parse_with_imports(
                 uristring,
                 &doc.text,
                 &output,
                 &new_helpers,
                 &mut resolve_imported_helper,
             );
+            crate::lsp::parse::recover_source_scopes(uristring, &doc.text, &mut new_parse);
 
-            self.set_error_list(
-                uristring,
-                false,
-                new_parse
-                    .errors
-                    .iter()
-                    .map(|error| Diagnostic {
-                        range: DocRange::from_srcloc(error.0.clone()).to_range(),
+            let diagnostics = new_parse
+                .errors
+                .iter()
+                .map(|error| {
+                    let source_uri = urlify(&error.0.file);
+                    let local = error.0.file.as_str() == uristring
+                        || source_uri == uristring
+                        || error.0.file.starts_with('*');
+                    let actual_range = DocRange::from_srcloc(error.0.clone()).to_range();
+                    let related_information = if !local {
+                        Url::parse(&source_uri).ok().map(|uri| {
+                            vec![DiagnosticRelatedInformation {
+                                location: Location {
+                                    uri,
+                                    range: self
+                                        .get_doc(&source_uri)
+                                        .map(|doc| {
+                                            crate::lsp::positions::range_to_utf16(
+                                                &doc.text,
+                                                actual_range,
+                                            )
+                                        })
+                                        .unwrap_or(actual_range),
+                                },
+                                message: error.1.clone(),
+                            }]
+                        })
+                    } else {
+                        None
+                    };
+                    let range = if local {
+                        actual_range
+                    } else {
+                        self.imported_error_range(&new_parse, &source_uri)
+                    };
+                    Diagnostic {
+                        range,
                         severity: None,
                         code: None,
                         code_description: None,
                         source: Some("chialisp".to_string()),
                         message: error.1.clone(),
                         tags: None,
-                        related_information: None,
+                        related_information,
                         data: None,
-                    })
-                    .collect(),
-            );
+                    }
+                })
+                .collect();
+            self.set_error_list(uristring, false, diagnostics);
 
+            self.dependencies
+                .entry(uristring.to_owned())
+                .or_default()
+                .extend(
+                    compiler_reads
+                        .as_ref()
+                        .borrow()
+                        .iter()
+                        .filter(|uri| uri.as_str() != uristring)
+                        .cloned(),
+                );
             self.save_parse(uristring.to_owned(), new_parse);
         }
+        self.parse_stack.pop();
     }
 
     pub fn get_capabilities() -> ServerCapabilities {
@@ -875,14 +1100,14 @@ impl LSPServiceProvider {
                         token_modifiers: TOKEN_MODIFIERS.clone(),
                     },
                     range: None,
-                    full: Some(SemanticTokensFullOptions::Delta { delta: Some(true) }),
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
                 }),
             ),
             text_document_sync: Some(TextDocumentSyncCapability::Kind(
                 TextDocumentSyncKind::INCREMENTAL,
             )),
             completion_provider: Some(CompletionOptions {
-                resolve_provider: Some(true),
+                resolve_provider: Some(false),
                 //             trigger_characters: Some(completion_start),
                 ..Default::default()
             }),
@@ -912,6 +1137,11 @@ impl LSPServiceProvider {
             config: Default::default(),
 
             document_collection: Rc::new(RefCell::new(HashMap::new())),
+            open_documents: HashSet::new(),
+            dependencies: HashMap::new(),
+            resolved_files: HashMap::new(),
+            parse_stack: Vec::new(),
+            shutdown_requested: false,
 
             parsed_documents: HashMap::new(),
             goto_defs: HashMap::new(),
@@ -970,7 +1200,8 @@ impl LSPServiceProvider {
     }
 
     pub fn get_config_path(&self) -> Option<String> {
-        self.log.log(&format!("workspace root {:?}", self.get_workspace_root()));
+        self.log
+            .log(&format!("workspace root {:?}", self.get_workspace_root()));
         self.get_workspace_root().and_then(|r| {
             let p = Path::new(&r).join("chialisp.json");
             p.to_str().map(|s| s.to_owned())
@@ -989,23 +1220,48 @@ impl LSPServiceProvider {
         &mut self,
         filename: &str,
     ) -> Option<(String, ParsedDoc)> {
-        if let Ok((filename, file_body)) = get_file_content(
-            self.log.clone(),
-            self.fs.clone(),
+        let file_uri = self.resolve_file_uri(filename)?;
+        if let Some(parent) = self.parse_stack.last().cloned() {
+            self.dependencies
+                .entry(parent)
+                .or_default()
+                .insert(file_uri.clone());
+        }
+        self.ensure_parsed_document(&file_uri);
+        self.get_parsed(&file_uri).map(|parsed| (file_uri, parsed))
+    }
+
+    pub fn resolve_file_uri(&mut self, filename: &str) -> Option<String> {
+        if let Some(cached) = self.resolved_files.get(filename) {
+            return cached.clone();
+        }
+        for path in crate::lsp::compopts::file_candidates(
             self.get_workspace_root(),
             &self.config.include_paths,
             filename,
         ) {
-            if let Some(file_uri) = self
-                .get_workspace_root()
-                .and_then(|r| r.join(&filename).to_str().map(urlify))
-            {
-                self.save_doc(file_uri.clone(), file_body);
-                self.ensure_parsed_document(&file_uri);
-                return self.get_parsed(&file_uri).map(|parsed| (file_uri, parsed));
+            let uri = urlify(&path);
+            if self.get_doc(&uri).is_none() {
+                let Ok(content) = self.fs.read_content(&path) else {
+                    continue;
+                };
+                let text = crate::lsp::patch::split_text(&content);
+                let comments = crate::lsp::patch::compute_comment_lines(&text);
+                self.document_collection.borrow_mut().insert(
+                    uri.clone(),
+                    DocData {
+                        fullname: uri.clone(),
+                        text,
+                        comments,
+                        version: -1,
+                    },
+                );
             }
+            self.resolved_files
+                .insert(filename.to_owned(), Some(uri.clone()));
+            return Some(uri);
         }
-
+        self.resolved_files.insert(filename.to_owned(), None);
         None
     }
 
@@ -1013,16 +1269,13 @@ impl LSPServiceProvider {
         let imported_filename =
             longname.as_u8_vec(LongNameTranslation::Filename(".clinc".to_string()));
         if self
-            .get_file_uri_and_ensure_parsing(&decode_string(&imported_filename))
+            .resolve_file_uri(&decode_string(&imported_filename))
             .is_some()
         {
             return imported_filename;
         }
         let clsp_name = longname.as_u8_vec(LongNameTranslation::Filename(".clsp".to_string()));
-        if self
-            .get_file_uri_and_ensure_parsing(&decode_string(&clsp_name))
-            .is_some()
-        {
+        if self.resolve_file_uri(&decode_string(&clsp_name)).is_some() {
             return clsp_name;
         }
         imported_filename
