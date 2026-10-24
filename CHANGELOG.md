@@ -2,6 +2,24 @@
 
 Changes in released versions of the Chialisp extension.
 
+## [1.2.7] - 2026-10-23
+
+### Fixed
+
+- Fixed false errors in modules using macros, exports, and generated helpers.
+- Fixed completion crashes and missing suggestions in nested bindings.
+- Preserved unsaved changes in imported files and refreshed diagnostics when dependencies change.
+- Reported include and import cycles without crashing.
+- Fixed highlighting and navigation positions around Unicode characters.
+- Fixed language server message handling and shutdown.
+- Fixed highlighting around strings and parentheses in comments.
+- Preserved existing settings when adding include paths and limited include-path fixes to missing dependencies.
+
+### Changed
+
+- Updated the Marketplace README and changelog.
+- Updated dependencies and build tools.
+
 ## [1.2.6] - 2026-07-28
 
 ### Changed
@@ -95,6 +113,7 @@ Changes in released versions of the Chialisp extension.
 - Code completion.
 - Configurable stderr logging for diagnostics.
 
+[1.2.7]: https://github.com/Chia-Network/vscode-chialisp-lsp/compare/1.2.6...1.2.7
 [1.2.6]: https://github.com/Chia-Network/vscode-chialisp-lsp/compare/1.2.5...1.2.6
 [1.2.5]: https://github.com/Chia-Network/vscode-chialisp-lsp/compare/1.2.4...1.2.5
 [1.2.4]: https://github.com/Chia-Network/vscode-chialisp-lsp/compare/1.2.2...1.2.4
