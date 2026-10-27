@@ -177,7 +177,7 @@
         "typescript": "^5.9.3",
         "vscode-oniguruma": "^2.0.1",
         "vscode-textmate": "^9.3.2",
-        "webpack": "^5.111.1",
+        "webpack": "^5.112.0",
         "webpack-cli": "^7.2.3"
     },
     "resolutions": {
