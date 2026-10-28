@@ -6,7 +6,7 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -72,6 +72,14 @@ jobs:
           else
               echo "No xvfb processes to kill"
           fi
+
+      - name: Attach VSIX to GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          VSIX_FILE: ${{ steps.package_name.outputs.VSIX_FILE || steps.package_name_pre.outputs.VSIX_FILE }}
+        run: gh release upload "$RELEASE_TAG" "$VSIX_FILE" --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Azure login (user-assigned managed identity)
         if: env.PRE_RELEASE == 'true' || env.FULL_RELEASE == 'true'
