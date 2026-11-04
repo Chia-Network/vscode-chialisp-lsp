@@ -196,11 +196,16 @@ async function openFile(driver, file) {
 
 async function acceptQuickInput(driver, inputBox, done) {
     for (let attempt = 1; attempt <= acceptTries; attempt++) {
-        try {
-            await inputBox.sendKeys(Key.RETURN);
-        } catch (e) {
-            // The input is gone, so an earlier Return was accepted.
-            if (!(e instanceof error.ElementNotInteractableError || e instanceof error.StaleElementReferenceError)) throw e;
+        const currentInputBox = attempt === 1
+            ? inputBox
+            : (await driver.findElements(byAttribute("aria-describedby", "quickInput_message")))[0];
+        if (currentInputBox) {
+            try {
+                await currentInputBox.sendKeys(Key.RETURN);
+            } catch (e) {
+                // The input is gone, so an earlier Return was accepted.
+                if (!(e instanceof error.ElementNotInteractableError || e instanceof error.StaleElementReferenceError)) throw e;
+            }
         }
         try {
             return await waitFor(done, 10 * 1000);
