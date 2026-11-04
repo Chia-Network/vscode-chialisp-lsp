@@ -181,6 +181,6 @@
         "webpack-cli": "^7.2.3"
     },
     "resolutions": {
-        "serialize-javascript": "^7.0.6"
+        "serialize-javascript": "^7.1.4"
     }
 }
