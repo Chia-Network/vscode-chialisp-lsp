@@ -374,6 +374,10 @@ describe("Basic element tests", function() {
 
 	      await sendReturn();
 
+        // Newer VS Code versions show a trust dialog ("Trust Workspace & Install")
+        // after confirming the VSIX file. Dismiss it before waiting for install.
+        await dismissTrustDialogue();
+
         await waitFor(until.elementLocated(byVisibleText("installing")));
 
         console.log('install done');
