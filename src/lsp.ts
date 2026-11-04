@@ -39,7 +39,7 @@ export class WorkaroundFeature implements StaticFeature {
 
 async function activateServer(context: vscode.ExtensionContext) {
     const workspaceClientInstanceId = 'chialisp';
-    const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId);
+    const outputChannel: vscode.LogOutputChannel = vscode.window.createOutputChannel(workspaceClientInstanceId, { log: true });
     var ourExtensionPath = vscode.extensions.getExtension(ourExtension)?.extensionPath;
 
     if (!ourExtensionPath) {

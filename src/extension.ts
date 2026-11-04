@@ -8,17 +8,7 @@ import * as os from 'os';
 
 const fs = fsBase.promises;
 
-import {
-    ExecutableOptions,
-    LanguageClient,
-    LanguageClientOptions,
-    Logger,
-    RevealOutputChannelOn,
-    ServerOptions,
-    StaticFeature,
-    TransportKind,
-} from 'vscode-languageclient/node';
-import { TextDecoder, TextEncoder } from 'util';
+
 import { languageActivate, languageDeactivate } from './lsp';
 import { debuggerActivate, debuggerDeactivate } from './dbg';
 
