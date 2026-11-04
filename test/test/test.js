@@ -53,7 +53,7 @@ let login = async function() {
     console.log('Login screen loaded.');
 
     // Wait to be logged in, assuming it was was successful
-    // once the Log in button has gone "stale."
+    // once the login form has gone "stale."
     await enterCredentialsAndLogin();
     console.log('Logged in.');
 
@@ -194,8 +194,9 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
-async function acceptQuickInput(driver, inputBox, done) {
+async function acceptQuickInput(driver, inputBox, done, label) {
     for (let attempt = 1; attempt <= acceptTries; attempt++) {
+        if (attempt === 1) await wait(2.0);
         const currentInputBox = attempt === 1
             ? inputBox
             : (await driver.findElements(byAttribute("aria-describedby", "quickInput_message")))[0];
@@ -203,7 +204,7 @@ async function acceptQuickInput(driver, inputBox, done) {
             try {
                 await currentInputBox.sendKeys(Key.RETURN);
             } catch (e) {
-                // The input is gone, so an earlier Return was accepted.
+                // The input is gone; the result check below decides whether Return was accepted.
                 if (!(e instanceof error.ElementNotInteractableError || e instanceof error.StaleElementReferenceError)) throw e;
             }
         }
@@ -214,7 +215,7 @@ async function acceptQuickInput(driver, inputBox, done) {
         }
         console.log(`Quick input not accepted, retrying ${attempt}/${acceptTries}`);
     }
-    throw new Error(`Quick input was not accepted after ${acceptTries} tries`);
+    throw new Error(`Quick input was not accepted after ${acceptTries} tries: ${label}`);
 }
 
 async function openFileTheLongWay(driver, file) {
@@ -227,7 +228,7 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.sendKeys(file);
 
     const name = path.basename(file);
-    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)));
+    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)), file);
 }
 
 async function performCommand(cmd) {
@@ -247,7 +248,7 @@ async function performCommand(cmd) {
             if (e instanceof error.StaleElementReferenceError) return false;
             throw e;
         }
-    });
+    }, cmd);
 }
 
 async function clickStepInto() {
