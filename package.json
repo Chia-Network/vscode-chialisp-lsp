@@ -182,5 +182,8 @@
     },
     "resolutions": {
         "serialize-javascript": "^7.1.4"
+    },
+    "overrides": {
+        "minimatch": ">=11.0.1"
     }
 }
