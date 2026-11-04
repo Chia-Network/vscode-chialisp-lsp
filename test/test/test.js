@@ -4,7 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const workspaceTrust = require('../workspace-trust');
-const {Builder, Options, By, Key, until} = require('selenium-webdriver');
+const {Builder, Options, By, Key, until, error} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
 require('chromedriver');
@@ -21,6 +21,7 @@ const driver = new Builder()
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
 const clickTries = 5;
+const acceptTries = 3;
 
 function waitFor(condition, timeout) {
     return workspaceTrust.waitFor(driver, condition, timeout, expect.getState().currentTestName);
@@ -38,7 +39,10 @@ let login = async function() {
         console.log('sending password');
         await driver.findElement(inpPassword).sendKeys(password);
         console.log('pressing button');
+        const form = await driver.findElement(loginContainer);
         await driver.findElement(btnLogin).click();
+        // Wait for the login to finish so the next navigation cannot abort the login request.
+        await waitFor(until.stalenessOf(form), 30 * 1000);
     };
 
     // Load the login page
@@ -190,20 +194,22 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
-async function acceptQuickInput() {
-    for (let attempt = 0; attempt < 3; attempt++) {
-        await sendReturn();
+async function acceptQuickInput(driver, inputBox, done) {
+    for (let attempt = 1; attempt <= acceptTries; attempt++) {
         try {
-            await waitFor(async () => {
-                const widgets = await driver.findElements(By.css('.quick-input-widget'));
-                return widgets.length === 0 || !(await widgets[0].isDisplayed());
-            }, 10 * 1000);
-            return;
+            await inputBox.sendKeys(Key.RETURN);
         } catch (e) {
-            console.log(`Quick input still open after Return, retrying ${attempt + 1}/3`);
+            // The input is gone, so an earlier Return was accepted.
+            if (!(e instanceof error.ElementNotInteractableError || e instanceof error.StaleElementReferenceError)) throw e;
         }
+        try {
+            return await waitFor(done, 10 * 1000);
+        } catch (e) {
+            if (!(e instanceof error.TimeoutError)) throw e;
+        }
+        console.log(`Quick input not accepted, retrying ${attempt}/${acceptTries}`);
     }
-    throw new Error('Quick input dialog did not close after pressing Return three times');
+    throw new Error(`Quick input was not accepted after ${acceptTries} tries`);
 }
 
 async function openFileTheLongWay(driver, file) {
@@ -215,11 +221,8 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    let basename = file.split('/').pop();
-    let quickInputEntry = By.xpath(`//*[contains(@class,'quick-input-list')]//*[text()='${basename}']`);
-    await waitFor(until.elementLocated(quickInputEntry));
-
-    await acceptQuickInput();
+    const name = path.basename(file);
+    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)));
 }
 
 async function performCommand(cmd) {
@@ -230,7 +233,16 @@ async function performCommand(cmd) {
     await inputBox.click();
     await inputBox.sendKeys(cmd);
 
-    await sendReturn();
+    await acceptQuickInput(driver, inputBox, async () => {
+        const widgets = await driver.findElements(By.css('.quick-input-widget'));
+        if (widgets.length === 0) return true;
+        try {
+            return !(await widgets[0].isDisplayed());
+        } catch (e) {
+            if (e instanceof error.StaleElementReferenceError) return false;
+            throw e;
+        }
+    });
 }
 
 async function clickStepInto() {
@@ -250,7 +262,7 @@ async function clickStepInto() {
         }
     }
     if (!clicked) {
-        throw new Exception('Too many tries to click advance without success');
+        throw new Error('Too many tries to click advance without success');
     }
     await wait(1.0);
 }
@@ -332,7 +344,7 @@ describe("Basic element tests", function() {
 
         // Wait for button
         console.log('wait for an element indicating that the workspace is up');
-        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 60 * 1000);
+        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
 
         // Things load more progressively in the current vs code.
         const actions = driver.actions({async: true});
@@ -511,6 +523,7 @@ describe("Basic element tests", function() {
 
         // Verify that installing the debugger made the lint warnings disappear in
         // launch.json.
+        await waitFor(async () => (await driver.findElements(By.css('.squiggly-warning'))).length === 0, 30 * 1000);
         squigglies = await driver.findElements(By.css('.squiggly-warning'));
         expect(squigglies.length).toBe(0);
 
