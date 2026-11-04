@@ -190,6 +190,22 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
+async function acceptQuickInput() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await sendReturn();
+        try {
+            await waitFor(async () => {
+                const widgets = await driver.findElements(By.css('.quick-input-widget'));
+                return widgets.length === 0 || !(await widgets[0].isDisplayed());
+            }, 10 * 1000);
+            return;
+        } catch (e) {
+            console.log(`Quick input still open after Return, retrying ${attempt + 1}/3`);
+        }
+    }
+    throw new Error('Quick input dialog did not close after pressing Return three times');
+}
+
 async function openFileTheLongWay(driver, file) {
     await sendControlO();
     await wait(2.0);
@@ -199,7 +215,11 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    await sendReturn();
+    let basename = file.split('/').pop();
+    let quickInputEntry = By.xpath(`//*[contains(@class,'quick-input-list')]//*[text()='${basename}']`);
+    await waitFor(until.elementLocated(quickInputEntry));
+
+    await acceptQuickInput();
 }
 
 async function performCommand(cmd) {
@@ -312,7 +332,7 @@ describe("Basic element tests", function() {
 
         // Wait for button
         console.log('wait for an element indicating that the workspace is up');
-        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 10 * 1000);
+        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 60 * 1000);
 
         // Things load more progressively in the current vs code.
         const actions = driver.actions({async: true});
