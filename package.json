@@ -165,14 +165,14 @@
         "@stylistic/eslint-plugin": "^5.10.0",
         "@types/glob": "^9.0.0",
         "@types/mocha": "^10.0.10",
-        "@types/node": "26.6.4",
+        "@types/node": "26.6.6",
         "@types/vscode": "^1.85.0",
         "@typescript-eslint/eslint-plugin": "^8.71.0",
         "@typescript-eslint/parser": "^8.71.2",
         "@vscode/test-electron": "^3.1.0",
-        "@vscode/vsce": "4.0.0",
-        "eslint": "^10.12.0",
-        "glob": "^13.0.3",
+        "@vscode/vsce": "4.1.0",
+        "eslint": "^10.13.0",
+        "glob": "^14.0.3",
         "mocha": "^11.7.6",
         "typescript": "^5.9.3",
         "vscode-oniguruma": "^2.0.1",
@@ -181,6 +181,6 @@
         "webpack-cli": "^7.2.3"
     },
     "resolutions": {
-        "serialize-javascript": "^7.0.6"
+        "serialize-javascript": "^7.1.4"
     }
 }

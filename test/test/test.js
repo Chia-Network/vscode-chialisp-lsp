@@ -4,7 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const workspaceTrust = require('../workspace-trust');
-const {Builder, Options, By, Key, until} = require('selenium-webdriver');
+const {Builder, Options, By, Key, until, error} = require('selenium-webdriver');
 
 // You can use a remote Selenium Hub, but we are not doing that here
 require('chromedriver');
@@ -21,6 +21,7 @@ const driver = new Builder()
 const baseUrl = "http://localhost:8080";
 const password = "739f75e86e8d7843df146bac";
 const clickTries = 5;
+const acceptTries = 3;
 
 function waitFor(condition, timeout) {
     return workspaceTrust.waitFor(driver, condition, timeout, expect.getState().currentTestName);
@@ -38,7 +39,10 @@ let login = async function() {
         console.log('sending password');
         await driver.findElement(inpPassword).sendKeys(password);
         console.log('pressing button');
+        const form = await driver.findElement(loginContainer);
         await driver.findElement(btnLogin).click();
+        // Wait for the login to finish so the next navigation cannot abort the login request.
+        await waitFor(until.stalenessOf(form), 30 * 1000);
     };
 
     // Load the login page
@@ -49,7 +53,7 @@ let login = async function() {
     console.log('Login screen loaded.');
 
     // Wait to be logged in, assuming it was was successful
-    // once the Log in button has gone "stale."
+    // once the login form has gone "stale."
     await enterCredentialsAndLogin();
     console.log('Logged in.');
 
@@ -190,6 +194,30 @@ async function openFile(driver, file) {
     await sendReturn();
 }
 
+async function acceptQuickInput(driver, inputBox, done, label) {
+    for (let attempt = 1; attempt <= acceptTries; attempt++) {
+        if (attempt === 1) await wait(2.0);
+        const currentInputBox = attempt === 1
+            ? inputBox
+            : (await driver.findElements(byAttribute("aria-describedby", "quickInput_message")))[0];
+        if (currentInputBox) {
+            try {
+                await currentInputBox.sendKeys(Key.RETURN);
+            } catch (e) {
+                // The input is gone; the result check below decides whether Return was accepted.
+                if (!(e instanceof error.ElementNotInteractableError || e instanceof error.StaleElementReferenceError)) throw e;
+            }
+        }
+        try {
+            return await waitFor(done, 10 * 1000);
+        } catch (e) {
+            if (!(e instanceof error.TimeoutError)) throw e;
+        }
+        console.log(`Quick input not accepted, retrying ${attempt}/${acceptTries}`);
+    }
+    throw new Error(`Quick input was not accepted after ${acceptTries} tries: ${label}`);
+}
+
 async function openFileTheLongWay(driver, file) {
     await sendControlO();
     await wait(2.0);
@@ -199,7 +227,8 @@ async function openFileTheLongWay(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    await sendReturn();
+    const name = path.basename(file);
+    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)), file);
 }
 
 async function performCommand(cmd) {
@@ -210,7 +239,16 @@ async function performCommand(cmd) {
     await inputBox.click();
     await inputBox.sendKeys(cmd);
 
-    await sendReturn();
+    await acceptQuickInput(driver, inputBox, async () => {
+        const widgets = await driver.findElements(By.css('.quick-input-widget'));
+        if (widgets.length === 0) return true;
+        try {
+            return !(await widgets[0].isDisplayed());
+        } catch (e) {
+            if (e instanceof error.StaleElementReferenceError) return false;
+            throw e;
+        }
+    }, cmd);
 }
 
 async function clickStepInto() {
@@ -230,7 +268,7 @@ async function clickStepInto() {
         }
     }
     if (!clicked) {
-        throw new Exception('Too many tries to click advance without success');
+        throw new Error('Too many tries to click advance without success');
     }
     await wait(1.0);
 }
@@ -491,6 +529,7 @@ describe("Basic element tests", function() {
 
         // Verify that installing the debugger made the lint warnings disappear in
         // launch.json.
+        await waitFor(async () => (await driver.findElements(By.css('.squiggly-warning'))).length === 0, 30 * 1000);
         squigglies = await driver.findElements(By.css('.squiggly-warning'));
         expect(squigglies.length).toBe(0);
 
