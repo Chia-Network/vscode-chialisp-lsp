@@ -415,8 +415,11 @@ describe("Basic element tests", function() {
         // VS Code 1.145+ may not activate grammar contributions from a newly
         // installed VSIX until the window reloads.
         console.log('reloading window after extension install');
+        let oldWorkbench = await driver.findElement(By.css('.monaco-workbench'));
         await performCommand('Developer: Reload Window');
-        await wait(2.0);
+        // Wait for the old workbench to detach before looking for the new one,
+        // otherwise waitFor can match the pre-reload DOM.
+        await waitFor(until.stalenessOf(oldWorkbench), 30 * 1000);
         await waitFor(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
         await wait(3.0);
         await dismissTrustDialogue();
