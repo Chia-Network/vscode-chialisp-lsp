@@ -186,12 +186,13 @@ function byAttribute(attr,val) {
 async function openFile(driver, file) {
     console.log(`Check the content of ${file}`);
     await sendControlP();
-    let inputBox = await findFileInput(driver);
+    await wait(1.0);
+    let inputBox = await findQuickInput(driver);
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    let chialispFilename = await waitFor(until.elementLocated(byExactText(file)));
-    await sendReturn();
+    const name = path.basename(file);
+    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)), file);
 }
 
 async function acceptQuickInput(driver, inputBox, done, label) {
@@ -312,6 +313,11 @@ function simplifyText(t) {
     return res;
 }
 
+async function findQuickInput(driver) {
+    let inputBox = await waitFor(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    return inputBox;
+}
+
 async function findFileInput(driver) {
     let findInput = await waitFor(until.elementLocated(By.css(".monaco-findInput")));
     let inputbox = await findInput.findElement(By.css(".monaco-inputbox"));
@@ -405,6 +411,18 @@ describe("Basic element tests", function() {
         await checkSquiggleInLaunchJson();
 
         await installVsix();
+
+        // VS Code 1.145+ may not activate grammar contributions from a newly
+        // installed VSIX until the window reloads.
+        console.log('reloading window after extension install');
+        let oldWorkbench = await driver.findElement(By.css('.monaco-workbench'));
+        await performCommand('Developer: Reload Window');
+        // Wait for the old workbench to detach before looking for the new one,
+        // otherwise waitFor can match the pre-reload DOM.
+        await waitFor(until.stalenessOf(oldWorkbench), 30 * 1000);
+        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
+        await wait(3.0);
+        await dismissTrustDialogue();
     });
 
     // Specify a test
@@ -416,17 +434,27 @@ describe("Basic element tests", function() {
         await openFile(driver, 'collatz.cl');
 
         // If these elements can be found, we're highlighting.
+        // Token color classes (mtk*) are theme-dependent and shift between
+        // VS Code versions, so we verify that the "mod" keyword and
+        // "COLLATZ" comment receive *different* classes from plain text
+        // (mtk1) rather than asserting specific class numbers.
         console.log('finding highlighting');
-        let keyword_classed_element = await waitFor(until.elementLocated(By.css(".mtk5")));
+        await wait(5.0);
 
         console.log('checking mod highlight');
         let mod_keyword = await waitFor(until.elementLocated(byExactText("mod")));
-        expect(await mod_keyword.getAttribute("class")).toBe("mtk16");
+        let modClass = await mod_keyword.getAttribute("class");
+        console.log('mod class:', modClass);
+        expect(modClass).not.toBe("mtk1");
 
         console.log('checking comment highlight');
         let comment = await waitFor(until.elementLocated(byVisibleText("COLLATZ")));
+        let commentClass = await comment.getAttribute("class");
+        console.log('comment class:', commentClass);
+        expect(commentClass).not.toBe("mtk1");
 
-        expect(await comment.getAttribute("class")).toBe("mtk5");
+        // Keyword and comment should have different token colors.
+        expect(modClass).not.toBe(commentClass);
 
         console.log('we should have an error shown');
         let squiggly = await waitFor(until.elementLocated(By.css(".squiggly-error")));
@@ -443,7 +471,7 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         console.log('find the input box');
-        let inputBox = await findFileInput(driver);
+        let inputBox = await findQuickInput(driver);
         await inputBox.click();
         await inputBox.sendKeys("include/test-inc.clsp");
 
@@ -463,7 +491,8 @@ describe("Basic element tests", function() {
 
         console.log('comments should move');
         let otherComment = await waitFor(until.elementLocated(byVisibleText("defun-inline")));
-        expect(await otherComment.getAttribute("class")).toBe("mtk16");
+        // defun-inline is a keyword; verify it's tokenized (not plain text).
+        expect(await otherComment.getAttribute("class")).not.toBe("mtk1");
 
         console.log('check for squigglies');
         let squigglies = await driver.findElements(By.css('.squiggly-error'));
@@ -555,9 +584,15 @@ describe("Basic element tests", function() {
         await debugButton.click();
 
         console.log('selecting debug tab');
-        let configDropdown = await waitFor(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+        // VS Code 1.145+ appends the active config name to the aria-label
+        // (e.g. "Debug Launch Configurations: fact.clsp"), so use contains().
+        let configDropdown = await waitFor(until.elementLocated(By.xpath(`//*[contains(@aria-label, 'Debug Launch Configurations')]`)));
         await configDropdown.click();
-        let factClspSelection = await waitFor(until.elementLocated(byAttribute("value", "fact.clsp")));
+        // VS Code 1.145 uses an ActionWidgetDropdown whose items render
+        // the config name as text content rather than a value attribute.
+        // Scope to the dropdown overlay to avoid matching the explorer tree.
+        let factClspSelection = await waitFor(until.elementLocated(
+            By.xpath(`//*[contains(@class,'action-widget') or contains(@class,'select-box-dropdown')]//*[text()='fact.clsp']`)));
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
