@@ -588,9 +588,9 @@ describe("Basic element tests", function() {
         // (e.g. "Debug Launch Configurations: fact.clsp"), so use contains().
         let configDropdown = await waitFor(until.elementLocated(By.xpath(`//*[contains(@aria-label, 'Debug Launch Configurations')]`)));
         await configDropdown.click();
-        // VS Code 1.145 uses a custom-drawn dropdown; options are rendered
-        // as .option-text spans rather than native <option> elements.
-        let factClspSelection = await waitFor(until.elementLocated(By.xpath(`//*[contains(@class,'option-text') and text()='fact.clsp'] | //option[@value='fact.clsp']`)));
+        // VS Code 1.145 uses an ActionWidgetDropdown whose items render
+        // the config name as text content rather than a value attribute.
+        let factClspSelection = await waitFor(until.elementLocated(byExactText("fact.clsp")));
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
