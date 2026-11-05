@@ -430,6 +430,26 @@ describe("Basic element tests", function() {
 
         await openFile(driver, 'collatz.cl');
 
+        // Debug: log what mtk classes are present
+        await wait(5.0);
+        let mtkElements = await driver.findElements(By.css('[class*="mtk"]'));
+        let mtkClasses = new Set();
+        for (let el of mtkElements) {
+            let cls = await el.getAttribute('class');
+            for (let c of cls.split(' ')) {
+                if (c.startsWith('mtk')) mtkClasses.add(c);
+            }
+        }
+        console.log('DEBUG: mtk classes found:', JSON.stringify([...mtkClasses].sort()));
+
+        // Also check if page source has any tokenized content
+        let viewLines = await driver.findElements(By.css('.view-line'));
+        console.log('DEBUG: view-line count:', viewLines.length);
+        if (viewLines.length > 0) {
+            let firstLineHtml = await viewLines[0].getAttribute('innerHTML');
+            console.log('DEBUG: first view-line innerHTML:', firstLineHtml.substring(0, 500));
+        }
+
         // If these elements can be found, we're highlighting.
         console.log('finding highlighting');
         let keyword_classed_element = await waitFor(until.elementLocated(By.css(".mtk5")));
