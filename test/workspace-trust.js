@@ -18,7 +18,8 @@ async function dismissTrustDialogue(driver) {
         }
         const buttons = await dialog.findElements(by.css('.monaco-button'));
         for (const button of buttons) {
-            if ((await button.getText()).includes('Yes, I trust the authors')) {
+            const text = await button.getText();
+            if (text.includes('Yes, I trust the authors') || text.includes('Trust Workspace')) {
                 await button.click();
                 await driver.wait(until.stalenessOf(dialog), 10000,
                     'The workspace trust dialog did not close');
