@@ -186,7 +186,8 @@ function byAttribute(attr,val) {
 async function openFile(driver, file) {
     console.log(`Check the content of ${file}`);
     await sendControlP();
-    let inputBox = await findFileInput(driver);
+    await wait(1.0);
+    let inputBox = await findQuickInput(driver);
     await inputBox.click();
     await inputBox.sendKeys(file);
 
@@ -310,6 +311,11 @@ function simplifyText(t) {
         }
     }
     return res;
+}
+
+async function findQuickInput(driver) {
+    let inputBox = await waitFor(until.elementLocated(byAttribute("aria-describedby", "quickInput_message")));
+    return inputBox;
 }
 
 async function findFileInput(driver) {
@@ -443,7 +449,7 @@ describe("Basic element tests", function() {
         await sendReturn();
 
         console.log('find the input box');
-        let inputBox = await findFileInput(driver);
+        let inputBox = await findQuickInput(driver);
         await inputBox.click();
         await inputBox.sendKeys("include/test-inc.clsp");
 
