@@ -411,6 +411,15 @@ describe("Basic element tests", function() {
         await checkSquiggleInLaunchJson();
 
         await installVsix();
+
+        // VS Code 1.145+ may not activate grammar contributions from a newly
+        // installed VSIX until the window reloads.
+        console.log('reloading window after extension install');
+        await performCommand('Developer: Reload Window');
+        await wait(2.0);
+        await waitFor(until.elementLocated(By.css('.monaco-workbench')), 30 * 1000);
+        await wait(3.0);
+        await dismissTrustDialogue();
     });
 
     // Specify a test
