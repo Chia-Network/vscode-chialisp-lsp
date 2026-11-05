@@ -2,8 +2,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use object::{Object, ObjectSection};
-
 use crate::arm_gdb::{build_elf, ArmGdbCompilerOpts};
 use crate::interfaces::FSFileReader;
 use chialisp::compiler::comptypes::HasCompilerOptsDelegation;
@@ -111,22 +109,73 @@ struct LineRow {
     is_stmt: bool,
 }
 
+struct ElfSection {
+    name: String,
+    address: u64,
+    data: Vec<u8>,
+}
+
+fn read_u16(elf: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes([elf[offset], elf[offset + 1]])
+}
+
+fn read_u32(elf: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        elf[offset],
+        elf[offset + 1],
+        elf[offset + 2],
+        elf[offset + 3],
+    ])
+}
+
+fn elf_sections(elf: &[u8]) -> Vec<ElfSection> {
+    let section_offset = read_u32(elf, 32) as usize;
+    let section_size = read_u16(elf, 46) as usize;
+    let section_count = read_u16(elf, 48) as usize;
+    let name_index = read_u16(elf, 50) as usize;
+    let name_offset = read_u32(elf, section_offset + name_index * section_size + 16) as usize;
+    let section_name = |offset: usize| {
+        let start = name_offset + offset;
+        let end = start + elf[start..].iter().position(|byte| *byte == 0).unwrap();
+        String::from_utf8_lossy(&elf[start..end]).into_owned()
+    };
+    (0..section_count)
+        .map(|index| {
+            let base = section_offset + index * section_size;
+            let size = read_u32(elf, base + 20) as usize;
+            let offset = read_u32(elf, base + 16) as usize;
+            ElfSection {
+                name: section_name(read_u32(elf, base) as usize),
+                address: read_u32(elf, base + 12) as u64,
+                data: elf.get(offset..offset + size).unwrap_or(&[]).to_vec(),
+            }
+        })
+        .collect()
+}
+
+fn section_bytes<'a>(sections: &'a [ElfSection], name: &str) -> &'a [u8] {
+    sections
+        .iter()
+        .find(|section| section.name == name)
+        .map(|section| section.data.as_slice())
+        .unwrap_or(&[])
+}
+
 fn load_dwarf<'a>(
-    object: &'a object::File<'a>,
+    sections: &'a [ElfSection],
 ) -> gimli::Dwarf<gimli::EndianSlice<'a, gimli::LittleEndian>> {
     gimli::Dwarf::load(|id: gimli::SectionId| -> Result<_, gimli::Error> {
-        let data = object
-            .section_by_name(id.name())
-            .and_then(|section| section.data().ok())
-            .unwrap_or(&[]);
-        Ok(gimli::EndianSlice::new(data, gimli::LittleEndian))
+        Ok(gimli::EndianSlice::new(
+            section_bytes(sections, id.name()),
+            gimli::LittleEndian,
+        ))
     })
     .expect("load dwarf")
 }
 
 fn dwarf_rows(elf: &[u8]) -> Vec<LineRow> {
-    let object = object::File::parse(elf).expect("parse elf");
-    let dwarf = load_dwarf(&object);
+    let sections = elf_sections(elf);
+    let dwarf = load_dwarf(&sections);
 
     let mut rows = Vec::new();
     let mut units = dwarf.units();
@@ -201,10 +250,13 @@ fn test_generate_classic_program_ensure_function_breakable() {
         subprograms(&elf).iter().any(|program| program.name == "F"),
         "DWARF should name helper F"
     );
-    let object = object::File::parse(elf.as_slice()).expect("parse elf");
-    let section = object.section_by_name(".text.F").expect("section .text.F");
-    let code = section.data().expect("section bytes");
-    let entry = section.address();
+    let sections = elf_sections(&elf);
+    let section = sections
+        .iter()
+        .find(|section| section.name == ".text.F")
+        .expect("section .text.F");
+    let code = section.data.as_slice();
+    let entry = section.address;
     assert_eq!(
         &code[0..4],
         &[0x00, 0x48, 0x2d, 0xe9],
@@ -244,8 +296,8 @@ struct Subprogram {
 }
 
 fn subprograms(elf: &[u8]) -> Vec<Subprogram> {
-    let object = object::File::parse(elf).expect("parse elf");
-    let dwarf = load_dwarf(&object);
+    let sections = elf_sections(elf);
+    let dwarf = load_dwarf(&sections);
     let mut found = Vec::new();
     let mut units = dwarf.units();
     while let Some(header) = units.next().expect("unit") {

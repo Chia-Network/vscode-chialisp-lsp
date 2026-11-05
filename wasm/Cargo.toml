@@ -42,4 +42,3 @@ getrandom = "0.2.9"
 
 [dev-dependencies]
 gimli = "0.28.1"
-object = "0.36"
