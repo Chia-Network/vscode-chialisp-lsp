@@ -191,8 +191,8 @@ async function openFile(driver, file) {
     await inputBox.click();
     await inputBox.sendKeys(file);
 
-    let chialispFilename = await waitFor(until.elementLocated(byExactText(file)));
-    await sendReturn();
+    const name = path.basename(file);
+    await acceptQuickInput(driver, inputBox, until.elementLocated(By.css(`.tab.active[data-resource-name='${name}']`)), file);
 }
 
 async function acceptQuickInput(driver, inputBox, done, label) {
