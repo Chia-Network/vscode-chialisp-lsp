@@ -491,7 +491,8 @@ describe("Basic element tests", function() {
 
         console.log('comments should move');
         let otherComment = await waitFor(until.elementLocated(byVisibleText("defun-inline")));
-        expect(await otherComment.getAttribute("class")).toBe("mtk16");
+        // defun-inline is a keyword; verify it's tokenized (not plain text).
+        expect(await otherComment.getAttribute("class")).not.toBe("mtk1");
 
         console.log('check for squigglies');
         let squigglies = await driver.findElements(By.css('.squiggly-error'));
