@@ -590,7 +590,9 @@ describe("Basic element tests", function() {
         await configDropdown.click();
         // VS Code 1.145 uses an ActionWidgetDropdown whose items render
         // the config name as text content rather than a value attribute.
-        let factClspSelection = await waitFor(until.elementLocated(byExactText("fact.clsp")));
+        // Scope to the dropdown overlay to avoid matching the explorer tree.
+        let factClspSelection = await waitFor(until.elementLocated(
+            By.xpath(`//*[contains(@class,'action-widget') or contains(@class,'select-box-dropdown')]//*[text()='fact.clsp']`)));
         await factClspSelection.click();
 
         console.log('find factorial function to set a breakpoint');
