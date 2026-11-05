@@ -1,5 +1,9 @@
-import Mocha from 'mocha';
+// Mocha 12+ is ESM-only at its main entry. Import the bundled CJS module
+// directly so the test runner works under Node16 CJS resolution.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Mocha = require('mocha/lib/mocha.cjs');
 import {glob} from 'glob';
+import * as path from 'path';
 
 export function run(): Promise<void> {
 	// Create the mocha test
@@ -17,7 +21,7 @@ export function run(): Promise<void> {
 
 			try {
 				// Run the mocha test
-				mocha.run(failures => {
+				mocha.run((failures: number) => {
 					if (failures > 0) {
 						e(new Error(`${failures} tests failed.`));
 					} else {
@@ -31,4 +35,3 @@ export function run(): Promise<void> {
 		});
 	});
 }
-import * as path from 'path';
