@@ -584,7 +584,9 @@ describe("Basic element tests", function() {
         await debugButton.click();
 
         console.log('selecting debug tab');
-        let configDropdown = await waitFor(until.elementLocated(byAttribute("aria-label", "Debug Launch Configurations")));
+        // VS Code 1.145+ appends the active config name to the aria-label
+        // (e.g. "Debug Launch Configurations: fact.clsp"), so use contains().
+        let configDropdown = await waitFor(until.elementLocated(By.xpath(`//*[contains(@aria-label, 'Debug Launch Configurations')]`)));
         await configDropdown.click();
         let factClspSelection = await waitFor(until.elementLocated(byAttribute("value", "fact.clsp")));
         await factClspSelection.click();
