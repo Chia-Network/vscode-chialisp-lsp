@@ -1,0 +1,11 @@
+[package]
+name = "clvm_to_arm_chialisp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chialisp = "0.4.4"
+tempfile = "3.27.0"
+clvm_to_arm_generate = { path = "../clvm_to_arm_generate" }
+clvm_to_arm_emulate = { path = "../clvm_to_arm_emulate" }
+clvmr = "0.16.4"

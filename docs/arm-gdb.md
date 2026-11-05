@@ -57,13 +57,15 @@ breaks at the `.text.F` anchor, which is the named function's entry instruction.
 
 ## Dependency pin
 
-`wasm/Cargo.toml` pins `clvm_to_arm_chialisp`, `clvm_to_arm_emulate`, and
-`clvm_to_arm_generate` to `clvm_arm_jit` revision
+`wasm/third_party/clvm_arm_jit` is a snapshot of revision
 `eb397028ec00d4604a508eb8eac64a12d6cb07b7`. That revision contains the
 named-function NOP anchor
 (`60425c4de68b39eab8b762ffa85c0f1977e1ff6a`) and matches the generator and stub
 calls this extension makes: the environment is compiled into the ELF, and
-`ElfObject` returns synthetic source.
+`ElfObject` returns synthetic source. The snapshot's own manifests request
+`target-lexicon` 0.13, the copy already used by this crate. `wasm/third_party/faerie`
+is faerie 0.16.0 with `indexmap` 2, `scroll` 0.12, and `goblin` 0.8 so the
+build does not add `syn` 1.0.109 or `indexmap` 1.9.3.
 
 Tag `v0.1.0` (`3da06491cadff7e5307e9226410b116e9938cf05`) is not a compatible
 replacement. It moves the environment to stub creation, changes `Program::new`,
