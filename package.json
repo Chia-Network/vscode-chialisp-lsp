@@ -165,7 +165,7 @@
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint",
-        "test:unit": "npm run compile && node --test out/test/unit/*.test.js scripts/arm-gdb/launcher.test.js",
+        "test:unit": "npm run compile && node --test out/test/unit/*.test.js scripts/arm-gdb/*.test.js",
         "test": "node ./out/test/runTest.js"
     },
     "dependencies": {

@@ -142,59 +142,69 @@ function destroyStub(wasm, stubId) {
     }
 }
 
+function attachStubSocket(socket, wasm, built, server, exitProcess = process.exit) {
+    let shuttingDown = false;
+    let stubId;
+    let exitCode = 0;
+    const shutdown = () => {
+        if (shuttingDown) {
+            return;
+        }
+
+        shuttingDown = true;
+        destroyStub(wasm, stubId);
+        server.close();
+        setTimeout(() => exitProcess(exitCode), 200);
+    };
+    const fail = (error) => {
+        console.error(error && error.stack ? error.stack : String(error));
+        exitCode = 1;
+        if (!socket.destroyed) {
+            socket.destroy();
+        }
+        shutdown();
+    };
+    const writeToSocket = (bytes) => {
+        if (!socket.destroyed) {
+            socket.write(Buffer.from(bytes));
+        }
+    };
+
+    // Register close before create. destroy() emits close later, and create can
+    // fail before any later listener would have been installed.
+    socket.on('close', () => {
+        shutdown();
+    });
+    socket.on('error', (error) => {
+        console.error(error && error.stack ? error.stack : String(error));
+        exitCode = 1;
+        shutdown();
+    });
+
+    try {
+        stubId = wasm.create_arm_gdb_stub(built.elf, built.symbolsJson, writeToSocket);
+    } catch (error) {
+        fail(error);
+        return;
+    }
+
+    socket.on('data', (chunk) => {
+        try {
+            wasm.arm_gdb_stub_incoming_data(stubId, chunk);
+        } catch (error) {
+            fail(error);
+        }
+    });
+}
+
 function startTcpBridge(wasm, args, built) {
     const port = Number.parseInt(args.port, 10);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
         throw new Error(`invalid --port ${args.port}`);
     }
 
-    let shuttingDown = false;
     const server = net.createServer((socket) => {
-        let stubId;
-        let exitCode = 0;
-        const shutdown = () => {
-            if (shuttingDown) {
-                return;
-            }
-
-            shuttingDown = true;
-            destroyStub(wasm, stubId);
-            server.close();
-            setTimeout(() => process.exit(exitCode), 200);
-        };
-        const writeToSocket = (bytes) => {
-            if (!socket.destroyed) {
-                socket.write(Buffer.from(bytes));
-            }
-        };
-
-        try {
-            stubId = wasm.create_arm_gdb_stub(built.elf, built.symbolsJson, writeToSocket);
-        } catch (e) {
-            console.error(e && e.stack ? e.stack : String(e));
-            exitCode = 1;
-            socket.destroy();
-            return;
-        }
-
-        socket.on('data', (chunk) => {
-            try {
-                wasm.arm_gdb_stub_incoming_data(stubId, chunk);
-            } catch (e) {
-                console.error(e && e.stack ? e.stack : String(e));
-                exitCode = 1;
-                socket.destroy();
-            }
-        });
-
-        socket.on('close', () => {
-            shutdown();
-        });
-
-        socket.on('error', (e) => {
-            console.error(e && e.stack ? e.stack : String(e));
-            exitCode = 1;
-        });
+        attachStubSocket(socket, wasm, built, server);
     });
 
     server.on('error', (e) => {
@@ -227,9 +237,15 @@ function main() {
     startTcpBridge(wasm, args, built);
 }
 
-try {
-    main();
-} catch (e) {
-    console.error(e && e.stack ? e.stack : String(e));
-    process.exit(1);
+if (require.main === module) {
+    try {
+        main();
+    } catch (e) {
+        console.error(e && e.stack ? e.stack : String(e));
+        process.exit(1);
+    }
 }
+
+module.exports = {
+    attachStubSocket,
+};

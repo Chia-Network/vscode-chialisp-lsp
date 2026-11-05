@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { extensionName, publisher } from './constants';
+import { buildMiDebuggerArgs, parseLaunchJson } from './armGdbLaunch';
 
 const DEBUG_WORK_DIR = '.chialisp-debug';
 const GDB_SEXP_PRINTER_RESOURCE_PATH = path.join('wasm', 'resources', 'gdb_print_sexp.py');
@@ -37,32 +38,6 @@ function getOutputChannel(): vscode.OutputChannel {
     return outputChannel;
 }
 
-function quoteArg(value: string): string {
-    if (value.length > 0 && !/[\s"]/.test(value)) {
-        return value;
-    }
-
-    let result = '"';
-    let backslashes = 0;
-    for (const char of value) {
-        if (char === '\\') {
-            backslashes += 1;
-        } else if (char === '"') {
-            result += '\\'.repeat(backslashes * 2 + 1);
-            result += char;
-            backslashes = 0;
-        } else {
-            result += '\\'.repeat(backslashes);
-            result += char;
-            backslashes = 0;
-        }
-    }
-
-    result += '\\'.repeat(backslashes * 2);
-    result += '"';
-    return result;
-}
-
 function quoteSh(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -94,10 +69,6 @@ function normalizeRunArgs(value: unknown): string[] | undefined {
     }
 
     return undefined;
-}
-
-function parseJsonWithLineComments(content: string): any {
-    return JSON.parse(content.replace(/^\s*\/\/.*$/gm, ''));
 }
 
 async function writeNodeWrapper(workDir: string, extensionPath: string): Promise<string> {
@@ -219,41 +190,17 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
     const runnerPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, path.join(armContext.webGdbDir, 'src', 'runner.js'))}`;
     const nodeWrapperPath = `${workspaceVar}/${toWorkspaceSlashPath(armContext.workspaceRoot, armContext.nodeWrapperPath)}`;
     const name = `Chialisp ARM GDB: ${path.basename(armContext.programPath)}`;
-    const miDebuggerArgsParts = [
-        quoteArg(runnerPath),
-        '--gdb-server',
-        '127.0.0.1:0',
-        '--chialisp-workspace',
-        quoteArg(workspaceVar),
-        '--chialisp-program',
-        quoteArg(`${workspaceVar}/${programRel}`),
-        '--chialisp-run-args-json',
-        quoteArg(JSON.stringify(armContext.runArgs)),
-        '--chialisp-elf-out',
-        quoteArg(elfWorkspacePath),
-        '--chialisp-synthetic-source-out',
-        quoteArg(syntheticSourceWorkspacePath),
-        '--chialisp-gdb-printer',
-        quoteArg(gdbSexpPrinterResourcePath),
-        '--workspace',
-        quoteArg(workspaceVar),
-        '--import-file',
-        quoteArg(elfWorkspacePath),
-        '--import-file',
-        quoteArg(syntheticSourceWorkspacePath),
-        '--import-file',
-        quoteArg(gdbSexpPrinterResourcePath),
-    ];
-    const gdbExCommands = [
-        `file ${guestElfPath}`,
-        `source ${GDB_SEXP_PRINTER_GUEST_PATH}`,
-        'dir /mnt',
-        'target remote /dev/ttyS1',
-    ];
-    for (const command of gdbExCommands) {
-        miDebuggerArgsParts.push('--ex', quoteArg(command));
-    }
-    const miDebuggerArgs = miDebuggerArgsParts.join(' ');
+    const miDebuggerArgs = buildMiDebuggerArgs({
+        runnerPath,
+        workspacePath: workspaceVar,
+        programPath: `${workspaceVar}/${programRel}`,
+        runArgsJson: JSON.stringify(armContext.runArgs),
+        elfPath: elfWorkspacePath,
+        syntheticSourcePath: syntheticSourceWorkspacePath,
+        gdbPrinterPath: gdbSexpPrinterResourcePath,
+        guestElfPath,
+        gdbPrinterGuestPath: GDB_SEXP_PRINTER_GUEST_PATH,
+    });
 
     const configuration: vscode.DebugConfiguration = {
         name,
@@ -281,7 +228,7 @@ async function writeLaunchJson(armContext: ArmGdbContext, extensionPath: string)
     };
 
     try {
-        launchJson = parseJsonWithLineComments(await fs.promises.readFile(launchPath, 'utf8'));
+        launchJson = parseLaunchJson(await fs.promises.readFile(launchPath, 'utf8'));
     } catch (e: any) {
         if (!e || e.code !== 'ENOENT') {
             throw e;
