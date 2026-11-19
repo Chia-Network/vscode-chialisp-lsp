@@ -28,6 +28,14 @@
                     "program": {
                         "description": "Program to run (hex, clvm or clsp)",
                         "type": "string"
+                    },
+                    "run_args": {
+                        "description": "CLVM data to use as the argument environment for ARM GDB debug runs",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": ["()"]
                     }
                 }
             }

@@ -18,6 +18,7 @@ You do not need to build the extension or install Rust.
 - Code completion
 - Support for include files and modules
 - Debugging through the Debug Adapter Protocol
+- ARM GDB debugging for compiled Chialisp. See [docs/arm-gdb.md](docs/arm-gdb.md).
 
 ## Requirements
 

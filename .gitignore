@@ -5,6 +5,7 @@ node_modules
 *.vsix
 
 .fake
+.chialisp-debug
 runner/build
 debug/build
 wasm/target

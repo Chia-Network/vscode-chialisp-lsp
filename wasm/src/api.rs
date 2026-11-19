@@ -6,63 +6,14 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 
 use chialisp::classic::clvm_tools::stages::stage_0::DefaultProgramRunner;
 use chialisp::compiler::prims;
 
 use crate::dbg::handler::Debugger;
 use crate::dbg::server::MessageBuffer;
-use crate::interfaces::{IFileReader, ILogWriter};
+use crate::jsinterface::{JSErrWriter, JSFileReader};
 use crate::lsp::{LSPServiceMessageHandler, LSPServiceProvider};
-
-struct JSErrWriter {
-    err_writer: js_sys::Function,
-}
-
-impl ILogWriter for JSErrWriter {
-    fn log(&self, val: &str) {
-        let val_str = JsValue::from_str(val);
-        self.err_writer.call1(&JsValue::null(), &val_str).unwrap();
-    }
-}
-
-impl JSErrWriter {
-    fn new(err_writer: &JsValue) -> Self {
-        JSErrWriter {
-            err_writer: err_writer.dyn_ref::<js_sys::Function>().unwrap().clone(),
-        }
-    }
-}
-
-struct JSFileReader {
-    file_reader: js_sys::Function,
-}
-
-impl IFileReader for JSFileReader {
-    fn read_content(&self, name: &str) -> Result<String, String> {
-        let name_str = JsValue::from_str(name);
-        let res = self.file_reader.call1(&JsValue::null(), &name_str);
-        res.map_err(|_| "Could not read file".to_string())
-            .and_then(|content| {
-                if content.loose_eq(&JsValue::null()) {
-                    Err("could not read file".to_string())
-                } else if let Some(s) = content.as_string() {
-                    Ok(s)
-                } else {
-                    Err("could not convert content to string".to_string())
-                }
-            })
-    }
-}
-
-impl JSFileReader {
-    fn new(file_reader: &JsValue) -> Self {
-        JSFileReader {
-            file_reader: file_reader.dyn_ref::<js_sys::Function>().unwrap().clone(),
-        }
-    }
-}
 
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
@@ -95,7 +46,9 @@ pub fn create_lsp_service(file_reader: &JsValue, err_writer: &JsValue) -> i32 {
             work_services.insert(
                 new_id,
                 RefCell::new(LSPServiceProvider::new(
-                    Rc::new(JSFileReader::new(file_reader)),
+                    Rc::new(
+                        JSFileReader::new(file_reader).expect("file_reader must be a function"),
+                    ),
                     log,
                     false,
                 )),
@@ -143,7 +96,7 @@ pub fn lsp_service_handle_msg(lsp_id: i32, msg: String) -> Vec<JsValue> {
 #[wasm_bindgen]
 pub fn create_dbg_service(file_reader: &JsValue, err_writer: &JsValue) -> i32 {
     let new_id = get_next_id();
-    let fs = Rc::new(JSFileReader::new(file_reader));
+    let fs = Rc::new(JSFileReader::new(file_reader).expect("file_reader must be a function"));
     let log = Rc::new(JSErrWriter::new(err_writer));
 
     // Get prims

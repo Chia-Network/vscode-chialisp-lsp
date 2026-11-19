@@ -1,0 +1,16 @@
+[package]
+name = "clvm_to_arm_generate"
+version = "0.1.0"
+edition = "2024"
+authors = ["Art Yerkes <art.yerkes@gmail.com>"]
+
+[dependencies]
+hex = "0.4.3"
+num-bigint = { version = "0.4.4", features = ["serde"] }
+sha2 = "0.10.9"
+faerie = "0.16.0"
+elf_rs = "0.3.1"
+gimli = "0.28.0"
+target-lexicon = "0.13"
+clvmr = "0.16.4"
+armv4t_emu = "0.1.0"

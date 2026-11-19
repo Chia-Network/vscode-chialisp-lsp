@@ -1,0 +1,17 @@
+[package]
+name = "clvm_to_arm_emulate"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hex = "0.4.3"
+num-bigint = { version = "0.4.4", features = ["serde"] }
+sha2 = "0.10.9"
+elf_rs = "0.3.1"
+gimli = "0.28.0"
+target-lexicon = "0.13"
+clvmr = "0.16.4"
+gdbstub = "0.7.1"
+gdbstub_arch = "0.3.0"
+armv4t_emu = "0.1.0"
+clvm_to_arm_generate = { path = "../clvm_to_arm_generate" }

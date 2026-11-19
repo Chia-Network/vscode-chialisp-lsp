@@ -1,3 +1,4 @@
+mod elf;
 mod lexical;
 pub mod obj;
 mod unicode;
